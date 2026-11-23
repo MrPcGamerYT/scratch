@@ -45,7 +45,6 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
     return button;
 }
 }
-}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
     qmp = new Qmp(process, this); mapper = new InputMapper(qmp, this); mouseLock = new MouseLock(this);
