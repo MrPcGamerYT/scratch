@@ -8,11 +8,11 @@ $launcher = Join-Path $PSScriptRoot '../scripts/launch.ps1'
 function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) [pscustomobject]@{ State = 'Enabled' } }
 if ($Case -eq 'missing-disk') {
     & $launcher -QemuDir $env:NEXUS_TEST_DIR -DiskPath (Join-Path $env:NEXUS_TEST_DIR 'missing.qcow2') -Boot disk
-    exit 0
+    exit $LASTEXITCODE
 }
 if ($Case -eq 'same-image') {
     & $launcher -QemuDir $env:NEXUS_TEST_DIR -DiskPath $env:NEXUS_TEST_ISO -IsoPath $env:NEXUS_TEST_ISO -Boot iso
-    exit 0
+    exit $LASTEXITCODE
 }
 $root = Join-Path $env:RUNNER_TEMP ('nexus tests ' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
