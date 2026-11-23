@@ -209,6 +209,8 @@ void MainWindow::launch() {
                         "-smp", QString::number(cpus->value()), "-vga", "std", "-usb", "-device", "usb-tablet",
                         "-hda", disk.absoluteFilePath(), "-boot", "order=" + boot->currentData().toString(),
                         "-name", "Project Nexus", "-monitor", "stdio"};
+    const QString bundledFirmware = QDir::cleanPath(qemu.dir().filePath("../share/qemu"));
+    if (QFileInfo::exists(QDir(bundledFirmware).filePath("bios-256k.bin"))) args << "-L" << bundledFirmware;
     if (!isoPath->text().trimmed().isEmpty()) args << "-cdrom" << iso.absoluteFilePath();
     QString net = "user,id=net0";
     if (adbForward->isChecked()) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(adbPort->value()) + "-:5555";

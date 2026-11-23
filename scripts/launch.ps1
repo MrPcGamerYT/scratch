@@ -42,6 +42,8 @@ try {
     $qemuArgs = @('-accel', 'whpx,kernel-irqchip=off', '-m', "$MemoryMB", '-smp', "$Cpus",
         '-vga', 'std', '-usb', '-device', 'usb-tablet', '-hda', $diskFull, '-boot', "order=$order",
         '-name', 'Project Nexus', '-netdev', $net, '-device', 'virtio-net-pci,netdev=net0,romfile=')
+    $firmware = [IO.Path]::GetFullPath((Join-Path $QemuDir '../share/qemu'))
+    if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) { $qemuArgs += @('-L', $firmware) }
     if ($IsoPath) { $qemuArgs += @('-cdrom', [IO.Path]::GetFullPath($IsoPath)) }
     Write-Host 'Starting QEMU with WHPX. Shut down Android before closing QEMU.'
     & $qemu @qemuArgs

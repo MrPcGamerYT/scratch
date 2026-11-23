@@ -114,6 +114,7 @@ jobs:
             if ($LASTEXITCODE -ne 0 -or ($displays -join "`n") -notmatch 'sdl') { throw "Bundled QEMU missing SDL, exit $LASTEXITCODE : $displays" }
             $env:QEMU_SYSTEM = $qemu
             $env:QEMU_IMG = $img
+            $env:QEMU_DATA = "$PWD/package/qemu/share/qemu"
             $output = & python tests/qemu_smoke.py 2>&1
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }

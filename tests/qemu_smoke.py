@@ -20,7 +20,8 @@ with tempfile.TemporaryDirectory() as directory:
     code.extend(b'\x55\xaa')
     boot = root / 'boot.img'
     boot.write_bytes(code + b'\x00' * (1474560 - len(code)))
-    process = subprocess.Popen([os.environ.get('QEMU_SYSTEM', 'qemu-system-x86_64'), '-accel', 'tcg', '-m', '64', '-display', 'none', '-monitor', 'none', '-nic', 'none', '-serial', 'none', '-debugcon', 'stdio', '-drive', f'format=raw,if=floppy,file={boot}', '-boot', 'a', '-no-reboot'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    firmware = ['-L', os.environ['QEMU_DATA']] if os.environ.get('QEMU_DATA') else []
+    process = subprocess.Popen([os.environ.get('QEMU_SYSTEM', 'qemu-system-x86_64'), *firmware, '-accel', 'tcg', '-m', '64', '-display', 'none', '-monitor', 'none', '-nic', 'none', '-serial', 'none', '-debugcon', 'stdio', '-drive', f'format=raw,if=floppy,file={boot}', '-boot', 'a', '-no-reboot'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         stdout, stderr = process.communicate(timeout=12)
     except subprocess.TimeoutExpired:
