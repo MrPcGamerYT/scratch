@@ -5,8 +5,54 @@ on:
   workflow_dispatch:
 
 jobs:
+  qemu-build:
+    name: Build QEMU from source (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: qemu/qemu
+          ref: 698104725efad4b29079d857dfdebbd804e34c99
+          path: qemu-source
+      - uses: actions/checkout@v4
+        with:
+          repository: coreboot/seabios
+          ref: b52ca86e094d19b58e2304417787e96b940e39c6
+          path: seabios-source
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-pixman
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-libslirp
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-python-packaging
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+      - name: Compile and collect QEMU
+        shell: msys2 {0}
+        run: |
+          set -o pipefail
+          if ! bash packaging/build-qemu.sh 2>&1 | tee "$RUNNER_TEMP/qemu-build.log"; then
+            tail -40 "$RUNNER_TEMP/qemu-build.log" | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QEMU-source-build
+          path: qemu-bundle/
+          if-no-files-found: error
   windows:
     name: Windows Qt and launcher tests
+    needs: qemu-build
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -38,10 +84,27 @@ jobs:
             }
             exit $code
           }
+      - uses: actions/download-artifact@v4
+        with:
+          name: QEMU-source-build
+          path: package/qemu
+      - name: Test bundled QEMU without MSYS2 installed
+        shell: pwsh
+        run: |
+          $qemu = "$PWD/package/qemu/bin/qemu-system-x86_64.exe"
+          $img = "$PWD/package/qemu/bin/qemu-img.exe"
+          $accels = & $qemu -accel help 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($accels -join "`n") -notmatch 'whpx') { throw "Bundled QEMU missing WHPX: $accels" }
+          $displays = & $qemu -display help 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($displays -join "`n") -notmatch 'sdl') { throw "Bundled QEMU missing SDL: $displays" }
+          $env:QEMU_SYSTEM = $qemu
+          $env:QEMU_IMG = $img
+          python tests/qemu_smoke.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package shell
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path package | Out-Null
+          New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item build/Release/ProjectNexus.exe package/
           windeployqt --release package/ProjectNexus.exe
           Copy-Item README.md package/

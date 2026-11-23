@@ -1,0 +1,10 @@
+# Third-party software in the Project Nexus development bundle
+
+The VM engine is an **unmodified QEMU 10.2.0** build, not a new emulator written by Project Nexus. QEMU is primarily distributed as GPL version 2 (individual files and included firmware can have different terms). See `COPYING`, `LICENSE`, and `README` in this folder. QEMU is a trademark of Fabrice Bellard; this project is not endorsed by QEMU.
+
+- Exact QEMU revision: `698104725efad4b29079d857dfdebbd804e34c99` (tag v10.2.0), source included in `../sources/qemu-10.2.0.tar.gz`. Original: https://github.com/qemu/qemu/tree/v10.2.0
+- The x86 PC and VGA BIOS binaries are the SeaBIOS 1.17.0 images supplied in QEMU's `pc-bios`. Source is included in `../sources/seabios-1.17.0.tar.gz`, revision `b52ca86e094d19b58e2304417787e96b940e39c6`. See QEMU's `pc-bios/README` and the SeaBIOS source for license details.
+- The build script is included in `../sources/build-qemu.sh`. The runtime DLLs come from MSYS2 packages; `msys2-installed-packages.txt` records the build environment and `msys2/` contains the available installed package license texts. MSYS2 packaging recipes and source information are at https://github.com/msys2/MINGW-packages. Each dependency has its own license and source requirements.
+- The Qt shell uses Qt 6.8.3. Qt is available under LGPL and other licenses; see https://www.qt.io/licensing/open-source-lgpl-obligations and https://download.qt.io/archive/qt/6.8/6.8.3/ for source. The QEMU engine is a separate program.
+
+These are development build notices, not a legal opinion or a guarantee of complete redistribution compliance. Before making a public release, audit the exact binary dependencies, firmware, Qt configuration, corresponding source, license notices, and any modifications with a qualified reviewer. Do not remove upstream copyright notices.

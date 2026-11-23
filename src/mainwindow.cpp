@@ -2,6 +2,7 @@
 #include "emulatorview.h"
 #include "imagedownload.h"
 
+#include <QCoreApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -132,7 +133,10 @@ void MainWindow::saveSettings() {
 
 void MainWindow::loadSettings() {
     QSettings s;
-    qemuPath->setText(s.value("qemu", "C:/Program Files/qemu/qemu-system-x86_64.exe").toString());
+    const QString bundledQemu = QCoreApplication::applicationDirPath() + "/qemu/bin/qemu-system-x86_64.exe";
+    const QString savedQemu = s.value("qemu").toString();
+    qemuPath->setText(!savedQemu.isEmpty() && QFileInfo::exists(savedQemu) ? savedQemu :
+                      QFileInfo::exists(bundledQemu) ? bundledQemu : "C:/Program Files/qemu/qemu-system-x86_64.exe");
     isoPath->setText(s.value("iso").toString()); diskPath->setText(s.value("disk").toString());
     memory->setValue(s.value("memory", 4096).toInt()); cpus->setValue(s.value("cpus", 4).toInt());
     adbPort->setValue(s.value("adbPort", 5555).toInt()); adbForward->setChecked(s.value("adbForward", false).toBool());
@@ -208,7 +212,7 @@ void MainWindow::launch() {
     if (!isoPath->text().trimmed().isEmpty()) args << "-cdrom" << iso.absoluteFilePath();
     QString net = "user,id=net0";
     if (adbForward->isChecked()) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(adbPort->value()) + "-:5555";
-    args << "-netdev" << net << "-device" << "virtio-net-pci,netdev=net0";
+    args << "-netdev" << net << "-device" << "virtio-net-pci,netdev=net0,romfile=";
     process->setProgram(qemu.absoluteFilePath()); process->setArguments(args);
     setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     statusBar()->showMessage("Starting QEMU with WHPX...");
