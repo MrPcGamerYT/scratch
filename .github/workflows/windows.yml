@@ -130,8 +130,15 @@ jobs:
       - name: Image studio workflow contract tests
         shell: pwsh
         run: |
-          & pwsh -NoProfile -File ./tests/image_studio_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = 'Continue'
+          $output = & pwsh -NoProfile -File ./tests/image_studio_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe" 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $text = ($output | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$text"
+            exit $code
+          }
       - uses: actions/download-artifact@v4
         with:
           name: QEMU-source-build
