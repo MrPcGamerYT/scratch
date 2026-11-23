@@ -26,6 +26,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QVariant>
 
 namespace {
 struct WindowSearch { DWORD pid; HWND result = nullptr; long long area = 0; };
