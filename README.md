@@ -11,7 +11,7 @@ A first Windows prototype for running an Android-x86-compatible guest in QEMU wi
   ```
 
   Check with `Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform`. QEMU reports an error if WHPX cannot initialize; the launcher does not silently fall back to software emulation. Virtual Machine Platform is not required specifically for QEMU WHPX.
-- The development bundle includes a source-built QEMU x64 engine in `qemu/bin`. Project Nexus automatically selects it. When building the shell yourself without the bundle, provide a compatible QEMU distribution with `qemu-system-x86_64.exe` and `qemu-img.exe` in the same directory.
+- The development bundle includes a source-built, Nexus-patched QEMU x64 engine in `qemu/bin`. Project Nexus automatically selects it. When building the shell yourself without the bundle, provide a compatible QEMU distribution with `qemu-system-x86_64.exe` and `qemu-img.exe` in the same directory.
 - An **x86_64** Android-x86 or compatible ISO. The Qt shell can download the unmodified Android-x86 9.0-r2 image, or you can supply your own. Android-x86 is an independently maintained x86 port of Android, not an official Google emulator image; Nexus does not modify it. Images differ in hardware, installer, licensing and native-bridge support; no particular image is guaranteed to boot or run games. This project does not redistribute Android or proprietary translation libraries. Android 9 is old and may be unpatched: do not use it for sensitive accounts or data.
 - Enough free storage for the guest, and a folder for the disk. The new 32 GiB QCOW2 disk is sparse but can grow toward its maximum size.
 
@@ -66,7 +66,7 @@ Bindings are stored in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.jso
 
 ## GitHub Actions tests
 
-All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs build QEMU from pinned source and the Qt app, test download integrity, keymap serialization and QMP event creation, test launcher arguments and disk handling with a stub (WHPX is mocked), smoke-test the bundled QEMU and QMP pointer events with TCG, and publish a Windows development artifact. The Linux job uses real QEMU TCG to create a QCOW2 disk and boot a tiny test sector. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization and QMP event creation, test launcher arguments and disk handling with a stub (WHPX is mocked), smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux job uses real QEMU TCG to create a QCOW2 disk and boot a tiny test sector. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
 
 ## Development status
 
@@ -75,3 +75,9 @@ The download, launcher and embedding shell are the first milestones. Android is 
 ## Third-party licensing
 
 QEMU is open source, primarily GPL version 2, and can be redistributed under its terms; separate firmware and libraries have their own licenses. The development bundle contains QEMU and SeaBIOS source, build instructions, and notices in `qemu/licenses/`. Review those notices and the exact dependency, Qt and source-distribution obligations before public release. See [third-party notices](packaging/THIRD-PARTY.md). This is not legal advice.
+
+## QEMU engine development
+
+Project Nexus builds a **modified QEMU 10.2.0**, preserving QEMU's name, attribution and licensing. The first small engine patch is in [`packaging/qemu-patches/0001-sdl2-batch-present.patch`](packaging/qemu-patches/0001-sdl2-batch-present.patch). In the SDL 2D renderer it still uploads each changed rectangle, but batches screen presents that occur during one synchronous hardware refresh. Updates outside that refresh still present immediately. This may reduce redundant rendering work when VGA emits multiple dirty rectangles; it is not a new graphics driver, FPS limiter, or proof of improved Android game performance.
+
+GitHub Actions exercises the patch against a tiny VGA workload on the Windows build with SDL's dummy driver and reports rectangle uploads and screen presents. This is a regression and work-count check—not a real-world CPU, frame-time, boot-time or Android benchmark. A before/after comparison on the same real Windows machine and Android workload is needed before claiming any speedup. The bundled source archive contains the patched source and the separate patch, and the base revision is pinned in the workflow.

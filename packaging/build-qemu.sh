@@ -4,6 +4,10 @@ set -euo pipefail
 root="$(pwd)"
 source="$root/qemu-source"
 prefix="$root/qemu-bundle"
+# Apply our reviewable changes only to the exact upstream revision we tested.
+test "$(git -C "$source" rev-parse HEAD)" = 698104725efad4b29079d857dfdebbd804e34c99
+git -C "$source" apply --check "$root/packaging/qemu-patches/0001-sdl2-batch-present.patch"
+git -C "$source" apply "$root/packaging/qemu-patches/0001-sdl2-batch-present.patch"
 mkdir -p "$root/qemu-build" "$prefix/share/qemu" "$prefix/sources" "$prefix/licenses"
 cd "$root/qemu-build"
 "$source/configure" --prefix="$prefix" --target-list=x86_64-softmmu \
@@ -30,3 +34,5 @@ cp "$root/packaging/THIRD-PARTY.md" "$prefix/licenses/"
 tar -C "$source" --exclude=.git -czf "$prefix/sources/qemu-10.2.0.tar.gz" .
 tar -C "$root/seabios-source" --exclude=.git -czf "$prefix/sources/seabios-1.17.0.tar.gz" .
 cp "$root/packaging/build-qemu.sh" "$prefix/sources/"
+mkdir -p "$prefix/sources/patches"
+cp "$root/packaging/qemu-patches/0001-sdl2-batch-present.patch" "$prefix/sources/patches/"
