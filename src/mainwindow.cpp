@@ -64,7 +64,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
     auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
     fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
-    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Experimental single-pointer aim and fire"); dockLayout->addWidget(aimButton);
+    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Experimental aim and fire; multi-touch requires guest support"); dockLayout->addWidget(aimButton);
     auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
@@ -88,11 +88,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
     connect(aimButton, &QPushButton::clicked, this, [this] {
         if (aim->isArmed()) { aim->disarm(); return; }
-        mouseLock->unlock(); keymapEnabled->setChecked(false);
+        mouseLock->unlock(); if (!runningMultiTouch) keymapEnabled->setChecked(false);
         QSettings s;
         QPointF anchor(s.value("aim/anchorX", 50.0).toDouble() / 100.0, s.value("aim/anchorY", 50.0).toDouble() / 100.0);
         QPointF fire(s.value("aim/fireX", 80.0).toDouble() / 100.0, s.value("aim/fireY", 75.0).toDouble() / 100.0);
-        if (!aim->arm(view->windowHandle(), anchor, fire, s.value("aim/sensitivity", 1.0).toDouble()))
+        if (!aim->arm(view->windowHandle(), anchor, fire, s.value("aim/sensitivity", 1.0).toDouble(), runningMultiTouch))
             QMessageBox::warning(this, "Aim & fire", "Could not arm experimental aim mode. The embedded player and QEMU monitor must be ready.");
     });
     connect(aim, &AimController::statusChanged, this, [this](bool armed, bool, const QString &message) {
@@ -106,7 +106,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(mouseLock, &MouseLock::unlocked, this, [this] { mouseLockButton->setText("◎  Lock"); statusBar()->showMessage("Mouse unlocked."); });
     connect(keymapEnabled, &QCheckBox::toggled, this, [this](bool enabled) {
         if (!enabled) { mapper->stop(); statusBar()->showMessage("Keymap disabled."); return; }
-        if (!mapper->start(view->windowHandle(), bindings)) {
+        if (!mapper->start(view->windowHandle(), bindings, runningMultiTouch)) {
             QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false);
             QMessageBox::warning(this, "Keymap unavailable", "The player must be running and embedded with at least one binding.");
         } else statusBar()->showMessage("Keymap enabled. Click the Android display to use it.");
@@ -140,16 +140,33 @@ void MainWindow::launch() {
     const QString img = root + "/qemu/bin/qemu-img.exe";
     if (!QFileInfo(base).isFile()) { QMessageBox::information(this, "System image unavailable", "This player has no prepared Android system image. Please contact the player developer."); return; }
     if (!QFileInfo(qemu).isFile()) { QMessageBox::critical(this, "Engine unavailable", "The bundled QEMU engine is missing. Reinstall the complete player package."); return; }
+    const QString imageDir = root + "/images";
+    const QString code = imageDir + "/android-uefi-code.fd";
+    const QString varsTemplate = imageDir + "/android-uefi-vars.fd";
+    const bool hasCode = QFileInfo::exists(code), hasVars = QFileInfo::exists(varsTemplate);
+    if (hasCode != hasVars) { QMessageBox::critical(this, "Incomplete system", "The prepared UEFI firmware is incomplete. Contact the player developer; no image was changed."); return; }
     const QString disk = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/instances/default.qcow2";
     QString error;
     if (!prepareManagedDisk(img, base, disk, &error)) { QMessageBox::critical(this, "Android system", error); return; }
+    const QString vars = disk + ".uefi-vars.fd";
+    if (hasCode && (!QFileInfo(code).isFile() || !prepareManagedFirmware(varsTemplate, vars, &error))) {
+        QMessageBox::critical(this, "UEFI firmware", error.isEmpty() ? "UEFI code is not a file." : error); return;
+    }
     const QSettings s;
     const int ram = qBound(512, s.value("memory", 4096).toInt(), 131072);
     const int cpus = qBound(1, s.value("cpus", 4).toInt(), 64);
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
+    runningMultiTouch = s.value("multiTouch", false).toBool();
     QStringList args = {"-accel", "whpx,kernel-irqchip=off", "-m", QString::number(ram), "-smp", QString::number(cpus),
-                        "-vga", "std", "-usb", "-device", "usb-tablet", "-hda", disk, "-boot", "order=c",
+                        "-vga", runningMultiTouch ? "none" : "std", "-usb", "-device", "usb-tablet", "-hda", disk, "-boot", "order=c",
                         "-name", "Project Nexus", "-qmp", "stdio"};
+    if (runningMultiTouch) args << "-device" << "VGA,id=nexus_display" << "-device" << "virtio-multitouch-pci,id=nexus_touch,display=nexus_display";
+    if (hasCode) {
+        QString escapedCode = code, escapedVars = vars; escapedCode.replace(",", ",,"); escapedVars.replace(",", ",,");
+        args << "-machine" << "q35,vmport=off"
+             << "-drive" << "if=pflash,format=raw,unit=0,readonly=on,file=" + escapedCode
+             << "-drive" << "if=pflash,format=raw,unit=1,file=" + escapedVars;
+    }
     if (!s.value("showCursor", true).toBool()) args << "-display" << "sdl,show-cursor=off";
     const QString firmware = root + "/qemu/share/qemu";
     if (QFileInfo::exists(firmware + "/bios-256k.bin")) args << "-L" << firmware;
@@ -171,7 +188,7 @@ void MainWindow::updateControls() {
     const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
     const bool armed = aim->isArmed();
     shutdownButton->setEnabled(running && qmp->isReady()); editKeymapButton->setEnabled(embedded && !armed); mouseLockButton->setEnabled(embedded && !armed);
-    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty() && !armed);
+    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty() && (!armed || runningMultiTouch));
     aimButton->setEnabled(embedded && qmp->isReady());
 }
 void MainWindow::installApk() {

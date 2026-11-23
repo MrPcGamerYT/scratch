@@ -28,7 +28,7 @@ add_library(nexus_rust STATIC IMPORTED GLOBAL)
 set_target_properties(nexus_rust PROPERTIES IMPORTED_LOCATION "${NEXUS_RUST_LIB}")
 add_dependencies(nexus_rust nexus_rust_build)
 
-add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h src/clicksequence.cpp src/clicksequence.h src/manageddisk.cpp src/manageddisk.h src/aimmodel.cpp src/aimmodel.h)
+add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h src/clicksequence.cpp src/clicksequence.h src/multisequence.cpp src/multisequence.h src/manageddisk.cpp src/manageddisk.h src/aimmodel.cpp src/aimmodel.h)
 add_dependencies(nexus_controls nexus_rust_build)
 target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32)
 target_include_directories(nexus_controls PUBLIC src)

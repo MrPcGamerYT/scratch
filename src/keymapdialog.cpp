@@ -81,13 +81,13 @@ KeymapDialog::KeymapDialog(const QPixmap &screenshot, const QList<KeyBinding> &b
     setWindowTitle("Edit keymap"); resize(1000, 660);
     auto *layout = new QVBoxLayout(this);
     auto *heading = new QLabel("Place tap controls", this); heading->setObjectName("sectionTitle"); layout->addWidget(heading);
-    auto *description = new QLabel("Choose a key, then click to add one or more markers. Drag markers to adjust them. Multiple markers run sequentially; repeat mode loops while the key is held. Multitouch is not supported.", this);
+    auto *description = new QLabel("Choose a key, then click to add one or more markers. Drag markers to adjust them. Multiple markers for one key run sequentially; repeat mode loops while held. Optional experimental multi-touch supports separate concurrent keys on compatible guests.", this);
     description->setWordWrap(true); layout->addWidget(description);
     auto *body = new QHBoxLayout;
     canvas = new KeymapCanvas(screenshot, this); canvas->bindings = bindings;
     body->addWidget(canvas, 1);
     auto *side = new QVBoxLayout;
-    auto *aimNote = new QLabel("Experimental: aim and fire share one pointer and cannot run with key mappings.", this);
+    auto *aimNote = new QLabel("Experimental multi-touch requires guest support. Standard mode uses one pointer.", this);
     aimNote->setWordWrap(true); aimNote->setObjectName("muted"); side->addWidget(aimNote);
     auto *aimSettings = new QPushButton("Configure aim & fire…", this); side->addWidget(aimSettings);
     connect(aimSettings, &QPushButton::clicked, this, [this] { AimSettingsDialog dialog(this); dialog.exec(); });

@@ -18,6 +18,10 @@ mkdir -p "$prefix/bin"
 cp qemu-system-x86_64.exe qemu-img.exe "$prefix/bin/"
 # Only the two firmware images needed by the PC/std-vga configuration are shipped.
 cp "$source/pc-bios/bios-256k.bin" "$source/pc-bios/vgabios-stdvga.bin" "$prefix/share/qemu/"
+for image in edk2-x86_64-code.fd edk2-i386-vars.fd; do
+    bzip2 -dc "$source/pc-bios/$image.bz2" > "$prefix/share/qemu/$image"
+done
+cp "$source/pc-bios/edk2-licenses.txt" "$prefix/licenses/"
 # Resolve runtime dependencies and copy their transitive DLLs next to the executables.
 for exe in "$prefix/bin/qemu-system-x86_64.exe" "$prefix/bin/qemu-img.exe"; do
   ldd "$exe" | awk '/\/ucrt64\/bin\/.*\.dll/ {print $3}' | while read -r dll; do cp -n "$dll" "$prefix/bin/"; done

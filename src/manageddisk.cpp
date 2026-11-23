@@ -62,3 +62,39 @@ bool prepareManagedDisk(const QString &qemuImg, const QString &base, const QStri
     }
     return true;
 }
+
+bool prepareManagedFirmware(const QString &firmwareTemplate, const QString &userVars, QString *error) {
+    QFileInfo info(firmwareTemplate);
+    const QString source = info.canonicalFilePath();
+    if (source.isEmpty() || !info.isFile() || info.size() <= 0 || info.size() > 16 * 1024 * 1024) {
+        *error = "UEFI variable template is missing or invalid."; return false;
+    }
+    if (!QDir().mkpath(QFileInfo(userVars).absolutePath())) { *error = "Could not create the firmware data folder."; return false; }
+    QLockFile lock(userVars + ".lock");
+    if (!lock.tryLock(0)) { *error = "Another instance is preparing UEFI variables."; return false; }
+    const QJsonObject expected{{"template", source}, {"size", QString::number(info.size())}, {"modified", QString::number(info.lastModified().toMSecsSinceEpoch())}};
+    const QString metaPath = userVars + ".json";
+    if (QFileInfo::exists(userVars) || QFileInfo::exists(metaPath)) {
+        QFile meta(metaPath);
+        if (!QFileInfo(userVars).isFile() || QFileInfo(userVars).size() != info.size() ||
+            !meta.open(QIODevice::ReadOnly) || QJsonDocument::fromJson(meta.readAll()).object() != expected) {
+            *error = "UEFI template changed or firmware metadata is missing. Existing variables were preserved; restore the template or back up and migrate the instance."; return false;
+        }
+        return true;
+    }
+    QFile input(source);
+    QSaveFile output(userVars);
+    if (!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) { *error = "Could not prepare UEFI variables."; return false; }
+    while (!input.atEnd()) {
+        const QByteArray chunk = input.read(65536);
+        if (chunk.isEmpty() && input.error() != QFileDevice::NoError) { *error = "Could not read UEFI template."; return false; }
+        if (output.write(chunk) != chunk.size()) { *error = "Could not write UEFI variables."; return false; }
+    }
+    if (!output.commit()) { *error = "Could not save UEFI variables."; return false; }
+    QSaveFile meta(metaPath);
+    const QByteArray bytes = QJsonDocument(expected).toJson();
+    if (!meta.open(QIODevice::WriteOnly) || meta.write(bytes) != bytes.size() || !meta.commit()) {
+        *error = "Could not save UEFI metadata. The variables were preserved; back them up before retrying."; return false;
+    }
+    return true;
+}

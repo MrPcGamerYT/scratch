@@ -8,7 +8,9 @@ param(
     [ValidateRange(512, 131072)][int]$MemoryMB = 4096,
     [ValidateRange(1, 64)][int]$Cpus = 4,
     [switch]$ForwardAdb,
-    [ValidateRange(1024, 65535)][int]$AdbPort = 5555
+    [ValidateRange(1024, 65535)][int]$AdbPort = 5555,
+    [string]$UefiCodePath = '',
+    [string]$UefiVarsPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +20,12 @@ try {
     $feature = Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform
     if ($feature.State -ne 'Enabled') {
         throw 'Windows Hypervisor Platform is not enabled. Enable it as administrator and restart Windows (see README).'
+    }
+    if ([bool]$UefiCodePath -ne [bool]$UefiVarsPath) { throw 'Provide both UEFI code and a writable per-VM vars file.' }
+    if ($UefiCodePath) {
+        if (-not (Test-Path -LiteralPath $UefiCodePath -PathType Leaf) -or -not (Test-Path -LiteralPath $UefiVarsPath -PathType Leaf)) { throw 'UEFI firmware code or variables file not found.' }
+        $codeFull = [IO.Path]::GetFullPath($UefiCodePath); $varsFull = [IO.Path]::GetFullPath($UefiVarsPath)
+        if ($codeFull -ieq $varsFull -or $varsFull -ieq [IO.Path]::GetFullPath($DiskPath) -or ($IsoPath -and $varsFull -ieq [IO.Path]::GetFullPath($IsoPath))) { throw 'UEFI variables must be a separate file from code, disk and ISO.' }
     }
     $qemu = Join-Path $QemuDir 'qemu-system-x86_64.exe'
     $img = Join-Path $QemuDir 'qemu-img.exe'
@@ -44,6 +52,11 @@ try {
         '-name', 'Project Nexus', '-netdev', $net, '-device', 'virtio-net-pci,netdev=net0,romfile=')
     $firmware = [IO.Path]::GetFullPath((Join-Path $QemuDir '../share/qemu'))
     if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) { $qemuArgs += @('-L', $firmware) }
+    if ($UefiCodePath) {
+        # QEMU's key=value syntax escapes literal commas by doubling them.
+        $codeArg = $codeFull.Replace(',', ',,'); $varsArg = $varsFull.Replace(',', ',,')
+        $qemuArgs += @('-machine', 'q35,vmport=off', '-drive', "if=pflash,format=raw,unit=0,readonly=on,file=$codeArg", '-drive', "if=pflash,format=raw,unit=1,file=$varsArg")
+    }
     if ($IsoPath) { $qemuArgs += @('-cdrom', [IO.Path]::GetFullPath($IsoPath)) }
     Write-Host 'Starting QEMU with WHPX. Shut down Android before closing QEMU.'
     & $qemu @qemuArgs

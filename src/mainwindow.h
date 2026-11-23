@@ -50,6 +50,7 @@ private:
     QProcess *process;
     QProcess *apkTask = nullptr;
     bool runningAdbForward = false;
+    bool runningMultiTouch = false;
     int runningAdbPort = 5555;
     QTimer *embedTimer;
     int embedAttempts = 0;

@@ -26,7 +26,7 @@ QComboBox *unavailable(const QString &value) {
 }
 
 SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) {
-    setWindowTitle("Settings · Project Nexus"); resize(760, 520); setMinimumSize(650, 440);
+    setWindowTitle("Settings · Project Nexus"); resize(760, 600); setMinimumSize(650, 520);
     QSettings settings;
     auto *layout = new QVBoxLayout(this); layout->setContentsMargins(24, 22, 24, 20);
     auto *heading = new QLabel("Settings", this); heading->setObjectName("dialogTitle"); layout->addWidget(heading);
@@ -55,6 +55,8 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *device = page("Device", "Device profiles require support from the Android system image.", &form);
     form->addRow("Phone profile", unavailable("Not available in this build")); stack->addWidget(device);
     auto *preferences = page("Preferences", "Startup and debugging options.", &form);
+    multitouch = new QCheckBox("Experimental multi-touch keymapping", preferences); multitouch->setChecked(settings.value("multiTouch", false).toBool()); form->addRow(multitouch);
+    auto *touchNote = new QLabel("Requires a guest with virtio multitouch support; restart required. Not verified with Bliss OS.", preferences); touchNote->setObjectName("muted"); touchNote->setWordWrap(true); form->addRow(touchNote);
     adbForward = new QCheckBox("Enable local ADB forwarding", preferences); adbForward->setChecked(settings.value("adbForward", false).toBool()); form->addRow(adbForward);
     adbPort = new QSpinBox(preferences); adbPort->setRange(1024, 65535); adbPort->setValue(settings.value("adbPort", 5555).toInt()); form->addRow("Local ADB port", adbPort);
     auto *adbNote = new QLabel("Local forwarding does not enable ADB inside Android.", preferences); adbNote->setObjectName("muted"); adbNote->setWordWrap(true); form->addRow(adbNote); stack->addWidget(preferences);
@@ -68,5 +70,6 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
 void SettingsDialog::save() {
     QSettings s; s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
     s.setValue("showCursor", showCursor->isChecked());
+    s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
 }

@@ -12,13 +12,13 @@
 class Qmp;
 class QTimer;
 
-// Opt-in experimental Win32 mouse-to-single-pointer drag and tap.
+// Opt-in experimental Win32 aim, with single-pointer or multi-touch transport.
 class AimController : public QObject {
     Q_OBJECT
 public:
     explicit AimController(Qmp *qmp, QObject *parent = nullptr);
     ~AimController() override;
-    bool arm(HWND guest, QPointF anchor, QPointF fire, double sensitivity);
+    bool arm(HWND guest, QPointF anchor, QPointF fire, double sensitivity, bool multitouch = false);
     void disarm();
     bool isArmed() const { return keyboard != nullptr; }
 signals:
@@ -42,6 +42,7 @@ private:
     RECT lockedBounds{};
     bool active = false;
     bool firing = false;
+    bool touchMode = false;
     bool f8Held = false;
     int pendingX = 0;
     int pendingY = 0;

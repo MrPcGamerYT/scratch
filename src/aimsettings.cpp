@@ -10,7 +10,7 @@ AimSettingsDialog::AimSettingsDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("Experimental aim & fire"); resize(540, 390);
     auto *layout = new QVBoxLayout(this);
     auto *title = new QLabel("Experimental aim & fire", this); title->setObjectName("sectionTitle"); layout->addWidget(title);
-    auto *note = new QLabel("Positions are percentages of the guest display. Aim drags from the camera area; fire taps the fire button. This uses ONE pointer: aiming pauses while firing, and keyboard mappings cannot run at the same time. Compatibility is not guaranteed.", this);
+    auto *note = new QLabel("Positions are percentages of the guest display. Aim drags from the camera area; fire taps the fire button. With experimental multi-touch enabled, the player sends separate contacts for aim, fire and mapped keys. Guest support is unverified. In standard mode they still share one pointer. Compatibility is not guaranteed.", this);
     note->setWordWrap(true); layout->addWidget(note);
     QSettings s; auto *form = new QFormLayout;
     auto number = [this](double value, double min, double max, const QString &suffix) {

@@ -12,6 +12,7 @@
 #include <windows.h>
 class Qmp;
 class ClickSequence;
+class MultiSequence;
 class QTimer;
 
 class InputMapper : public QObject {
@@ -19,7 +20,7 @@ class InputMapper : public QObject {
 public:
     InputMapper(Qmp *monitor, QObject *parent = nullptr);
     ~InputMapper() override;
-    bool start(HWND guest, const QList<KeyBinding> &bindings);
+    bool start(HWND guest, const QList<KeyBinding> &bindings, bool multitouch = false);
     void stop();
     bool isEnabled() const { return hook != nullptr; }
 signals:
@@ -33,6 +34,8 @@ private:
     HHOOK hook = nullptr;
     QList<KeyBinding> bindings;
     ClickSequence *sequence;
+    MultiSequence *multi;
+    bool touchMode = false;
     QSet<int> heldKeys;
     QTimer *focusTimer;
     static InputMapper *instance;

@@ -13,4 +13,5 @@ private:
     QSpinBox *adbPort;
     QCheckBox *showCursor;
     QCheckBox *adbForward;
+    QCheckBox *multitouch;
 };

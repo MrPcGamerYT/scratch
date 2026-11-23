@@ -1,5 +1,6 @@
 #include "keymap.h"
 #include "clicksequence.h"
+#include "multisequence.h"
 #include "qmp.h"
 #include <QCoreApplication>
 #include <QEventLoop>
@@ -45,6 +46,18 @@ int main(int argc, char **argv) {
     QList<KeyBinding> tooMany; for (int i = 0; i < 129; ++i) tooMany.append({'A', .5, .5});
     if (saveKeymap(path, tooMany, &error)) return 17;
     if (!validKey('Z') || !validKey('0') || validKey(13)) return 18;
+    MultiSequence multi; QList<int> downSlots, upSlots;
+    QObject::connect(&multi, &MultiSequence::touchDown, &app, [&](int slot, double, double) { downSlots.append(slot); });
+    QObject::connect(&multi, &MultiSequence::touchUp, &app, [&](int slot) { upSlots.append(slot); });
+    QList<KeyBinding> simultaneous{{'A', .2, .3}, {'B', .6, .7}};
+    if (!multi.press('A', simultaneous) || !multi.press('B', simultaneous) || downSlots != QList<int>{2, 3}) return 19;
+    multi.release('A'); if (upSlots != QList<int>{2} || !multi.active()) return 20;
+    multi.cancel(); if (upSlots != QList<int>{2, 3} || multi.active()) return 21;
+    const auto firstTouch = Qmp::touchEvents("begin", 0, .5, .25, true);
+    if (firstTouch.size() != 4 || firstTouch[0].toObject().value("data").toObject().value("button").toString() != "touch" ||
+        firstTouch[1].toObject().value("data").toObject().value("tracking-id").toInt() != 0) return 22;
+    const auto lastTouch = Qmp::touchEvents("end", 3, 0, 0, true);
+    if (lastTouch.size() != 2 || lastTouch[0].toObject().value("data").toObject().value("tracking-id").toInt() != -1) return 23;
     std::cout << "Keymap compatibility, sequential taps, repeat and cancellation passed.\n";
     return 0;
 }

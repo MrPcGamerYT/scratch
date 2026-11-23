@@ -19,6 +19,13 @@ int main(int argc, char **argv) {
     if (QProcess::execute(img, {"resize", base, "32M"}) != 0) return 5;
     if (prepareManagedDisk(img, base, overlay, &error)) return 6;
     if (!QFile::exists(overlay) || QFileInfo(overlay).size() != overlaySize) return 7;
+    const QString templ = tmp.filePath("firmware-template.fd"), userVars = tmp.filePath("user data/vars.fd");
+    QFile templateFile(templ); if (!templateFile.open(QIODevice::WriteOnly) || templateFile.write("UEFI-TEMPLATE", 13) != 13) return 8; templateFile.close();
+    if (!prepareManagedFirmware(templ, userVars, &error) || !prepareManagedFirmware(templ, userVars, &error)) return 9;
+    QFile vars(userVars); if (!vars.open(QIODevice::ReadWrite) || vars.write("U", 1) != 1) return 10; vars.close();
+    if (!prepareManagedFirmware(templ, userVars, &error)) return 11;
+    if (!templateFile.open(QIODevice::Append) || templateFile.write("X", 1) != 1) return 12; templateFile.close();
+    if (prepareManagedFirmware(templ, userVars, &error) || !QFile::exists(userVars)) return 13;
     std::cout << "Managed overlay creation, reuse and base-change protection passed.\n";
     return 0;
 }

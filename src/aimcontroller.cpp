@@ -14,7 +14,7 @@ AimController::AimController(Qmp *qmp, QObject *parent) : QObject(parent), monit
                 top.x != lockedBounds.left || top.y != lockedBounds.top ||
                 top.x + r.right != lockedBounds.right || top.y + r.bottom != lockedBounds.bottom) { stop(); return; }
         }
-        if (active && !firing) flushMove();
+        if (active && (!firing || touchMode)) flushMove();
     });
 }
 AimController::~AimController() { disarm(); }
@@ -24,10 +24,10 @@ bool AimController::focused() const {
     DWORD thread = GetWindowThreadProcessId(guest, nullptr);
     return thread && GetGUIThreadInfo(thread, &info) && info.hwndFocus && (info.hwndFocus == guest || IsChild(guest, info.hwndFocus));
 }
-bool AimController::arm(HWND window, QPointF anchor, QPointF fire, double sensitivity) {
+bool AimController::arm(HWND window, QPointF anchor, QPointF fire, double sensitivity, bool multitouch) {
     disarm();
     if (instance || !window || !IsWindow(window) || !monitor->isReady()) return false;
-    guest = window; model = AimModel(anchor, sensitivity);
+    guest = window; model = AimModel(anchor, sensitivity); touchMode = multitouch;
     firePoint = QPointF(qBound(0.0, fire.x(), 1.0), qBound(0.0, fire.y(), 1.0));
     instance = this;
     keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, keyboardProc, nullptr, 0);
@@ -58,7 +58,8 @@ bool AimController::start() {
     if (!mouse) return false;
     active = true; firing = false; pendingX = pendingY = 0; model.reset();
     if (!centerCursor()) { stop(); return false; }
-    monitor->pointerDown(model.anchor().x(), model.anchor().y());
+    if (touchMode) monitor->touchDown(0, model.anchor().x(), model.anchor().y());
+    else monitor->pointerDown(model.anchor().x(), model.anchor().y());
     timer->start();
     emit statusChanged(true, true, "Aim active: move mouse; left click fires. Press F8 to release.");
     return true;
@@ -66,7 +67,7 @@ bool AimController::start() {
 void AimController::stop() {
     if (!active && !mouse) return;
     timer->stop();
-    if (active) monitor->pointerUp();
+    if (active) { if (touchMode) { monitor->touchUp(0); if (firing) monitor->touchUp(1); } else monitor->pointerUp(); }
     active = false; firing = false; pendingX = pendingY = 0;
     if (mouse) { UnhookWindowsHookEx(mouse); mouse = nullptr; }
     ClipCursor(nullptr);
@@ -77,8 +78,10 @@ void AimController::flushMove() {
     RECT r{}; if (!GetClientRect(guest, &r) || r.right <= 0 || r.bottom <= 0) { stop(); return; }
     const int dx = pendingX, dy = pendingY; pendingX = pendingY = 0;
     if (model.move(dx, dy, r.right, r.bottom)) {
-        monitor->pointerUp(); monitor->pointerDown(model.anchor().x(), model.anchor().y());
-    } else monitor->pointerMove(model.position().x(), model.position().y());
+        if (touchMode) { monitor->touchUp(0); monitor->touchDown(0, model.anchor().x(), model.anchor().y()); }
+        else { monitor->pointerUp(); monitor->pointerDown(model.anchor().x(), model.anchor().y()); }
+    } else if (touchMode) monitor->touchMove(0, model.position().x(), model.position().y());
+    else monitor->pointerMove(model.position().x(), model.position().y());
 }
 LRESULT CALLBACK AimController::keyboardProc(int code, WPARAM msg, LPARAM data) {
     auto *self = instance;
@@ -101,7 +104,7 @@ LRESULT CALLBACK AimController::mouseProc(int code, WPARAM msg, LPARAM data) {
     const auto *event = reinterpret_cast<const MSLLHOOKSTRUCT *>(data);
     if (msg == WM_MOUSEMOVE) {
         int dx = event->pt.x - self->cursorCenter.x, dy = event->pt.y - self->cursorCenter.y;
-        if (!(event->flags & LLMHF_INJECTED) && (dx || dy) && !self->firing) {
+        if (!(event->flags & LLMHF_INJECTED) && (dx || dy) && (!self->firing || self->touchMode)) {
             self->pendingX = qBound(-4096, self->pendingX + dx, 4096);
             self->pendingY = qBound(-4096, self->pendingY + dy, 4096);
         }
@@ -110,12 +113,14 @@ LRESULT CALLBACK AimController::mouseProc(int code, WPARAM msg, LPARAM data) {
     }
     if (event->flags & LLMHF_INJECTED) return 1;
     if (msg == WM_LBUTTONDOWN && !self->firing) {
-        self->pendingX = self->pendingY = 0; self->monitor->pointerUp();
-        self->monitor->pointerDown(self->firePoint.x(), self->firePoint.y()); self->firing = true; return 1;
+        if (self->touchMode) self->monitor->touchDown(1, self->firePoint.x(), self->firePoint.y());
+        else { self->pendingX = self->pendingY = 0; self->monitor->pointerUp(); self->monitor->pointerDown(self->firePoint.x(), self->firePoint.y()); }
+        self->firing = true; return 1;
     }
     if (msg == WM_LBUTTONUP && self->firing) {
-        self->monitor->pointerUp(); self->firing = false; self->model.reset();
-        self->monitor->pointerDown(self->model.anchor().x(), self->model.anchor().y()); return 1;
+        if (self->touchMode) self->monitor->touchUp(1);
+        else { self->monitor->pointerUp(); self->model.reset(); self->monitor->pointerDown(self->model.anchor().x(), self->model.anchor().y()); }
+        self->firing = false; return 1;
     }
     // Avoid a second host mouse button corrupting our single-pointer gesture.
     return 1;
