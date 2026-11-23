@@ -45,6 +45,8 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *display = page("Display", "Window and cursor preferences. Guest display controls require Android integration.", &form);
     form->addRow("Resolution", unavailable("Managed by Android · not available yet"));
     form->addRow("Pixel density", unavailable("Managed by Android · not available yet"));
+    auto *fps = new QCheckBox("Show FPS at bottom left", display); fps->setEnabled(false); fps->setToolTip("Live guest FPS measurement is not implemented yet."); form->addRow(fps);
+    auto *fpsNote = new QLabel("Live game FPS measurement is not available yet.", display); fpsNote->setObjectName("muted"); form->addRow(fpsNote);
     showCursor = new QCheckBox("Show host mouse cursor", display); showCursor->setChecked(settings.value("showCursor", true).toBool()); form->addRow(showCursor); stack->addWidget(display);
     auto *graphics = page("Graphics", "The current player uses QEMU's compatibility display.", &form);
     form->addRow("Renderer", unavailable("Standard VGA · compatibility"));

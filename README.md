@@ -30,7 +30,9 @@ Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separat
   -DiskPath 'C:\Android\new-install.qcow2' -PlayerFolder 'C:\NexusPlayer'
 ```
 
-The disk's parent folder must already exist. Install Android interactively, shut it down cleanly, and confirm staging. The tool will not overwrite an existing disk or base image. Test boot and verify distribution rights before sharing the prepared player. For stock Android-x86 9.0-r2, see the [release notes](https://www.android-x86.org/releases/releasenote-9-0-r2.html) and [ISO download](https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download). Published SHA-256: `f7eb8fc56f29ad5432335dc054183acf086c539f3990f0b6e9ff58bd6df4604e`.
+The disk's parent folder must already exist. For Android-x86 9.0-r2, select **Advanced options → Auto Installation**, confirm erasing the new virtual disk, wait for installation, and shut down. The tool attaches no physical host disks, then boots the virtual disk without the ISO so you can verify it before staging. Installation and verification still require interaction; boot is not guaranteed. The tool retains a failed or unfinished image; use `-Resume` with the same `-DiskPath` to boot it again. Use `-CopyFrom 'C:\Android\original.qcow2'` with a **new** `-DiskPath` (and no ISO) to copy a standalone image and boot the copy for changes inside Android. Shut down all VMs using the source before copying, and keep backups. This does not provide arbitrary system-image editing or root access; those depend on the guest.
+
+The tool will not overwrite an existing disk or base image. Test boot and verify distribution rights before sharing the prepared player. For stock Android-x86 9.0-r2, see the [release notes](https://www.android-x86.org/releases/releasenote-9-0-r2.html) and [ISO download](https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download). Published SHA-256: `f7eb8fc56f29ad5432335dc054183acf086c539f3990f0b6e9ff58bd6df4604e`.
 
 The prepared image starts automatically by default. For persistent user data, the player internally creates a separate per-user QCOW2 overlay under `%APPDATA%\ProjectNexus\Project Nexus\instances`; users are never asked to create or select disks. The base is not modified by normal VM writes. If the base is moved or changed, startup stops rather than replacing the overlay. Back up both. Legacy disks are preserved but not migrated or selectable in the new player.
 
@@ -48,12 +50,20 @@ For a standalone build deploy Qt with `windeployqt`, bundle the engine and prepa
 
 The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails QEMU may remain in a separate window; shut down Android normally.
 
+## Dock controls and APKs
+
+**Install APK** requires a running image with TCP ADB enabled and authorized, local ADB forwarding enabled before startup, and Android platform-tools supplied by the developer in `platform-tools/adb.exe` beside the player or on PATH. Platform-tools is not bundled. Only install trusted APKs; the command may update an existing package. ADB exposes a debugging interface to local processes and is off by default. This integration is not yet verified against a real Android image.
+
+Volume, RAM cleanup, and the FPS toggle are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
+
+The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
+
 ## Keymap and mouse
 
-1. Start the VM and open the Android screen or game. Click **Keymap** in the right-hand toolbar.
+1. Start the VM and open the Android screen or game. Click **Keymap** in the top dock.
 2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
 3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
-4. Save, check **On** below Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+4. Save, check **On** next to Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
 
 These actions use one virtual mouse pointer. Multiple markers are sequential, not simultaneous touches; while a sequence is running other mapped keys are ignored. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
 

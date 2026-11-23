@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <string>
 
 // Launcher contract test fixture, not an emulator.
@@ -11,6 +12,9 @@ int main(int argc, char **argv) {
     log << "BEGIN\n";
     for (int i = 1; i < argc; ++i) log << argv[i] << '\n';
     log << "END\n";
+    if (argc >= 2 && std::string(argv[1]) == "info") {
+        std::cout << "{\"format\":\"qcow2\"}" << std::endl;
+    }
     if (argc == 6 && std::string(argv[1]) == "create") {
         std::ofstream disk(argv[4]);
         if (!disk) return 4;

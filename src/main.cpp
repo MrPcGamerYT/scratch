@@ -19,16 +19,16 @@ int main(int argc, char *argv[]) {
         QLabel#statusPill { background: #1c202c; color: #a7aaba; border: 1px solid #2c2e3b; border-radius: 11px; padding: 5px 10px; font-size: 9pt; }
         QFrame#header { background: #161722; border-bottom: 1px solid #272938; }
         QFrame#viewportPanel { background: #0b0d17; border: 1px solid #282a3a; border-radius: 12px; }
-        QFrame#toolRail { background: #191a26; border: 1px solid #2a2b3a; border-radius: 12px; }
+        QFrame#topDock { background: #191a26; border: 1px solid #2a2b3a; border-radius: 12px; }
         QPushButton { background: #242633; border: 1px solid #363849; border-radius: 8px; padding: 8px 14px; font-weight: 600; }
         QPushButton:hover { background: #343546; }
         QPushButton:pressed { background: #20212c; }
         QPushButton:disabled { color: #666777; background: #1c1d28; border-color: #292b37; }
         QPushButton#primary { background: #8b6fff; border-color: #a18dff; color: white; padding: 9px 16px; }
         QPushButton#primary:hover { background: #9b83ff; }
-        QPushButton#railButton { background: transparent; border: 1px solid transparent; color: #b8b8cb; padding: 6px 2px; font-size: 10pt; font-weight: 500; }
-        QPushButton#railButton:hover { background: #2a293b; border-color: #46405e; color: #f5f3ff; }
-        QPushButton#railButton:disabled { color: #5e6070; }
+        QPushButton#dockButton { background: transparent; border: 1px solid transparent; color: #b8b8cb; padding: 6px 2px; font-size: 10pt; font-weight: 500; }
+        QPushButton#dockButton:hover { background: #2a293b; border-color: #46405e; color: #f5f3ff; }
+        QPushButton#dockButton:disabled { color: #5e6070; }
         QLineEdit, QSpinBox, QComboBox, QListWidget { background: #1b1c29; border: 1px solid #363748; border-radius: 7px; padding: 7px; selection-background-color: #7f66df; }
         QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid #9d87ff; }
         QComboBox QAbstractItemView { background: #21222f; selection-background-color: #7f66df; }

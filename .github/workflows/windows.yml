@@ -98,6 +98,11 @@ jobs:
             }
             exit $code
           }
+      - name: Image studio workflow contract tests
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File ./tests/image_studio_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/download-artifact@v4
         with:
           name: QEMU-source-build

@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -37,10 +38,11 @@ BOOL CALLBACK findWindow(HWND hwnd, LPARAM data) {
     if (area > search->area) { search->area = area; search->result = hwnd; }
     return TRUE;
 }
-QPushButton *railButton(const QString &icon, const QString &label, QWidget *parent) {
-    auto *button = new QPushButton(icon + "\n" + label, parent);
-    button->setObjectName("railButton"); button->setToolTip(label); button->setAccessibleName(label);
-    button->setMinimumHeight(67); return button;
+QPushButton *dockButton(const QString &label, QWidget *parent) {
+    auto *button = new QPushButton(label, parent);
+    button->setObjectName("dockButton"); button->setToolTip(label); button->setAccessibleName(label);
+    return button;
+}
 }
 }
 
@@ -49,30 +51,27 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(900, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
-    auto *headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(24, 12, 20, 12); headerLayout->setSpacing(12);
-    auto *mark = new QLabel("N", header); mark->setObjectName("logoMark"); mark->setAlignment(Qt::AlignCenter); mark->setFixedSize(38, 38); headerLayout->addWidget(mark);
-    auto *brandBox = new QVBoxLayout; brandBox->setSpacing(0);
-    auto *brand = new QLabel("NEXUS", header); brand->setObjectName("brand");
-    auto *eyebrow = new QLabel("ANDROID PLAYER", header); eyebrow->setObjectName("eyebrow");
-    brandBox->addWidget(brand); brandBox->addWidget(eyebrow); headerLayout->addLayout(brandBox);
+    auto *headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(18, 9, 18, 9); headerLayout->setSpacing(8);
+    auto *mark = new QLabel("N", header); mark->setObjectName("logoMark"); mark->setAlignment(Qt::AlignCenter); mark->setFixedSize(34, 34); headerLayout->addWidget(mark);
+    auto *brand = new QLabel("NEXUS", header); brand->setObjectName("brand"); headerLayout->addWidget(brand);
     headerLayout->addStretch();
+    auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(5, 4, 5, 4); dockLayout->setSpacing(2);
+    auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
+    auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
+    editKeymapButton = dockButton("⌨  Keymap", dock); dockLayout->addWidget(editKeymapButton);
+    keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable saved keymap"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
+    mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
+    auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
+    fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
+    auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
+    headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
-    launchButton = new QPushButton("Start player", header); launchButton->setObjectName("primary"); headerLayout->addWidget(launchButton);
-    shutdownButton = new QPushButton("Shut down", header); headerLayout->addWidget(shutdownButton);
+    launchButton = dockButton("Start", header); headerLayout->addWidget(launchButton);
+    shutdownButton = dockButton("Stop", header); headerLayout->addWidget(shutdownButton);
     root->addWidget(header);
 
-    auto *body = new QHBoxLayout; body->setContentsMargins(16, 16, 16, 16); body->setSpacing(12); root->addLayout(body, 1);
-    auto *viewport = new QFrame(central); viewport->setObjectName("viewportPanel"); auto *v = new QVBoxLayout(viewport); v->setContentsMargins(0, 0, 0, 0); v->setSpacing(0);
-    view = new EmulatorView(viewport); v->addWidget(view, 1); body->addWidget(viewport, 1);
-    auto *rail = new QFrame(central); rail->setObjectName("toolRail"); rail->setFixedWidth(88); auto *railLayout = new QVBoxLayout(rail); railLayout->setContentsMargins(7, 10, 7, 10); railLayout->setSpacing(4);
-    auto *toolsLabel = new QLabel("TOOLS", rail); toolsLabel->setObjectName("eyebrow"); toolsLabel->setAlignment(Qt::AlignCenter); railLayout->addWidget(toolsLabel);
-    editKeymapButton = railButton("⌨", "Keymap", rail); railLayout->addWidget(editKeymapButton);
-    keymapEnabled = new QCheckBox("On", rail); keymapEnabled->setToolTip("Enable or disable saved keymap"); keymapEnabled->setAccessibleName("Enable keymap"); railLayout->addWidget(keymapEnabled, 0, Qt::AlignHCenter);
-    mouseLockButton = railButton("◎", "Lock", rail); railLayout->addWidget(mouseLockButton);
-    fullscreenButton = railButton("⛶", "Full screen", rail); railLayout->addWidget(fullscreenButton);
-    railLayout->addStretch();
-    auto *settingsButton = railButton("⚙", "Settings", rail); railLayout->addWidget(settingsButton);
-    body->addWidget(rail); setCentralWidget(central);
+    auto *viewport = new QFrame(central); viewport->setObjectName("viewportPanel"); auto *v = new QVBoxLayout(viewport); v->setContentsMargins(0, 0, 0, 0);
+    view = new EmulatorView(viewport); v->addWidget(view, 1); root->addWidget(viewport, 1); setCentralWidget(central);
 
     const QString profileDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/keymaps";
     QDir().mkpath(profileDir); keymapPath = QDir(profileDir).filePath("default.json"); QString error;
@@ -81,15 +80,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     setRunning(false);
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
+    connect(apkButton, &QPushButton::clicked, this, [this] { installApk(); });
     connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.exec(); });
     connect(fullscreenButton, &QPushButton::clicked, this, [this] { if (isFullScreen()) showNormal(); else showFullScreen(); });
     connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
     connect(mouseLockButton, &QPushButton::clicked, this, [this] {
         if (mouseLock->isLocked()) { mouseLock->unlock(); return; }
         if (!mouseLock->lock(view->windowHandle())) QMessageBox::warning(this, "Mouse lock", "Could not lock the mouse to the player display.");
-        else { mouseLockButton->setText("◎\nUnlock"); statusBar()->showMessage("Mouse locked. Press Ctrl+Alt+L to unlock; switching apps also releases it."); }
+        else { mouseLockButton->setText("◎  Unlock"); statusBar()->showMessage("Mouse locked. Press Ctrl+Alt+L to unlock; switching apps also releases it."); }
     });
-    connect(mouseLock, &MouseLock::unlocked, this, [this] { mouseLockButton->setText("◎\nLock"); statusBar()->showMessage("Mouse unlocked."); });
+    connect(mouseLock, &MouseLock::unlocked, this, [this] { mouseLockButton->setText("◎  Lock"); statusBar()->showMessage("Mouse unlocked."); });
     connect(keymapEnabled, &QCheckBox::toggled, this, [this](bool enabled) {
         if (!enabled) { mapper->stop(); statusBar()->showMessage("Keymap disabled."); return; }
         if (!mapper->start(view->windowHandle(), bindings)) {
@@ -142,7 +142,8 @@ void MainWindow::launch() {
     const QString firmware = root + "/qemu/share/qemu";
     if (QFileInfo::exists(firmware + "/bios-256k.bin")) args << "-L" << firmware;
     QString net = "user,id=net0";
-    if (s.value("adbForward", false).toBool()) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(port) + "-:5555";
+    runningAdbForward = s.value("adbForward", false).toBool(); runningAdbPort = port;
+    if (runningAdbForward) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(port) + "-:5555";
     args << "-netdev" << net << "-device" << "virtio-net-pci,netdev=net0,romfile=";
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     statusBar()->showMessage("Starting Android with WHPX...");
@@ -158,6 +159,40 @@ void MainWindow::updateControls() {
     const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
     shutdownButton->setEnabled(running && qmp->isReady()); editKeymapButton->setEnabled(embedded); mouseLockButton->setEnabled(embedded);
     keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty());
+}
+void MainWindow::installApk() {
+    if (process->state() != QProcess::Running) {
+        QMessageBox::information(this, "Install APK", "Start Android first. APK installation requires TCP ADB enabled in the Android image and local ADB forwarding enabled in Settings before startup."); return;
+    }
+    if (apkTask) { QMessageBox::information(this, "Install APK", "An APK operation is already in progress."); return; }
+    if (!runningAdbForward) {
+        QMessageBox::information(this, "Install APK", "Enable local ADB forwarding in Settings and restart the player. Android must also have TCP ADB enabled and authorized."); return;
+    }
+    QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
+    if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
+    if (adb.isEmpty()) { QMessageBox::information(this, "Install APK", "Android platform-tools (adb.exe) were not found. A developer must supply platform-tools next to the player or on PATH. No APK was installed."); return; }
+    const QString apk = QFileDialog::getOpenFileName(this, "Choose a trusted APK", QString(), "Android packages (*.apk)");
+    if (apk.isEmpty()) return;
+    if (QMessageBox::question(this, "Install APK", "Install this APK into Android? Only install APKs you trust. Existing apps with the same package may be updated.\n\n" + QFileInfo(apk).fileName(), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+    const QString endpoint = "127.0.0.1:" + QString::number(runningAdbPort);
+    auto *task = new QProcess(this); apkTask = task; connect(task, &QObject::destroyed, this, [this] { apkTask = nullptr; }); auto *timeout = new QTimer(task); timeout->setSingleShot(true);
+    task->setProperty("installPhase", false); task->setProperty("timedOut", false);
+    connect(timeout, &QTimer::timeout, task, [task] { task->setProperty("timedOut", true); task->kill(); });
+    connect(task, &QProcess::errorOccurred, this, [this, task, timeout](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) { timeout->stop(); QMessageBox::warning(this, "Install APK", "Could not start ADB: " + task->errorString()); task->deleteLater(); }
+    });
+    connect(task, &QProcess::finished, this, [this, task, timeout, adb, endpoint, apk](int code, QProcess::ExitStatus status) {
+        const QString output = QString::fromLocal8Bit(task->readAllStandardOutput() + task->readAllStandardError()).trimmed();
+        if (!task->property("installPhase").toBool() && code == 0 && status == QProcess::NormalExit && !task->property("timedOut").toBool() && (output.contains("connected to " + endpoint, Qt::CaseInsensitive) || output.contains("already connected to " + endpoint, Qt::CaseInsensitive))) {
+            task->setProperty("installPhase", true); timeout->start(120000); task->start(adb, {"-s", endpoint, "install", "-r", apk}); return;
+        }
+        timeout->stop();
+        if (task->property("installPhase").toBool() && code == 0 && status == QProcess::NormalExit && output.contains("Success")) QMessageBox::information(this, "Install APK", "ADB reports that the APK was installed.");
+        else QMessageBox::warning(this, "Install APK", "ADB could not complete the install. Confirm the Android image supports and authorizes TCP ADB.\n\n" + (task->property("timedOut").toBool() ? QString("ADB timed out.") : output.right(3000)));
+        task->deleteLater();
+    });
+    timeout->start(15000); task->start(adb, {"connect", endpoint});
+    statusBar()->showMessage("Connecting to Android to install APK...");
 }
 void MainWindow::editKeymap() {
     mouseLock->unlock(); keymapEnabled->setChecked(false);

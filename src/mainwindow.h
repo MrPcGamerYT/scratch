@@ -28,6 +28,7 @@ private:
     void launch();
     void findGuestWindow();
     void editKeymap();
+    void installApk();
     void updateControls();
     void setRunning(bool running);
     EmulatorView *view;
@@ -44,6 +45,9 @@ private:
     QList<KeyBinding> bindings;
     QString keymapPath;
     QProcess *process;
+    QProcess *apkTask = nullptr;
+    bool runningAdbForward = false;
+    int runningAdbPort = 5555;
     QTimer *embedTimer;
     int embedAttempts = 0;
 };

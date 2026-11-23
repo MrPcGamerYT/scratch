@@ -6,12 +6,14 @@ const assert = require('node:assert/strict');
     for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
       const page = await browser.newPage({viewport});
       await page.goto('http://127.0.0.1:4173/');
+      assert.equal((await page.request.get('http://127.0.0.1:4173/.git/config')).status(), 404);
       assert.match(await page.locator('.preview-banner').innerText(), /not connected/);
       await page.locator('#openSettings').click();
       assert(await page.locator('#settingsOverlay').isVisible());
       for (const name of ['display','graphics','device']) {
         await page.locator(`[data-page="${name}"]`).click();
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);
+        if (name === 'display') assert(await page.getByText('Show FPS at bottom left').locator('input').isDisabled());
       }
       await page.locator('#settingsOverlay [data-save]').click();
       assert.match(await page.locator('#toast').innerText(), /Preview only/);
