@@ -41,7 +41,10 @@ jobs:
         shell: msys2 {0}
         run: |
           set -o pipefail
-          python -m pip download --dest qemu-source/python/wheels pycotap==1.3.1
+          if ! python -m pip install --break-system-packages pycotap==1.3.1 2>&1 | tee "$RUNNER_TEMP/pydeps.log"; then
+            tail -20 "$RUNNER_TEMP/pydeps.log" | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
           if ! bash packaging/build-qemu.sh 2>&1 | tee "$RUNNER_TEMP/qemu-build.log"; then
             tail -40 "$RUNNER_TEMP/qemu-build.log" | while IFS= read -r line; do echo "::error::$line"; done
             exit 1
