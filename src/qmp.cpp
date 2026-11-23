@@ -33,17 +33,18 @@ void Qmp::send(const QString &command, const QJsonArray &events) {
     if (!events.isEmpty()) object.insert("arguments", QJsonObject{{"events", events}});
     process->write(QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n');
 }
+QJsonArray Qmp::moveEvents(double x, double y) {
+    const auto axis = [](const char *name, double value) {
+        return QJsonObject{{"type", "abs"}, {"data", QJsonObject{{"axis", name}, {"value", qRound(std::clamp(value, 0.0, 1.0) * 32767)}}}};
+    };
+    return QJsonArray{axis("x", x), axis("y", y)};
+}
 QJsonArray Qmp::pointerEvents(double x, double y, bool down) {
-    QJsonArray events;
-    if (down) {
-        const auto axis = [](const char *name, double value) {
-            return QJsonObject{{"type", "abs"}, {"data", QJsonObject{{"axis", name}, {"value", qRound(std::clamp(value, 0.0, 1.0) * 32767)}}}};
-        };
-        events.append(axis("x", x)); events.append(axis("y", y));
-    }
+    QJsonArray events = down ? moveEvents(x, y) : QJsonArray{};
     events.append(QJsonObject{{"type", "btn"}, {"data", QJsonObject{{"button", "left"}, {"down", down}}}});
     return events;
 }
+void Qmp::pointerMove(double x, double y) { send("input-send-event", moveEvents(x, y)); }
 void Qmp::powerDown() { send("system_powerdown"); }
 void Qmp::pointerDown(double x, double y) { send("input-send-event", pointerEvents(x, y, true)); }
 void Qmp::pointerUp() { send("input-send-event", pointerEvents(0, 0, false)); }

@@ -42,10 +42,13 @@ try:
         {'type': 'abs', 'data': {'axis': 'x', 'value': 16384}},
         {'type': 'abs', 'data': {'axis': 'y', 'value': 16384}},
         {'type': 'btn', 'data': {'button': 'left', 'down': True}}]})
+    command('input-send-event', {'events': [
+        {'type': 'abs', 'data': {'axis': 'x', 'value': 20000}},
+        {'type': 'abs', 'data': {'axis': 'y', 'value': 18000}}]})
     command('input-send-event', {'events': [{'type': 'btn', 'data': {'button': 'left', 'down': False}}]})
     command('quit')
     p.wait(timeout=10)
-    print('QMP handshake and single-pointer press/release succeeded.')
+    print('QMP handshake and single-pointer press, drag and release succeeded.')
 finally:
     if p.poll() is None:
         p.kill(); p.wait()

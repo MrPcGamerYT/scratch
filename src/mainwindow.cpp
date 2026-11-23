@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "aimcontroller.h"
 #include "emulatorview.h"
 #include "inputmapper.h"
 #include "keymapdialog.h"
@@ -47,7 +48,7 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
-    qmp = new Qmp(process, this); mapper = new InputMapper(qmp, this); mouseLock = new MouseLock(this);
+    qmp = new Qmp(process, this); mapper = new InputMapper(qmp, this); mouseLock = new MouseLock(this); aim = new AimController(qmp, this);
     setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(1100, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
@@ -63,7 +64,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
     auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
     fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
-    auto *aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setEnabled(false); aimButton->setToolTip("Mouse-look and simultaneous firing need Android multitouch support; not implemented yet."); dockLayout->addWidget(aimButton);
+    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Experimental single-pointer aim and fire"); dockLayout->addWidget(aimButton);
     auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
@@ -85,6 +86,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.exec(); });
     connect(fullscreenButton, &QPushButton::clicked, this, [this] { if (isFullScreen()) showNormal(); else showFullScreen(); });
     connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
+    connect(aimButton, &QPushButton::clicked, this, [this] {
+        if (aim->isArmed()) { aim->disarm(); return; }
+        mouseLock->unlock(); keymapEnabled->setChecked(false);
+        QSettings s;
+        QPointF anchor(s.value("aim/anchorX", 50.0).toDouble() / 100.0, s.value("aim/anchorY", 50.0).toDouble() / 100.0);
+        QPointF fire(s.value("aim/fireX", 80.0).toDouble() / 100.0, s.value("aim/fireY", 75.0).toDouble() / 100.0);
+        if (!aim->arm(view->windowHandle(), anchor, fire, s.value("aim/sensitivity", 1.0).toDouble()))
+            QMessageBox::warning(this, "Aim & fire", "Could not arm experimental aim mode. The embedded player and QEMU monitor must be ready.");
+    });
+    connect(aim, &AimController::statusChanged, this, [this](bool armed, bool, const QString &message) {
+        aimButton->setText(armed ? "⌖  Disarm aim" : "⌖  Aim & fire"); statusBar()->showMessage(message); updateControls();
+    });
     connect(mouseLockButton, &QPushButton::clicked, this, [this] {
         if (mouseLock->isLocked()) { mouseLock->unlock(); return; }
         if (!mouseLock->lock(view->windowHandle())) QMessageBox::warning(this, "Mouse lock", "Could not lock the mouse to the player display.");
@@ -101,14 +114,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(mapper, &InputMapper::stopped, this, [this](const QString &reason) {
         QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false); statusBar()->showMessage(reason);
     });
-    connect(qmp, &Qmp::readyChanged, this, [this](bool) { updateControls(); });
-    connect(qmp, &Qmp::error, this, [this](const QString &message) { if (keymapEnabled->isChecked()) keymapEnabled->setChecked(false); statusBar()->showMessage("QEMU monitor: " + message); });
+    connect(qmp, &Qmp::readyChanged, this, [this](bool ready) { if (!ready) aim->disarm(); updateControls(); });
+    connect(qmp, &Qmp::error, this, [this](const QString &message) { aim->disarm(); if (keymapEnabled->isChecked()) keymapEnabled->setChecked(false); statusBar()->showMessage("QEMU monitor: " + message); });
     connect(embedTimer, &QTimer::timeout, this, [this] { findGuestWindow(); });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError errorCode) {
         if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        embedTimer->stop(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); qmp->reset(); view->clear(); setRunning(false);
+        embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); qmp->reset(); view->clear(); setRunning(false);
         const QString output = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
         if (status == QProcess::CrashExit || code != 0) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
@@ -156,8 +169,10 @@ void MainWindow::findGuestWindow() {
 void MainWindow::updateControls() {
     const bool running = process->state() == QProcess::Running;
     const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
-    shutdownButton->setEnabled(running && qmp->isReady()); editKeymapButton->setEnabled(embedded); mouseLockButton->setEnabled(embedded);
-    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty());
+    const bool armed = aim->isArmed();
+    shutdownButton->setEnabled(running && qmp->isReady()); editKeymapButton->setEnabled(embedded && !armed); mouseLockButton->setEnabled(embedded && !armed);
+    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty() && !armed);
+    aimButton->setEnabled(embedded && qmp->isReady());
 }
 void MainWindow::installApk() {
     if (process->state() != QProcess::Running) {
@@ -208,7 +223,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     if (process->state() != QProcess::NotRunning) {
         const auto choice = QMessageBox::question(this, "Player still running", "Force stop and close? This can corrupt the guest disk. Choose No and shut down Android first.", QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (choice != QMessageBox::Yes) { event->ignore(); return; }
-        mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); disconnect(process, nullptr, this, nullptr); process->kill(); process->waitForFinished(5000);
+        aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); disconnect(process, nullptr, this, nullptr); process->kill(); process->waitForFinished(5000);
     }
     event->accept();
 }

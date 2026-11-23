@@ -2,7 +2,7 @@
 
 A Windows Android-player prototype using a source-built QEMU engine and Windows Hypervisor Platform (WHPX). The player opens a developer-prepared system image and does not offer disk creation, ISO selection or Android installation. A separately packaged developer tool prepares the image.
 
-**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it does not support true multitouch, mouse-look, or a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
+**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it also has experimental single-pointer aim/fire; it does not support true multitouch or a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
 
 ## Player preview
 
@@ -52,9 +52,11 @@ export LIBGUESTFS_BACKEND_SETTINGS=force_tcg
 
 Libguestfs requires its Linux appliance/kernel and may need a working WSLg setup; this workflow has not yet been verified on a real Windows PC. Copy the working image to a safe location first, shut down the editor, then use `prepare-android.ps1 -Resume -DiskPath 'C:\path\working.qcow2' -PlayerFolder 'C:\NexusPlayer'` to boot-test and stage it. It won't replace an existing player base; changing the base also requires a deliberate user-overlay migration. The browser operates on one selected filesystem at a time and does **not** unpack nested `system.sfs` / `system.img`, decrypt partitions, preserve all Android SELinux metadata for new files, bypass verified boot, or build an Android OS. Edits may prevent booting; keep the original backup.
 
-## Future Nexus Android system
+## Choosing a prebuilt Android system
 
-The recommended direction is a custom, developer-owned **AOSP-based x86-64 build**, not the Android-x86 project. x86-64 is the CPU architecture, not ownership of the OS. AOSP has upstream licenses and cannot simply be called proprietary software. Building and booting it on our QEMU configuration will require a compatible device/board configuration, kernel, image build, and real-host tests. No Nexus Android OS or AOSP build pipeline exists in this prototype yet; the existing image workflow still needs a compatible separately obtained OS. Do not assume Cuttlefish or Android Studio images will boot unchanged in this player.
+You do not need to build an OS to create a Nexus-branded player. A possible base to evaluate is a **prebuilt Bliss OS FOSS** image from the [project's official distribution](https://sourceforge.net/projects/blissos-x86/). Bliss OS is Android-based and has Android-x86 lineage; x86-64 is the PC CPU architecture. This is a candidate, not a selected or bundled image: its boot, performance, input behavior, exact version, checksums, and redistribution terms have not been validated with Nexus. The Image Studio installer instructions currently target Android-x86 9.0-r2 and may differ for Bliss OS.
+
+A Nexus-branded distribution should honestly credit its upstream OS and comply with each component's licenses, source obligations, trademarks, and any bundled app/Google-service rights; you cannot claim authorship or exclusive ownership of someone else's unmodified OS. See the Bliss team's [licensing overview](https://archive.fosdem.org/2024/events/attachments/fosdem-2024-2957-introduction-to-blisslabs-and-bliss-os/slides/22755/BLISS_V1_5_FOSS1_XaqePfP.pdf). Any actual release needs review of the precise image's contents and rights, and real-PC benchmarks; this is not legal advice. If Android-x86-derived projects are unacceptable, a different prebuilt or a commercial OEM licensing arrangement needs investigation. No OS is bundled.
 
 ## Build and use the Qt player
 
@@ -74,7 +76,7 @@ The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows d
 
 **Install APK** requires a running image with TCP ADB enabled and authorized, local ADB forwarding enabled before startup, and Android platform-tools supplied by the developer in `platform-tools/adb.exe` beside the player or on PATH. Platform-tools is not bundled. Only install trusted APKs; the command may update an existing package. ADB exposes a debugging interface to local processes and is off by default. This integration is not yet verified against a real Android image.
 
-Volume, RAM cleanup, FPS, and aim/fire are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
+Volume, RAM cleanup and FPS are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
 
 The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
 
@@ -87,19 +89,25 @@ The developer tool is a separate package, but this is not access control: a pers
 
 These actions use one virtual mouse pointer. Multiple markers are sequential, not simultaneous touches; while a sequence is running other mapped keys are ignored. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
 
-Aim/fire is not available: the existing one-pointer QMP input cannot provide simultaneous aiming and firing, and cursor confinement alone does not move a game camera. Use **Lock** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
+### Experimental aim & fire
+
+In **Keymap → Configure aim & fire**, set the camera area and fire-button coordinates as percentages of the guest display and adjust sensitivity. Save. Click **Aim & fire** in the dock to arm it, click the Android display, then press **F8**. Move the physical mouse to send a camera drag; left mouse button sends a press at the fire position. Press **F8** again to release, or use **Disarm aim**. Losing focus, resizing the window, QMP failure, or closing the VM also releases the cursor and pointer.
+
+This is an experimental approximation built independently, not BlueStacks parity. QEMU currently exposes only one virtual mouse pointer: aim **stops during fire**, the drag restarts at screen edges, and ordinary mapped keyboard taps are disabled while aim is armed to prevent collisions. Some games will not recognize the gesture, and moving and firing simultaneously is impossible without real multitouch. There are no ADS, WASD multitouch, MOBA, joystick or full macro controls. It has not been tested with Android or games on a real Windows host.
+
+**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it. Aim uses its own temporary capture and F8 release. The Windows hooks and clipping require real-PC testing.
 
 ## Scope and limitations
 
 - QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
 - ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
-- The keymapper uses QEMU's QMP standard input/output connection and an emulated USB tablet; it is **not Android multitouch**. Games requiring simultaneous movement and aiming, swipes, or real touch events may not work. There is no host-to-guest touch daemon, joystick, mouse-look, general-purpose macro recorder, or multi-instance UI yet.
+- The keymapper uses QEMU's QMP standard input/output connection and an emulated USB tablet; it is **not Android multitouch**. Games requiring simultaneous movement and aiming, swipes, or real touch events may not work. There is no host-to-guest touch daemon, true multitouch, joystick, general-purpose macro recorder, or multi-instance UI yet; the experimental single-pointer aim approximation cannot provide simultaneous controls.
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
 - On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
 
 ## GitHub Actions tests
 
-All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing, aim arithmetic and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
 
 ## Development status
 

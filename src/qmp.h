@@ -13,6 +13,8 @@ public:
     void powerDown();
     void pointerDown(double x, double y);
     void pointerUp();
+    void pointerMove(double x, double y);
+    static QJsonArray moveEvents(double x, double y);
     static QJsonArray pointerEvents(double x, double y, bool down);
 signals:
     void readyChanged(bool ready);

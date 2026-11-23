@@ -1,4 +1,5 @@
 #include "keymapdialog.h"
+#include "aimsettings.h"
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
@@ -86,8 +87,10 @@ KeymapDialog::KeymapDialog(const QPixmap &screenshot, const QList<KeyBinding> &b
     canvas = new KeymapCanvas(screenshot, this); canvas->bindings = bindings;
     body->addWidget(canvas, 1);
     auto *side = new QVBoxLayout;
-    auto *aimNote = new QLabel("Aim & fire: not available yet. Simultaneous mouse-look and fire require guest multitouch support.", this);
+    auto *aimNote = new QLabel("Experimental: aim and fire share one pointer and cannot run with key mappings.", this);
     aimNote->setWordWrap(true); aimNote->setObjectName("muted"); side->addWidget(aimNote);
+    auto *aimSettings = new QPushButton("Configure aim & fire…", this); side->addWidget(aimSettings);
+    connect(aimSettings, &QPushButton::clicked, this, [this] { AimSettingsDialog dialog(this); dialog.exec(); });
     auto *keyLabel = new QLabel("Key to place", this); side->addWidget(keyLabel);
     keyChoice = new QComboBox(this);
     for (int key = 'A'; key <= 'Z'; ++key) keyChoice->addItem(keyName(key), key);
