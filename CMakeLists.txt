@@ -10,8 +10,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
+# The Qt shell remains C++; its input policy is incrementally migrating to Rust.
+# Rust's MSVC static library is built once in Release and linked into the player.
+if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "The Rust player core currently requires an x64 MSVC build.")
+endif()
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+set(NEXUS_RUST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/rust/nexus-core")
+set(NEXUS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/cargo/x86_64-pc-windows-msvc/release/nexus_core.lib")
+add_custom_command(OUTPUT "${NEXUS_RUST_LIB}"
+    COMMAND "${CARGO_EXECUTABLE}" build --locked --release --target x86_64-pc-windows-msvc
+            --manifest-path "${NEXUS_RUST_DIR}/Cargo.toml" --target-dir "${CMAKE_CURRENT_BINARY_DIR}/cargo"
+    DEPENDS "${NEXUS_RUST_DIR}/Cargo.toml" "${NEXUS_RUST_DIR}/Cargo.lock" "${NEXUS_RUST_DIR}/src/lib.rs"
+    VERBATIM)
+add_custom_target(nexus_rust_build DEPENDS "${NEXUS_RUST_LIB}")
+add_library(nexus_rust STATIC IMPORTED GLOBAL)
+set_target_properties(nexus_rust PROPERTIES IMPORTED_LOCATION "${NEXUS_RUST_LIB}")
+add_dependencies(nexus_rust nexus_rust_build)
+
 add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h src/clicksequence.cpp src/clicksequence.h src/manageddisk.cpp src/manageddisk.h src/aimmodel.cpp src/aimmodel.h)
-target_link_libraries(nexus_controls PUBLIC Qt6::Core)
+add_dependencies(nexus_controls nexus_rust_build)
+target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32)
 target_include_directories(nexus_controls PUBLIC src)
 
 add_library(nexus_download STATIC src/imagedownload.cpp src/imagedownload.h)

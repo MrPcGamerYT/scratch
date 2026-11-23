@@ -60,7 +60,7 @@ A Nexus-branded distribution should honestly credit its upstream OS and comply w
 
 ## Build and use the Qt player
 
-Install CMake 3.21+, a Windows C++17 compiler (e.g. Visual Studio 2022), and Qt 6.2+ Widgets and Network matching that compiler:
+Install CMake 3.21+, Visual Studio 2022 C++ build tools (x64), Qt 6.2+ Widgets and Network matching MSVC, and the stable Rust toolchain with the `x86_64-pc-windows-msvc` target (`rustup target add x86_64-pc-windows-msvc`). The current integrated build uses a Release Rust static library; the supported packaged configuration is Release:
 
 ```powershell
 cmake -S . -B build -DCMAKE_PREFIX_PATH='C:\Qt\6.8.3\msvc2022_64'
@@ -105,9 +105,13 @@ This is an experimental approximation built independently, not BlueStacks parity
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
 - On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
 
+## Rust migration
+
+This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the small C ABI in `src/rustcore.h`. **Keymap validation and experimental aim-coordinate calculations run in Rust**; existing JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make the single-pointer input multitouch.
+
 ## GitHub Actions tests
 
-All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing, aim arithmetic and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, run Rust unit tests and test the Rust–C++ integration, download integrity, keymap serialization, sequence timing, aim arithmetic and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
 
 ## Development status
 

@@ -1,15 +1,13 @@
 #include "aimmodel.h"
-#include <QtGlobal>
-#include <cmath>
+#include "rustcore.h"
+#include <cstddef>
+static_assert(sizeof(NexusAimResult) == 24 && offsetof(NexusAimResult, reset) == 16,
+              "Rust/C++ aim result ABI mismatch");
 AimModel::AimModel(QPointF anchor, double sensitivity)
-    : center(qBound(0.1, anchor.x(), 0.9), qBound(0.1, anchor.y(), 0.9)), point(center),
-      gain(qBound(0.1, sensitivity, 5.0)) {}
+    : center(nexus_aim_clamp_anchor(anchor.x()), nexus_aim_clamp_anchor(anchor.y())),
+      point(center), gain(nexus_aim_clamp_sensitivity(sensitivity)) {}
 bool AimModel::move(double dx, double dy, int width, int height) {
-    if (width <= 0 || height <= 0 || !std::isfinite(dx) || !std::isfinite(dy)) return false;
-    const double x = point.x() + dx / width * gain;
-    const double y = point.y() + dy / height * gain;
-    // Restart the gesture before reaching the screen edge. This is not a
-    // continuous multitouch gesture and may be interpreted differently by games.
-    if (x < 0.03 || x > 0.97 || y < 0.03 || y > 0.97) { reset(); return true; }
-    point = QPointF(x, y); return false;
+    const auto result = nexus_aim_move(center.x(), center.y(), point.x(), point.y(), gain, dx, dy, width, height);
+    point = QPointF(result.x, result.y);
+    return result.reset != 0;
 }

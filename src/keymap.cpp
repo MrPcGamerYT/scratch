@@ -1,28 +1,33 @@
 #include "keymap.h"
+#include "rustcore.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
-#include <QHash>
+#include <QVector>
+#include <cstddef>
 #include <cmath>
 
-bool validKey(int key) { return (key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || key == 0x20; }
+static_assert(sizeof(NexusBinding) == 32 && offsetof(NexusBinding, x) == 8 &&
+              offsetof(NexusBinding, repeat) == 24 && offsetof(NexusBinding, interval_ms) == 28,
+              "Rust/C++ key binding ABI mismatch");
+bool validKey(int key) { return nexus_valid_key(key) != 0; }
 QString keyName(int key) { return key == 0x20 ? QStringLiteral("Space") : QString(QChar(key)); }
 
 static bool validBindings(const QList<KeyBinding> &bindings, QString *error) {
     if (bindings.size() > 128) { *error = "Too many keymap markers (maximum 128)."; return false; }
-    QHash<int, QPair<bool, int>> modes;
-    for (const auto &b : bindings) {
-        if (!validKey(b.key) || !std::isfinite(b.x) || !std::isfinite(b.y) || b.x < 0 || b.x > 1 || b.y < 0 || b.y > 1 || b.intervalMs < 100 || b.intervalMs > 5000) {
-            *error = "Invalid key, position, or repeat interval."; return false;
-        }
-        const QPair<bool, int> mode{b.repeat, b.intervalMs};
-        if (modes.contains(b.key) && modes.value(b.key) != mode) { *error = "Markers for the same key must use the same repeat settings."; return false; }
-        modes.insert(b.key, mode);
+    QVector<NexusBinding> rustBindings; rustBindings.reserve(bindings.size());
+    for (const auto &b : bindings) rustBindings.append({b.key, b.x, b.y, static_cast<std::uint8_t>(b.repeat), b.intervalMs});
+    switch (nexus_validate_bindings(rustBindings.constData(), static_cast<std::size_t>(rustBindings.size()))) {
+    case 0: return true;
+    case 1: *error = "Too many keymap markers (maximum 128)."; break;
+    case 2: *error = "Invalid key, position, or repeat interval."; break;
+    case 3: *error = "Markers for the same key must use the same repeat settings."; break;
+    default: *error = "Could not validate keymap."; break;
     }
-    return true;
+    return false;
 }
 
 bool loadKeymap(const QString &path, QList<KeyBinding> *bindings, QString *error) {

@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <iostream>
+#include <limits>
 
 static void wait(int ms) { QEventLoop loop; QTimer::singleShot(ms, &loop, &QEventLoop::quit); loop.exec(); }
 int main(int argc, char **argv) {
@@ -40,6 +41,10 @@ int main(int argc, char **argv) {
     if (events.count('D') < 2 || events.count('D') != events.count('U') || seq.active()) return 14;
     events.clear(); seq.press('A', {{'A', 0.2, 0.3, true, 100}}); seq.cancel(); wait(150);
     if (events != "DU" || seq.active()) return 15;
+    if (saveKeymap(path, {{'A', std::numeric_limits<double>::quiet_NaN(), .5}}, &error)) return 16;
+    QList<KeyBinding> tooMany; for (int i = 0; i < 129; ++i) tooMany.append({'A', .5, .5});
+    if (saveKeymap(path, tooMany, &error)) return 17;
+    if (!validKey('Z') || !validKey('0') || validKey(13)) return 18;
     std::cout << "Keymap compatibility, sequential taps, repeat and cancellation passed.\n";
     return 0;
 }

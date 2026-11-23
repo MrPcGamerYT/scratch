@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <cmath>
 #include <iostream>
+#include <limits>
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     AimModel a(QPointF(.5,.5), 1.0);
@@ -15,6 +16,8 @@ int main(int argc, char **argv) {
     auto axes = Qmp::moveEvents(.25, .75);
     if (axes.size() != 2 || axes[0].toObject().value("type").toString() != "abs" ||
         axes[1].toObject().value("data").toObject().value("value").toInt() != 24575) return 5;
+    AimModel invalid(QPointF(std::numeric_limits<double>::quiet_NaN(), .5), std::numeric_limits<double>::infinity());
+    if (invalid.anchor() != QPointF(.5, .5) || invalid.move(10, 0, 100, 100) || std::abs(invalid.position().x() - .6) > .0001) return 6;
     std::cout << "Aim gesture arithmetic and pointer motion passed; no Windows hook or Android test.\n";
     return 0;
 }

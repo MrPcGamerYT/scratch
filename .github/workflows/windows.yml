@@ -68,6 +68,23 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Rust core unit tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $output = & cargo test --locked --manifest-path rust/nexus-core/Cargo.toml 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $output | Where-Object { "$_" -match 'error|fail|panic|thread' } | Select-Object -First 20 | ForEach-Object {
+              $text = "$_".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error::$text"
+            }
+            exit $code
+          }
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
