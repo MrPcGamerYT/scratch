@@ -46,7 +46,7 @@ try {
     & $studio -Bliss -QemuDir $engine -IsoPath $iso -DiskPath $blissDisk -PlayerFolder $blissPlayer -ExpectedSha256 $hash
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $blissPlayer 'images/android-base.qcow2')) -or -not (Test-Path (Join-Path $blissPlayer 'images/android-uefi-code.fd')) -or -not (Test-Path (Join-Path $blissPlayer 'images/android-uefi-vars.fd'))) { throw 'Bliss UEFI staging failed.' }
     $argsLog = Get-Content $env:NEXUS_TEST_LOG
-    foreach ($item in @('q35,vmport=off', 'if=pflash,format=raw,unit=0,readonly=on,file=' + (Join-Path $share 'edk2-x86_64-code.fd'), 'if=pflash,format=raw,unit=1,file=' + ($blissDisk + '.uefi-vars.fd'))) {
+    foreach ($item in @('q35,vmport=off', ('if=pflash,format=raw,unit=0,readonly=on,file=' + (Join-Path $share 'edk2-x86_64-code.fd')), ('if=pflash,format=raw,unit=1,file=' + ($blissDisk + '.uefi-vars.fd')))) {
         if ($argsLog -cnotcontains $item) { throw "Missing Bliss argument: $item" }
     }
     $global:LASTEXITCODE = 0

@@ -149,6 +149,9 @@ void MainWindow::launch() {
     QString error;
     if (!prepareManagedDisk(img, base, disk, &error)) { QMessageBox::critical(this, "Android system", error); return; }
     const QString vars = disk + ".uefi-vars.fd";
+    if (!hasCode && (QFileInfo::exists(vars) || QFileInfo::exists(vars + ".json"))) {
+        QMessageBox::critical(this, "UEFI firmware missing", "This instance already has UEFI variables but the staged firmware is missing. Restore the firmware; user data was preserved."); return;
+    }
     if (hasCode && (!QFileInfo(code).isFile() || !prepareManagedFirmware(varsTemplate, vars, &error))) {
         QMessageBox::critical(this, "UEFI firmware", error.isEmpty() ? "UEFI code is not a file." : error); return;
     }
