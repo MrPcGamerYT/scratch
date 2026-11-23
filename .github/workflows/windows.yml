@@ -25,18 +25,18 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: >-
-            base-devel git
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-glib2
-            mingw-w64-x86_64-pixman
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-libslirp
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-python
-            mingw-w64-x86_64-python-packaging
-            mingw-w64-x86_64-meson
-            mingw-w64-x86_64-ninja
+      - name: Install QEMU build dependencies
+        shell: msys2 {0}
+        run: |
+          set -o pipefail
+          if ! pacman --noconfirm --needed -S base-devel git \
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-glib2 mingw-w64-x86_64-pixman \
+            mingw-w64-x86_64-SDL2 mingw-w64-x86_64-libslirp mingw-w64-x86_64-pkgconf \
+            mingw-w64-x86_64-python mingw-w64-x86_64-python-packaging \
+            mingw-w64-x86_64-meson mingw-w64-x86_64-ninja 2>&1 | tee "$RUNNER_TEMP/deps.log"; then
+            tail -30 "$RUNNER_TEMP/deps.log" | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - name: Compile and collect QEMU
         shell: msys2 {0}
         run: |
