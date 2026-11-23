@@ -1,6 +1,12 @@
 # Project Nexus
 
-A first Windows prototype for running an Android-x86-compatible guest in QEMU with Windows Hypervisor Platform (WHPX). It provides a standalone PowerShell launcher and an optional Qt 6 desktop shell that downloads a stock Android-x86 image, starts QEMU and attempts to embed its native window. This is **not a finished BlueStacks alternative**: it does not include an Android image, multi-instance management, FPS controls, ARM translation, Google Play, or a GPU acceleration stack. Its keymapper supports single-pointer taps, tap sequences and repeat-while-held controls; true multitouch is not yet supported.
+A Windows Android-player prototype using a source-built QEMU engine and Windows Hypervisor Platform (WHPX). The player opens a developer-prepared system image and does not offer disk creation, ISO selection or Android installation. A separately packaged developer tool prepares the image.
+
+**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it does not support true multitouch, mouse-look, or a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
+
+## Player preview
+
+Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup**, not the emulator: controls do not save settings or operate Android. The Windows Qt player implements the corresponding layout and the existing working features described below; the keymap preview is illustrative and differs from the actual Qt editor.
 
 ## Requirements
 
@@ -10,33 +16,27 @@ A first Windows prototype for running an Android-x86-compatible guest in QEMU wi
   Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All
   ```
 
-  Check with `Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform`. QEMU reports an error if WHPX cannot initialize; the launcher does not silently fall back to software emulation. Virtual Machine Platform is not required specifically for QEMU WHPX.
-- The development bundle includes a source-built, Nexus-patched QEMU x64 engine in `qemu/bin`. Project Nexus automatically selects it. When building the shell yourself without the bundle, provide a compatible QEMU distribution with `qemu-system-x86_64.exe` and `qemu-img.exe` in the same directory.
-- An **x86_64** Android-x86 or compatible ISO. The Qt shell can download the unmodified Android-x86 9.0-r2 image, or you can supply your own. Android-x86 is an independently maintained x86 port of Android, not an official Google emulator image; Nexus does not modify it. Images differ in hardware, installer, licensing and native-bridge support; no particular image is guaranteed to boot or run games. This project does not redistribute Android or proprietary translation libraries. Android 9 is old and may be unpatched: do not use it for sensitive accounts or data.
-- Enough free storage for the guest, and a folder for the disk. The new 32 GiB QCOW2 disk is sparse but can grow toward its maximum size.
+  Check with `Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform`. The player does not silently fall back from WHPX.
+- The player bundle includes a source-built Nexus-patched QEMU in `qemu/bin`. A developer must supply a compatible, legally distributable, preinstalled x86_64 Android image at `images/android-base.qcow2`. The player has no OS image by default.
+- Guest compatibility, graphics, native-bridge support and redistribution rights depend on the image. Android-x86 9.0-r2 is old and potentially unpatched; do not use it for sensitive accounts or data. No proprietary translation libraries are provided.
 
-## Quick start: PowerShell
+## Separate developer image tool
 
-From this repository in a normal Windows PowerShell, with paths adjusted:
-
-```powershell
-.\scripts\launch.ps1 -QemuDir 'C:\Program Files\qemu' `
-  -IsoPath 'C:\AndroidEmulator\android.iso' `
-  -DiskPath 'C:\AndroidEmulator\android.qcow2' -Boot iso
-```
-
-The folder containing the disk must already exist. A missing disk is created only when booting from ISO. Boot the live system or use the image's installer to install to the virtual disk. **Installing to the virtual disk is separate from simply booting a live ISO.** When installation is complete, shut down the guest, then boot the disk:
+Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separately from the **ProjectNexus-Windows** player artifact. Obtain a compatible ISO and review its redistribution terms. The developer tool creates a new virtual disk, launches its installer and stages the resulting standalone image in the player package; it does not prove that the installation succeeded. The ISO installer requires a real WHPX-capable Windows host. For example:
 
 ```powershell
-.\scripts\launch.ps1 -QemuDir 'C:\Program Files\qemu' `
-  -DiskPath 'C:\AndroidEmulator\android.qcow2' -Boot disk
+# Run from the extracted developer tool directory, not the player directory.
+.\prepare-android.ps1 -IsoPath 'C:\Android\android.iso' `
+  -DiskPath 'C:\Android\new-install.qcow2' -PlayerFolder 'C:\NexusPlayer'
 ```
 
-Options include `-MemoryMB 4096`, `-Cpus 4`, and `-ForwardAdb -AdbPort 5555`. The optional forwarding binds only to host loopback and forwards TCP to guest port 5555; **it does not enable ADB in Android**. The image must support and enable TCP ADB separately. Protect debugging access and only use trusted guest images.
+The disk's parent folder must already exist. Install Android interactively, shut it down cleanly, and confirm staging. The tool will not overwrite an existing disk or base image. Test boot and verify distribution rights before sharing the prepared player. For stock Android-x86 9.0-r2, see the [release notes](https://www.android-x86.org/releases/releasenote-9-0-r2.html) and [ISO download](https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download). Published SHA-256: `f7eb8fc56f29ad5432335dc054183acf086c539f3990f0b6e9ff58bd6df4604e`.
 
-## Build and use the Qt shell
+The prepared image starts automatically by default. For persistent user data, the player internally creates a separate per-user QCOW2 overlay under `%APPDATA%\ProjectNexus\Project Nexus\instances`; users are never asked to create or select disks. The base is not modified by normal VM writes. If the base is moved or changed, startup stops rather than replacing the overlay. Back up both. Legacy disks are preserved but not migrated or selectable in the new player.
 
-Install CMake 3.21+, a Windows C++17 compiler (e.g. Visual Studio 2022), and Qt 6.2+ Widgets matching that compiler. In a developer PowerShell, point CMake to the Qt installation:
+## Build and use the Qt player
+
+Install CMake 3.21+, a Windows C++17 compiler (e.g. Visual Studio 2022), and Qt 6.2+ Widgets and Network matching that compiler:
 
 ```powershell
 cmake -S . -B build -DCMAKE_PREFIX_PATH='C:\Qt\6.8.3\msvc2022_64'
@@ -44,34 +44,20 @@ cmake --build build --config Release
 .\build\Release\ProjectNexus.exe
 ```
 
-If required, run `windeployqt` from your Qt installation on the built executable before launching it outside the Qt environment. The packaged shell selects its bundled QEMU automatically; select a disk path in the sidebar. Use **Download Android-x86 9.0** to download the stock ISO into a new file, or select an existing ISO. The download is streamed to a temporary file and committed only after SHA-256 verification; cancellation or a mismatch discards it. The image is about 921 MiB and requires internet access. Source: [Android-x86 9.0-r2 release notes](https://www.android-x86.org/releases/releasenote-9-0-r2.html), [SourceForge download](https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download), [published SHA-256](https://osdn.net/projects/android-x86/downloads/71931/android-x86_64-9.0-r2.iso/). Start with **ISO**, install Android if desired, shut down, then select **Disk**. Paths and settings are stored locally using Qt's `QSettings`. Memory, cores, and optional loopback ADB forwarding can be configured before launch. The **Shut down** button sends QEMU's `system_powerdown` monitor command; the guest may ignore it, so shut down Android normally if necessary. Forcibly closing the shell can corrupt the guest disk.
+For a standalone build deploy Qt with `windeployqt`, bundle the engine and prepare the image as above. CPU cores, memory, cursor visibility, automatic startup and optional loopback ADB forwarding are configurable in Settings and apply at the next start. Forwarding TCP does not enable ADB in Android. **Shut down** sends QEMU's `system_powerdown`; the guest may ignore it. Shut down inside Android if necessary. Forcibly closing can corrupt the guest disk.
 
-The shell looks for a visible top-level window belonging to its QEMU process for up to 30 seconds and reparents it. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails, QEMU may still be usable in its own window; shut it down normally. The keymapper installs a Windows low-level keyboard hook only while enabled and removes it when disabled or the VM closes. Mapped keys are captured only when the embedded QEMU display has focus; a held click is released when focus is lost.
-
-## Prepared player image (developer workflow)
-
-The development artifact does **not** contain Android or an installed disk. A developer must obtain a compatible ISO with suitable redistribution rights, then use the separate `prepare-android.ps1` tool included in the package. The tool launches the Android installer into a new virtual disk; installation is interactive. After a clean guest shutdown and explicit confirmation it checks the disk and stages it in the player folder. It will not overwrite an existing disk or base image.
-
-```powershell
-# Run from the extracted player folder. Both folders must already exist.
-.\prepare-android.ps1 -IsoPath 'C:\Android\android.iso' `
-  -DiskPath 'C:\Android\new-install.qcow2' -PlayerFolder $PWD
-```
-
-Test the staged system before distribution; the tool cannot prove that Android was installed or that redistribution is permitted. With `images/android-base.qcow2` present, the player starts it automatically by default and creates a **separate per-user QCOW2 overlay** under `%APPDATA%\ProjectNexus\Project Nexus\instances`. The base is not modified by normal VM writes. The existing base location, size, and modification time are recorded; changing or moving it causes startup to stop safely rather than replacing the user disk. Back up both the base and overlay. An existing legacy user disk is not migrated automatically.
-
-Without a prepared base, the previous ISO/disk workflow is still available under **Settings → Developer / legacy image setup**, preserving earlier installations. No OS image is downloaded or bundled by the player automatically. A prepared base takes precedence over legacy ISO settings. Disable **Start prepared image automatically** in Settings to start it manually.
+The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails QEMU may remain in a separate window; shut down Android normally.
 
 ## Keymap and mouse
 
-1. Start the VM and open the Android screen or game. Click **Edit keymap**.
+1. Start the VM and open the Android screen or game. Click **Keymap** in the right-hand toolbar.
 2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
 3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
-4. Save, check **Enable keymap**, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+4. Save, check **On** below Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
 
 These actions use one virtual mouse pointer. Multiple markers are sequential, not simultaneous touches; while a sequence is running other mapped keys are ignored. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
 
-Use **Lock mouse** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
+Use **Lock** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
 
 ## Scope and limitations
 

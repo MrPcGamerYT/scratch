@@ -144,13 +144,35 @@ jobs:
           Copy-Item build/Release/ProjectNexus.exe package/
           windeployqt --release package/ProjectNexus.exe
           Copy-Item README.md package/
-          Copy-Item scripts/launch.ps1 package/
-          Copy-Item scripts/prepare-android.ps1 package/
+          New-Item -ItemType Directory -Path image-studio -Force | Out-Null
+          Copy-Item -Recurse package/qemu image-studio/qemu
+          Copy-Item scripts/launch.ps1 image-studio/
+          Copy-Item scripts/prepare-android.ps1 image-studio/
+          Copy-Item README.md image-studio/
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-Windows
           path: package/
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjectNexus-ImageStudio-Developer
+          path: image-studio/
+          if-no-files-found: error
+  preview:
+    name: Interactive UI preview
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Check interactive preview in Chromium
+        run: |
+          python3 preview/server.py &
+          node tests/preview_test.js
   qemu-smoke:
     name: Real QEMU boot smoke test (Linux TCG)
     runs-on: ubuntu-24.04

@@ -22,6 +22,8 @@ qt_add_executable(ProjectNexus WIN32
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/settingsdialog.cpp
+    src/settingsdialog.h
     src/emulatorview.cpp
     src/emulatorview.h
     src/inputmapper.cpp
@@ -31,7 +33,8 @@ qt_add_executable(ProjectNexus WIN32
     src/keymapdialog.cpp
     src/keymapdialog.h
 )
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_download nexus_controls user32)
+qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32)
 
 include(CTest)
 if(BUILD_TESTING)
