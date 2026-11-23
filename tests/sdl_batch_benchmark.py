@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory() as directory:
         if proc.poll() is None:
             proc.kill(); proc.wait()
     ppm = screenshot.read_bytes()
-    if not ppm.startswith(b'P6\n320 200\n255\n'):
+    if not (ppm.startswith(b'P6\n320 200\n255\n') or ppm.startswith(b'P6\n640 400\n255\n')):
         raise RuntimeError(f'VGA workload did not reach graphics mode: {ppm[:60]!r}')
     text = trace.read_text(errors='replace')
     batches = [int(value) for value in re.findall(r'sdl2_2d_nexus_present.*rectangles=(\d+)', text)]

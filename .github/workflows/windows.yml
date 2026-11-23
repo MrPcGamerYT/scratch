@@ -127,6 +127,7 @@ jobs:
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
             if ($code -ne 0) { throw "SDL batching benchmark failed: $output" }
+            Write-Output "::notice::$output"
           } catch {
             $text = ($_ | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error::$text"

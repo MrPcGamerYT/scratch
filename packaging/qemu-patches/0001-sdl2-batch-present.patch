@@ -1,28 +1,29 @@
 diff --git a/include/ui/sdl2.h b/include/ui/sdl2.h
-index dbe6e3d..d00f24f 100644
+index dbe6e3d..d201d40 100644
 --- a/include/ui/sdl2.h
 +++ b/include/ui/sdl2.h
 @@ -40,6 +40,9 @@ struct sdl2_console {
      int hidden;
      int opengl;
      int updates;
-+    /* Batch dirty-rectangle presents during a synchronous VGA refresh. */
++    /* Project Nexus, 2026-11-23: batch presents during a VGA refresh. */
 +    bool nexus_batch_updates;
 +    unsigned int nexus_pending_rectangles;
      int idle_counter;
      int ignore_hotkeys;
      bool gui_keysym;
 diff --git a/ui/sdl2-2d.c b/ui/sdl2-2d.c
-index 7305238..c84235f 100644
+index 7305238..d301f8e 100644
 --- a/ui/sdl2-2d.c
 +++ b/ui/sdl2-2d.c
-@@ -27,6 +27,19 @@
+@@ -27,6 +27,20 @@
  #include "ui/console.h"
  #include "ui/input.h"
  #include "ui/sdl2.h"
 +#include "trace.h"
 +
-+/* Upload dirty regions as usual, but present only once per hardware refresh.
++/* Project Nexus, 2026-11-23: batch SDL presents within a refresh.
++ * Upload dirty regions as usual, but present only once per hardware refresh.
 + * Updates outside the refresh (including asynchronous devices) still present
 + * immediately, preserving their existing latency and ordering.
 + */
@@ -36,7 +37,7 @@ index 7305238..c84235f 100644
  
  void sdl2_2d_update(DisplayChangeListener *dcl,
                      int x, int y, int w, int h)
-@@ -37,7 +50,7 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
+@@ -37,7 +51,7 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
      size_t surface_data_offset;
      assert(!scon->opengl);
  
@@ -45,7 +46,7 @@ index 7305238..c84235f 100644
          return;
      }
  
-@@ -51,9 +64,11 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
+@@ -51,9 +65,11 @@ void sdl2_2d_update(DisplayChangeListener *dcl,
      SDL_UpdateTexture(scon->texture, &rect,
                        surface_data(surf) + surface_data_offset,
                        surface_stride(surf));
@@ -60,7 +61,7 @@ index 7305238..c84235f 100644
  }
  
  void sdl2_2d_switch(DisplayChangeListener *dcl,
-@@ -66,6 +81,8 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
+@@ -66,6 +82,8 @@ void sdl2_2d_switch(DisplayChangeListener *dcl,
      assert(!scon->opengl);
  
      scon->surface = new_surface;
@@ -69,7 +70,7 @@ index 7305238..c84235f 100644
  
      if (scon->texture) {
          SDL_DestroyTexture(scon->texture);
-@@ -129,7 +146,13 @@ void sdl2_2d_refresh(DisplayChangeListener *dcl)
+@@ -129,7 +147,13 @@ void sdl2_2d_refresh(DisplayChangeListener *dcl)
      struct sdl2_console *scon = container_of(dcl, struct sdl2_console, dcl);
  
      assert(!scon->opengl);
@@ -84,7 +85,7 @@ index 7305238..c84235f 100644
  }
  
 diff --git a/ui/trace-events b/ui/trace-events
-index 3eba9ca..6c8af58 100644
+index 3eba9ca..afc43e1 100644
 --- a/ui/trace-events
 +++ b/ui/trace-events
 @@ -184,3 +184,6 @@ dbus_can_share_map(bool share) "can_share_map: %d"
@@ -92,5 +93,5 @@ index 3eba9ca..6c8af58 100644
  # egl-helpers.c
  egl_init_d3d11_device(void *p) "d3d device: %p"
 +
-+# Project Nexus SDL2 2D batching (disabled unless explicitly traced)
++# Project Nexus, 2026-11-23: SDL2 2D batching trace (off by default)
 +sdl2_2d_nexus_present(int console, unsigned int rectangles) "console=%d rectangles=%u"
