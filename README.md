@@ -34,7 +34,27 @@ The disk's parent folder must already exist. For Android-x86 9.0-r2, select **Ad
 
 The tool will not overwrite an existing disk or base image. Test boot and verify distribution rights before sharing the prepared player. For stock Android-x86 9.0-r2, see the [release notes](https://www.android-x86.org/releases/releasenote-9-0-r2.html) and [ISO download](https://sourceforge.net/projects/android-x86/files/Release%209.0/android-x86_64-9.0-r2.iso/download). Published SHA-256: `f7eb8fc56f29ad5432335dc054183acf086c539f3990f0b6e9ff58bd6df4604e`.
 
-The prepared image starts automatically by default. For persistent user data, the player internally creates a separate per-user QCOW2 overlay under `%APPDATA%\ProjectNexus\Project Nexus\instances`; users are never asked to create or select disks. The base is not modified by normal VM writes. If the base is moved or changed, startup stops rather than replacing the overlay. Back up both. Legacy disks are preserved but not migrated or selectable in the new player.
+The prepared image starts automatically when the player opens, even if an older saved setting disabled automatic startup. If startup fails, use **Retry** after fixing the problem. For persistent user data, the player internally creates a separate per-user QCOW2 overlay under `%APPDATA%\ProjectNexus\Project Nexus\instances`; users are never asked to create or select disks. The base is not modified by normal VM writes. If the base is moved or changed, startup stops rather than replacing the overlay. Back up both. Legacy disks are preserved but not migrated or selectable in the new player.
+
+## Offline developer file editor (no ADB)
+
+The separately packaged Image Studio contains an **offline file browser**, running under a Linux desktop or Windows 11 WSLg. It copies a stopped, standalone QCOW2 image to a new filename, then lets the developer select a filesystem and browse, import/replace, export, create folders and delete files in the **copy**. It never edits the chosen source. This does not need Android to boot or ADB. Stop every VM and back up the source before copying; otherwise even the copy may be inconsistent. Do not open the working copy in a VM while the editor is running. Closing the editor flushes its changes.
+
+For Windows 11 with WSLg and an Ubuntu WSL distribution, install dependencies in Ubuntu (requires WSL setup and network access), then run the editor from the extracted developer package, with its actual path substituted:
+
+```bash
+sudo apt update
+sudo apt install python3-guestfs python3-tk qemu-utils libguestfs-tools
+export LIBGUESTFS_BACKEND=direct
+export LIBGUESTFS_BACKEND_SETTINGS=force_tcg
+/usr/bin/python3 /mnt/c/path/to/ImageStudio/offline-files/offline_editor.py
+```
+
+Libguestfs requires its Linux appliance/kernel and may need a working WSLg setup; this workflow has not yet been verified on a real Windows PC. Copy the working image to a safe location first, shut down the editor, then use `prepare-android.ps1 -Resume -DiskPath 'C:\path\working.qcow2' -PlayerFolder 'C:\NexusPlayer'` to boot-test and stage it. It won't replace an existing player base; changing the base also requires a deliberate user-overlay migration. The browser operates on one selected filesystem at a time and does **not** unpack nested `system.sfs` / `system.img`, decrypt partitions, preserve all Android SELinux metadata for new files, bypass verified boot, or build an Android OS. Edits may prevent booting; keep the original backup.
+
+## Future Nexus Android system
+
+The recommended direction is a custom, developer-owned **AOSP-based x86-64 build**, not the Android-x86 project. x86-64 is the CPU architecture, not ownership of the OS. AOSP has upstream licenses and cannot simply be called proprietary software. Building and booting it on our QEMU configuration will require a compatible device/board configuration, kernel, image build, and real-host tests. No Nexus Android OS or AOSP build pipeline exists in this prototype yet; the existing image workflow still needs a compatible separately obtained OS. Do not assume Cuttlefish or Android Studio images will boot unchanged in this player.
 
 ## Build and use the Qt player
 
@@ -46,7 +66,7 @@ cmake --build build --config Release
 .\build\Release\ProjectNexus.exe
 ```
 
-For a standalone build deploy Qt with `windeployqt`, bundle the engine and prepare the image as above. CPU cores, memory, cursor visibility, automatic startup and optional loopback ADB forwarding are configurable in Settings and apply at the next start. Forwarding TCP does not enable ADB in Android. **Shut down** sends QEMU's `system_powerdown`; the guest may ignore it. Shut down inside Android if necessary. Forcibly closing can corrupt the guest disk.
+For a standalone build deploy Qt with `windeployqt`, bundle the engine and prepare the image as above. CPU cores, memory, cursor visibility and optional loopback ADB forwarding are configurable in Settings and apply at the next start. Forwarding TCP does not enable ADB in Android. **Shut down** sends QEMU's `system_powerdown`; the guest may ignore it. Shut down inside Android if necessary. Forcibly closing can corrupt the guest disk.
 
 The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails QEMU may remain in a separate window; shut down Android normally.
 
@@ -54,7 +74,7 @@ The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows d
 
 **Install APK** requires a running image with TCP ADB enabled and authorized, local ADB forwarding enabled before startup, and Android platform-tools supplied by the developer in `platform-tools/adb.exe` beside the player or on PATH. Platform-tools is not bundled. Only install trusted APKs; the command may update an existing package. ADB exposes a debugging interface to local processes and is off by default. This integration is not yet verified against a real Android image.
 
-Volume, RAM cleanup, and the FPS toggle are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
+Volume, RAM cleanup, FPS, and aim/fire are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
 
 The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
 
@@ -67,7 +87,7 @@ The developer tool is a separate package, but this is not access control: a pers
 
 These actions use one virtual mouse pointer. Multiple markers are sequential, not simultaneous touches; while a sequence is running other mapped keys are ignored. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
 
-Use **Lock** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
+Aim/fire is not available: the existing one-pointer QMP input cannot provide simultaneous aiming and firing, and cursor confinement alone does not move a game camera. Use **Lock** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
 
 ## Scope and limitations
 
@@ -79,7 +99,7 @@ Use **Lock** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** 
 
 ## GitHub Actions tests
 
-All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux job uses real QEMU TCG to create a QCOW2 disk and boot a tiny test sector. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
 
 ## Development status
 

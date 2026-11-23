@@ -55,7 +55,6 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *device = page("Device", "Device profiles require support from the Android system image.", &form);
     form->addRow("Phone profile", unavailable("Not available in this build")); stack->addWidget(device);
     auto *preferences = page("Preferences", "Startup and debugging options.", &form);
-    autoStart = new QCheckBox("Start player automatically", preferences); autoStart->setChecked(settings.value("autoStart", true).toBool()); form->addRow(autoStart);
     adbForward = new QCheckBox("Enable local ADB forwarding", preferences); adbForward->setChecked(settings.value("adbForward", false).toBool()); form->addRow(adbForward);
     adbPort = new QSpinBox(preferences); adbPort->setRange(1024, 65535); adbPort->setValue(settings.value("adbPort", 5555).toInt()); form->addRow("Local ADB port", adbPort);
     auto *adbNote = new QLabel("Local forwarding does not enable ADB inside Android.", preferences); adbNote->setObjectName("muted"); adbNote->setWordWrap(true); form->addRow(adbNote); stack->addWidget(preferences);
@@ -68,6 +67,6 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
 }
 void SettingsDialog::save() {
     QSettings s; s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
-    s.setValue("showCursor", showCursor->isChecked()); s.setValue("autoStart", autoStart->isChecked());
+    s.setValue("showCursor", showCursor->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
 }

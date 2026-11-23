@@ -165,6 +165,7 @@ jobs:
           Copy-Item -Recurse package/qemu image-studio/qemu
           Copy-Item scripts/launch.ps1 image-studio/
           Copy-Item scripts/prepare-android.ps1 image-studio/
+          Copy-Item -Recurse image-studio-tools image-studio/offline-files
           Copy-Item README.md image-studio/
       - uses: actions/upload-artifact@v4
         with:
@@ -176,6 +177,22 @@ jobs:
           name: ProjectNexus-ImageStudio-Developer
           path: image-studio/
           if-no-files-found: error
+  offline-files:
+    name: Offline image editor (Linux libguestfs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-guestfs qemu-utils libguestfs-tools
+          sudo chmod a+r /boot/vmlinuz*
+      - name: Test actual QCOW2 copy and filesystem edits
+        env:
+          LIBGUESTFS_BACKEND: direct
+          LIBGUESTFS_BACKEND_SETTINGS: force_tcg
+        run: /usr/bin/python3 tests/image_workspace_test.py
   preview:
     name: Interactive UI preview
     runs-on: ubuntu-24.04

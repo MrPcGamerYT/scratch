@@ -12,6 +12,5 @@ private:
     QSpinBox *cpus;
     QSpinBox *adbPort;
     QCheckBox *showCursor;
-    QCheckBox *autoStart;
     QCheckBox *adbForward;
 };

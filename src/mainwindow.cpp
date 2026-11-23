@@ -48,7 +48,7 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
     qmp = new Qmp(process, this); mapper = new InputMapper(qmp, this); mouseLock = new MouseLock(this);
-    setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(900, 600);
+    setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(1100, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
     auto *headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(18, 9, 18, 9); headerLayout->setSpacing(8);
@@ -63,10 +63,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
     auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
     fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
+    auto *aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setEnabled(false); aimButton->setToolTip("Mouse-look and simultaneous firing need Android multitouch support; not implemented yet."); dockLayout->addWidget(aimButton);
     auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
-    launchButton = dockButton("Start", header); headerLayout->addWidget(launchButton);
+    launchButton = dockButton("Retry", header); launchButton->setToolTip("Retry starting the prepared Android system"); headerLayout->addWidget(launchButton);
     shutdownButton = dockButton("Stop", header); headerLayout->addWidget(shutdownButton);
     root->addWidget(header);
 
@@ -112,13 +113,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
         if (status == QProcess::CrashExit || code != 0) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
     });
-    const QString base = QCoreApplication::applicationDirPath() + "/images/android-base.qcow2";
-    if (QFileInfo(base).isFile() && QSettings().value("autoStart", true).toBool()) QTimer::singleShot(0, this, [this] { launch(); });
-    else if (!QFileInfo(base).isFile()) statusBar()->showMessage("Android system image not installed. Contact the player developer.");
+    QTimer::singleShot(0, this, [this] { launch(); });
 }
 
 void MainWindow::setRunning(bool running) {
-    launchButton->setEnabled(!running); vmStatus->setText(running ? "●  ONLINE" : "●  OFFLINE"); updateControls();
+    launchButton->setVisible(!running); launchButton->setEnabled(!running); vmStatus->setText(running ? "●  ONLINE" : "●  OFFLINE"); updateControls();
 }
 void MainWindow::launch() {
     if (process->state() != QProcess::NotRunning) return;
