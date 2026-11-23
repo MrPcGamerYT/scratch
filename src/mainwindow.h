@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include "keymap.h"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -10,9 +11,12 @@
 #include <windows.h>
 
 class EmulatorView;
+class Qmp;
+class InputMapper;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
+class QLabel;
 class QProcess;
 class QPushButton;
 class QSpinBox;
@@ -30,6 +34,8 @@ private:
     void launch();
     void downloadAndroid();
     void findGuestWindow();
+    void editKeymap();
+    void updateKeymapControls();
     void setRunning(bool running);
     void saveSettings();
     void loadSettings();
@@ -43,6 +49,15 @@ private:
     QSpinBox *adbPort;
     QComboBox *boot;
     QCheckBox *adbForward;
+    QCheckBox *showCursor;
+    QCheckBox *keymapEnabled;
+    QPushButton *editKeymapButton;
+    QPushButton *fullscreenButton;
+    QLabel *vmStatus;
+    Qmp *qmp;
+    InputMapper *mapper;
+    QList<KeyBinding> bindings;
+    QString keymapPath;
     QPushButton *downloadButton;
     QPushButton *launchButton;
     QPushButton *shutdownButton;

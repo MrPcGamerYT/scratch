@@ -1,6 +1,9 @@
 #include "mainwindow.h"
 #include "emulatorview.h"
 #include "imagedownload.h"
+#include "inputmapper.h"
+#include "keymapdialog.h"
+#include "qmp.h"
 
 #include <QCoreApplication>
 #include <QCheckBox>
@@ -9,6 +12,8 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
+#include <QGuiApplication>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -19,6 +24,10 @@
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QSettings>
+#include <QScreen>
+#include <QScrollArea>
+#include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTimer>
@@ -55,59 +64,109 @@ BOOL CALLBACK findWindow(HWND hwnd, LPARAM data) {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
+    qmp = new Qmp(process, this);
+    mapper = new InputMapper(qmp, this);
     setWindowTitle("Project Nexus");
-    resize(1200, 720);
+    resize(1380, 800); setMinimumSize(920, 620);
     auto *central = new QWidget(this);
-    auto *layout = new QHBoxLayout(central);
-    view = new EmulatorView(central);
-    layout->addWidget(view, 1);
+    auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
 
-    auto *panel = new QGroupBox("Virtual machine", central);
-    panel->setMaximumWidth(370);
-    auto *form = new QFormLayout(panel);
-    qemuPath = new QLineEdit(panel);
-    isoPath = new QLineEdit(panel);
-    diskPath = new QLineEdit(panel);
-    form->addRow("QEMU", pathRow(qemuPath, "Executables (*.exe)", false, panel));
-    form->addRow("Android ISO", pathRow(isoPath, "ISO images (*.iso)", false, panel));
-    downloadButton = new QPushButton("Download Android-x86 9.0", panel);
-    form->addRow(downloadButton);
-    form->addRow("Disk", pathRow(diskPath, "QCOW2 disks (*.qcow2)", true, panel));
-    memory = new QSpinBox(panel); memory->setRange(512, 131072); memory->setSingleStep(512); memory->setSuffix(" MB");
-    cpus = new QSpinBox(panel); cpus->setRange(1, 64);
-    adbPort = new QSpinBox(panel); adbPort->setRange(1024, 65535);
-    adbForward = new QCheckBox("Forward local ADB port", panel);
-    boot = new QComboBox(panel); boot->addItem("ISO (install / live)", "d"); boot->addItem("Disk (installed system)", "c");
-    form->addRow("Memory", memory); form->addRow("CPU cores", cpus);
-    form->addRow("Boot from", boot); form->addRow(adbForward); form->addRow("ADB port", adbPort);
-    auto *note = new QLabel("First boot: select an ISO. A missing disk is created as a 32 GiB sparse QCOW2 file. Install Android to the disk, then boot from Disk.", panel);
-    note->setWordWrap(true); form->addRow(note);
-    launchButton = new QPushButton("Launch", panel);
-    shutdownButton = new QPushButton("Request shutdown", panel);
-    form->addRow(launchButton); form->addRow(shutdownButton);
-    layout->addWidget(panel);
+    auto *header = new QFrame(central); header->setObjectName("header");
+    auto *headerLayout = new QHBoxLayout(header); headerLayout->setContentsMargins(24, 15, 24, 15);
+    auto *brandBox = new QVBoxLayout; brandBox->setSpacing(0);
+    auto *eyebrow = new QLabel("ANDROID WORKSPACE", header); eyebrow->setObjectName("eyebrow");
+    auto *brand = new QLabel("Project Nexus", header); brand->setObjectName("brand");
+    brandBox->addWidget(eyebrow); brandBox->addWidget(brand); headerLayout->addLayout(brandBox);
+    headerLayout->addStretch();
+    vmStatus = new QLabel("READY", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
+    fullscreenButton = new QPushButton("Full screen", header); headerLayout->addWidget(fullscreenButton);
+    root->addWidget(header);
+
+    auto *body = new QHBoxLayout; body->setContentsMargins(18, 18, 18, 18); body->setSpacing(16); root->addLayout(body, 1);
+    auto *side = new QFrame(central); side->setObjectName("sidePanel"); side->setFixedWidth(350);
+    auto *sideOuter = new QVBoxLayout(side); sideOuter->setContentsMargins(12, 12, 12, 12);
+    auto *scroll = new QScrollArea(side); scroll->setWidgetResizable(true); scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *sideContents = new QWidget(scroll); auto *sideLayout = new QVBoxLayout(sideContents); sideLayout->setContentsMargins(2, 2, 2, 2);
+    auto *sideTitle = new QLabel("Your virtual machine", sideContents); sideTitle->setObjectName("sectionTitle"); sideLayout->addWidget(sideTitle);
+    auto *sideIntro = new QLabel("Configure your Android workspace before launch.", sideContents); sideIntro->setObjectName("muted"); sideIntro->setWordWrap(true); sideLayout->addWidget(sideIntro);
+
+    auto *storage = new QGroupBox("SYSTEM & STORAGE", sideContents); auto *form = new QFormLayout(storage); form->setLabelAlignment(Qt::AlignLeft);
+    qemuPath = new QLineEdit(storage); isoPath = new QLineEdit(storage); diskPath = new QLineEdit(storage);
+    form->addRow("QEMU", pathRow(qemuPath, "Executables (*.exe)", false, storage));
+    form->addRow("ISO", pathRow(isoPath, "ISO images (*.iso)", false, storage));
+    form->addRow("Disk", pathRow(diskPath, "QCOW2 disks (*.qcow2)", true, storage));
+    boot = new QComboBox(storage); boot->addItem("ISO · install / live", "d"); boot->addItem("Disk · installed system", "c"); form->addRow("Boot", boot);
+    downloadButton = new QPushButton("Download Android-x86", storage); form->addRow(downloadButton);
+    auto *storageNote = new QLabel("A new disk is created automatically (up to 32 GiB).", storage); storageNote->setObjectName("muted"); storageNote->setWordWrap(true); form->addRow(storageNote);
+    sideLayout->addWidget(storage);
+
+    auto *performance = new QGroupBox("PERFORMANCE & DISPLAY", sideContents); auto *perfForm = new QFormLayout(performance);
+    memory = new QSpinBox(performance); memory->setRange(512, 131072); memory->setSingleStep(512); memory->setSuffix(" MB");
+    cpus = new QSpinBox(performance); cpus->setRange(1, 64);
+    showCursor = new QCheckBox("Show host mouse cursor", performance);
+    perfForm->addRow("Memory", memory); perfForm->addRow("CPU cores", cpus); perfForm->addRow("Graphics", new QLabel("Standard VGA", performance)); perfForm->addRow(showCursor);
+    auto *displayNote = new QLabel("Guest resolution is controlled by Android. Restart the VM after changing these settings.", performance); displayNote->setObjectName("muted"); displayNote->setWordWrap(true); perfForm->addRow(displayNote);
+    sideLayout->addWidget(performance);
+
+    auto *network = new QGroupBox("ADVANCED", sideContents); auto *netForm = new QFormLayout(network);
+    adbPort = new QSpinBox(network); adbPort->setRange(1024, 65535); adbForward = new QCheckBox("Forward local ADB port", network);
+    netForm->addRow(adbForward); netForm->addRow("Port", adbPort); sideLayout->addWidget(network);
+    sideLayout->addStretch(); scroll->setWidget(sideContents); sideOuter->addWidget(scroll); body->addWidget(side);
+
+    auto *viewport = new QFrame(central); viewport->setObjectName("viewportPanel"); auto *viewportLayout = new QVBoxLayout(viewport);
+    viewportLayout->setContentsMargins(14, 14, 14, 14); viewportLayout->setSpacing(12);
+    auto *viewportHeader = new QHBoxLayout;
+    auto *screenTitles = new QVBoxLayout; screenTitles->setSpacing(2);
+    auto *screenTitle = new QLabel("Android display", viewport); screenTitle->setObjectName("sectionTitle");
+    auto *screenNote = new QLabel("Your VM appears here when it starts", viewport); screenNote->setObjectName("muted");
+    screenTitles->addWidget(screenTitle); screenTitles->addWidget(screenNote); viewportHeader->addLayout(screenTitles); viewportHeader->addStretch();
+    launchButton = new QPushButton("Start emulator", viewport); launchButton->setObjectName("primary"); viewportHeader->addWidget(launchButton);
+    shutdownButton = new QPushButton("Shut down", viewport); viewportHeader->addWidget(shutdownButton); viewportLayout->addLayout(viewportHeader);
+    view = new EmulatorView(viewport); viewportLayout->addWidget(view, 1);
+    auto *tools = new QHBoxLayout; editKeymapButton = new QPushButton("Edit keymap", viewport); tools->addWidget(editKeymapButton);
+    keymapEnabled = new QCheckBox("Enable keymap", viewport); tools->addWidget(keymapEnabled); tools->addStretch();
+    auto *hint = new QLabel("Click the Android display before using mapped keys", viewport); hint->setObjectName("muted"); tools->addWidget(hint); viewportLayout->addLayout(tools);
+    body->addWidget(viewport, 1);
     setCentralWidget(central);
     loadSettings();
+    const QString profileDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/keymaps";
+    QDir().mkpath(profileDir); keymapPath = QDir(profileDir).filePath("default.json");
+    QString keymapError;
+    if (!loadKeymap(keymapPath, &bindings, &keymapError)) statusBar()->showMessage("Keymap could not be loaded: " + keymapError);
+    else statusBar()->showMessage("Ready. Select your disk and start the emulator.");
     setRunning(false);
-    statusBar()->showMessage("Ready. Check WHPX and virtualization before launching.");
 
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(downloadButton, &QPushButton::clicked, this, [this] { downloadAndroid(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] {
-        if (process->state() == QProcess::Running) {
-            process->write("system_powerdown\n");
-            statusBar()->showMessage("Shutdown requested. The guest may need to be shut down from Android instead.");
-        }
+        qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest.");
+    });
+    connect(fullscreenButton, &QPushButton::clicked, this, [this] {
+        if (isFullScreen()) { showNormal(); fullscreenButton->setText("Full screen"); }
+        else { showFullScreen(); fullscreenButton->setText("Exit full screen"); }
+    });
+    connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
+    connect(keymapEnabled, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (!enabled) { mapper->stop(); statusBar()->showMessage("Keymap disabled."); return; }
+        if (!mapper->start(view->windowHandle(), bindings)) {
+            QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false);
+            QMessageBox::warning(this, "Keymap unavailable", "Could not enable the keymap. Confirm the VM is running, embedded, and has at least one binding.");
+        } else statusBar()->showMessage("Keymap enabled. Click the Android display to use it.");
+    });
+    connect(qmp, &Qmp::readyChanged, this, [this](bool) { updateKeymapControls(); });
+    connect(qmp, &Qmp::error, this, [this](const QString &message) {
+        if (keymapEnabled->isChecked()) keymapEnabled->setChecked(false);
+        statusBar()->showMessage("QEMU monitor: " + message);
     });
     connect(embedTimer, &QTimer::timeout, this, [this] { findGuestWindow(); });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
-            embedTimer->stop(); setRunning(false);
+            embedTimer->stop(); qmp->reset(); setRunning(false);
             QMessageBox::critical(this, "QEMU failed to start", process->errorString());
         }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        embedTimer->stop(); view->clear(); setRunning(false);
+        embedTimer->stop(); keymapEnabled->setChecked(false); mapper->stop(); qmp->reset(); view->clear(); setRunning(false);
         const QString output = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
         statusBar()->showMessage(QString("QEMU stopped (exit code %1).").arg(code));
         if (status == QProcess::CrashExit || code != 0)
@@ -118,16 +177,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
 void MainWindow::setRunning(bool running) {
     launchButton->setEnabled(!running);
     downloadButton->setEnabled(!running);
-    shutdownButton->setEnabled(running);
+    shutdownButton->setEnabled(running && qmp->isReady());
+    vmStatus->setText(running ? "RUNNING" : "READY");
     qemuPath->parentWidget()->setEnabled(!running); isoPath->parentWidget()->setEnabled(!running); diskPath->parentWidget()->setEnabled(!running);
     memory->setEnabled(!running); cpus->setEnabled(!running); boot->setEnabled(!running);
-    adbForward->setEnabled(!running); adbPort->setEnabled(!running);
+    adbForward->setEnabled(!running); adbPort->setEnabled(!running); showCursor->setEnabled(!running);
+    updateKeymapControls();
 }
 
 void MainWindow::saveSettings() {
     QSettings s;
     s.setValue("qemu", qemuPath->text()); s.setValue("iso", isoPath->text()); s.setValue("disk", diskPath->text());
     s.setValue("memory", memory->value()); s.setValue("cpus", cpus->value());
+    s.setValue("showCursor", showCursor->isChecked());
     s.setValue("adbPort", adbPort->value()); s.setValue("adbForward", adbForward->isChecked()); s.setValue("boot", boot->currentIndex());
 }
 
@@ -139,6 +201,7 @@ void MainWindow::loadSettings() {
                       QFileInfo::exists(bundledQemu) ? bundledQemu : "C:/Program Files/qemu/qemu-system-x86_64.exe");
     isoPath->setText(s.value("iso").toString()); diskPath->setText(s.value("disk").toString());
     memory->setValue(s.value("memory", 4096).toInt()); cpus->setValue(s.value("cpus", 4).toInt());
+    showCursor->setChecked(s.value("showCursor", true).toBool());
     adbPort->setValue(s.value("adbPort", 5555).toInt()); adbForward->setChecked(s.value("adbForward", false).toBool());
     boot->setCurrentIndex(s.value("boot", 0).toInt());
 }
@@ -208,7 +271,8 @@ void MainWindow::launch() {
     QStringList args = {"-accel", "whpx,kernel-irqchip=off", "-m", QString::number(memory->value()),
                         "-smp", QString::number(cpus->value()), "-vga", "std", "-usb", "-device", "usb-tablet",
                         "-hda", disk.absoluteFilePath(), "-boot", "order=" + boot->currentData().toString(),
-                        "-name", "Project Nexus", "-monitor", "stdio"};
+                        "-name", "Project Nexus", "-qmp", "stdio"};
+    if (!showCursor->isChecked()) args << "-display" << "sdl,show-cursor=off";
     const QString bundledFirmware = QDir::cleanPath(qemu.dir().filePath("../share/qemu"));
     if (QFileInfo::exists(QDir(bundledFirmware).filePath("bios-256k.bin"))) args << "-L" << bundledFirmware;
     if (!isoPath->text().trimmed().isEmpty()) args << "-cdrom" << iso.absoluteFilePath();
@@ -216,7 +280,7 @@ void MainWindow::launch() {
     if (adbForward->isChecked()) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(adbPort->value()) + "-:5555";
     args << "-netdev" << net << "-device" << "virtio-net-pci,netdev=net0,romfile=";
     process->setProgram(qemu.absoluteFilePath()); process->setArguments(args);
-    setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
+    qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     statusBar()->showMessage("Starting QEMU with WHPX...");
 }
 
@@ -225,11 +289,36 @@ void MainWindow::findGuestWindow() {
     WindowSearch search{static_cast<DWORD>(process->processId())};
     EnumWindows(findWindow, reinterpret_cast<LPARAM>(&search));
     if (search.result && view->attach(search.result)) {
-        embedTimer->stop(); statusBar()->showMessage("QEMU window embedded. Use Android's installer or boot the installed system.");
+        embedTimer->stop(); updateKeymapControls(); statusBar()->showMessage("QEMU window embedded. Use Android's installer or boot the installed system.");
     } else if (++embedAttempts >= 120) {
         embedTimer->stop();
         statusBar()->showMessage("Could not embed the QEMU window; it may still be running separately.");
     }
+}
+
+void MainWindow::updateKeymapControls() {
+    const bool running = process->state() == QProcess::Running;
+    const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
+    shutdownButton->setEnabled(running && qmp->isReady());
+    editKeymapButton->setEnabled(embedded);
+    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty());
+}
+
+void MainWindow::editKeymap() {
+    keymapEnabled->setChecked(false);
+    if (!view->windowHandle()) return;
+    QScreen *screen = QGuiApplication::primaryScreen();
+    const QPixmap snapshot = screen ? screen->grabWindow(reinterpret_cast<WId>(view->windowHandle())) : QPixmap();
+    if (snapshot.isNull()) {
+        QMessageBox::warning(this, "Screenshot unavailable", "Could not capture the Android display. Make sure its window is visible, then try again."); return;
+    }
+    KeymapDialog dialog(snapshot, bindings, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    QString error;
+    const auto updated = dialog.resultBindings();
+    if (!saveKeymap(keymapPath, updated, &error)) { QMessageBox::warning(this, "Could not save keymap", error); return; }
+    bindings = updated; updateKeymapControls();
+    statusBar()->showMessage("Keymap saved. Enable it and click the Android display to use your controls.");
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -237,6 +326,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     if (process->state() != QProcess::NotRunning) {
         const auto choice = QMessageBox::question(this, "VM still running", "QEMU is still running. Force stop it and close? This can corrupt the guest disk. Choose No and shut down Android first.", QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (choice != QMessageBox::Yes) { event->ignore(); return; }
+        keymapEnabled->setChecked(false); mapper->stop();
         disconnect(process, nullptr, this, nullptr);
         process->kill(); process->waitForFinished(5000);
     }

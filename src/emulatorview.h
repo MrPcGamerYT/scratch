@@ -14,6 +14,7 @@ public:
     explicit EmulatorView(QWidget *parent = nullptr);
     bool attach(HWND window);
     void clear();
+    HWND windowHandle() const { return guestWindow; }
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

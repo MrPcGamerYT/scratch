@@ -10,6 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
+add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h)
+target_link_libraries(nexus_controls PUBLIC Qt6::Core)
+target_include_directories(nexus_controls PUBLIC src)
+
 add_library(nexus_download STATIC src/imagedownload.cpp src/imagedownload.h)
 target_link_libraries(nexus_download PUBLIC Qt6::Network)
 target_include_directories(nexus_download PUBLIC src)
@@ -20,13 +24,20 @@ qt_add_executable(ProjectNexus WIN32
     src/mainwindow.h
     src/emulatorview.cpp
     src/emulatorview.h
+    src/inputmapper.cpp
+    src/inputmapper.h
+    src/keymapdialog.cpp
+    src/keymapdialog.h
 )
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_download user32)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_download nexus_controls user32)
 
 include(CTest)
 if(BUILD_TESTING)
     add_executable(download_tests tests/download_tests.cpp)
     target_link_libraries(download_tests PRIVATE nexus_download)
     add_test(NAME download_tests COMMAND download_tests)
+    add_executable(keymap_tests tests/keymap_tests.cpp)
+    target_link_libraries(keymap_tests PRIVATE nexus_controls)
+    add_test(NAME keymap_tests COMMAND keymap_tests)
     add_executable(qemu_stub tests/qemu_stub.cpp)
 endif()
