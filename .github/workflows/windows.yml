@@ -27,7 +27,17 @@ jobs:
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/launch.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
-          ./tests/launcher_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe"
+          $ErrorActionPreference = 'Continue'
+          $output = & pwsh -NoProfile -File ./tests/launcher_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe" 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            foreach ($line in $output) {
+              $text = "$line".Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error::$text"
+            }
+            exit $code
+          }
       - name: Package shell
         shell: pwsh
         run: |
