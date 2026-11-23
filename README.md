@@ -1,6 +1,6 @@
 # Project Nexus
 
-A first Windows prototype for running an Android-x86-compatible guest in QEMU with Windows Hypervisor Platform (WHPX). It provides a standalone PowerShell launcher and an optional Qt 6 desktop shell that downloads a stock Android-x86 image, starts QEMU and attempts to embed its native window. This is **not a finished BlueStacks alternative**: it does not include an Android image, multi-instance management, FPS controls, ARM translation, Google Play, or a GPU acceleration stack. Its keymapper currently supports single-pointer tap controls only.
+A first Windows prototype for running an Android-x86-compatible guest in QEMU with Windows Hypervisor Platform (WHPX). It provides a standalone PowerShell launcher and an optional Qt 6 desktop shell that downloads a stock Android-x86 image, starts QEMU and attempts to embed its native window. This is **not a finished BlueStacks alternative**: it does not include an Android image, multi-instance management, FPS controls, ARM translation, Google Play, or a GPU acceleration stack. Its keymapper supports single-pointer taps, tap sequences and repeat-while-held controls; true multitouch is not yet supported.
 
 ## Requirements
 
@@ -48,25 +48,42 @@ If required, run `windeployqt` from your Qt installation on the built executable
 
 The shell looks for a visible top-level window belonging to its QEMU process for up to 30 seconds and reparents it. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails, QEMU may still be usable in its own window; shut it down normally. The keymapper installs a Windows low-level keyboard hook only while enabled and removes it when disabled or the VM closes. Mapped keys are captured only when the embedded QEMU display has focus; a held click is released when focus is lost.
 
-## Keymap: single-pointer controls
+## Prepared player image (developer workflow)
 
-1. Start the VM and open the Android screen or game you want to control. The display must be embedded and visible.
-2. Click **Edit keymap**. Choose a letter, number, or Space, then click the corresponding location in the screenshot. Drag a marker to move it, or select it in the list and remove it. Click **Save**.
-3. Check **Enable keymap**, click the Android display to focus it, then press and hold a mapped key. It holds a virtual left mouse click at the saved position; releasing the key releases the click. Uncheck the box to return to normal keyboard input.
+The development artifact does **not** contain Android or an installed disk. A developer must obtain a compatible ISO with suitable redistribution rights, then use the separate `prepare-android.ps1` tool included in the package. The tool launches the Android installer into a new virtual disk; installation is interactive. After a clean guest shutdown and explicit confirmation it checks the disk and stages it in the player folder. It will not overwrite an existing disk or base image.
 
-Bindings are stored in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json` using normalized screenshot coordinates. There is one local profile. The screenshot and QEMU/Android may have different scaling or black bars, so verify positions after changing display size or orientation. If capture fails, bring the display into view and retry. Keymapping is off by default, ignores injected keys, and doesn't capture keys while another application is focused. Control/Alt/Windows shortcuts are not mapped. No latency guarantee is made.
+```powershell
+# Run from the extracted player folder. Both folders must already exist.
+.\prepare-android.ps1 -IsoPath 'C:\Android\android.iso' `
+  -DiskPath 'C:\Android\new-install.qcow2' -PlayerFolder $PWD
+```
+
+Test the staged system before distribution; the tool cannot prove that Android was installed or that redistribution is permitted. With `images/android-base.qcow2` present, the player starts it automatically by default and creates a **separate per-user QCOW2 overlay** under `%APPDATA%\ProjectNexus\Project Nexus\instances`. The base is not modified by normal VM writes. The existing base location, size, and modification time are recorded; changing or moving it causes startup to stop safely rather than replacing the user disk. Back up both the base and overlay. An existing legacy user disk is not migrated automatically.
+
+Without a prepared base, the previous ISO/disk workflow is still available under **Settings → Developer / legacy image setup**, preserving earlier installations. No OS image is downloaded or bundled by the player automatically. A prepared base takes precedence over legacy ISO settings. Disable **Start prepared image automatically** in Settings to start it manually.
+
+## Keymap and mouse
+
+1. Start the VM and open the Android screen or game. Click **Edit keymap**.
+2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
+3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
+4. Save, check **Enable keymap**, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+
+These actions use one virtual mouse pointer. Multiple markers are sequential, not simultaneous touches; while a sequence is running other mapped keys are ignored. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
+
+Use **Lock mouse** to confine the cursor to the emulator window. Press **Ctrl+Alt+L** to unlock; switching to another application or closing the VM also releases it. This is cursor confinement, not a first-person relative-mouse or mouse-look implementation. The Windows hook and clipping behavior need real-PC testing.
 
 ## Scope and limitations
 
 - QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
 - ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
-- The keymapper uses QEMU's QMP standard input/output connection and an emulated USB tablet; it is **not Android multitouch**. Only one mapped mouse click can be held at a time. Games requiring simultaneous movement and aiming, swipes, or real touch events may not work. There is no host-to-guest touch daemon, joystick, mouse-look, or multi-instance UI yet.
+- The keymapper uses QEMU's QMP standard input/output connection and an emulated USB tablet; it is **not Android multitouch**. Games requiring simultaneous movement and aiming, swipes, or real touch events may not work. There is no host-to-guest touch daemon, joystick, mouse-look, general-purpose macro recorder, or multi-instance UI yet.
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
 - On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
 
 ## GitHub Actions tests
 
-All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization and QMP event creation, test launcher arguments and disk handling with a stub (WHPX is mocked), smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux job uses real QEMU TCG to create a QCOW2 disk and boot a tiny test sector. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, test download integrity, keymap serialization, sequence timing and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux job uses real QEMU TCG to create a QCOW2 disk and boot a tiny test sector. Neither job proves that Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
 
 ## Development status
 

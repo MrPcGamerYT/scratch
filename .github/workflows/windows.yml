@@ -85,6 +85,8 @@ jobs:
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/launch.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/prepare-android.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
           $ErrorActionPreference = 'Continue'
           $output = & pwsh -NoProfile -File ./tests/launcher_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe" 2>&1
           $code = $LASTEXITCODE
@@ -115,6 +117,8 @@ jobs:
             $env:QEMU_SYSTEM = $qemu
             $env:QEMU_IMG = $img
             $env:QEMU_DATA = "$PWD/package/qemu/share/qemu"
+            & ./build/Release/managed_disk_tests.exe
+            if ($LASTEXITCODE -ne 0) { throw "Managed disk test failed: $LASTEXITCODE" }
             $output = & python tests/qemu_smoke.py 2>&1
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
@@ -141,6 +145,7 @@ jobs:
           windeployqt --release package/ProjectNexus.exe
           Copy-Item README.md package/
           Copy-Item scripts/launch.ps1 package/
+          Copy-Item scripts/prepare-android.ps1 package/
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-Windows

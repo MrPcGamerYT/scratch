@@ -5,6 +5,7 @@
 class KeymapCanvas;
 class QComboBox;
 class QListWidget;
+class QSpinBox;
 
 class KeymapDialog : public QDialog {
 public:
@@ -15,4 +16,6 @@ private:
     KeymapCanvas *canvas;
     QComboBox *keyChoice;
     QListWidget *list;
+    QComboBox *modeChoice;
+    QSpinBox *interval;
 };

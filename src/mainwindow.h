@@ -13,10 +13,12 @@
 class EmulatorView;
 class Qmp;
 class InputMapper;
+class MouseLock;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QLabel;
+class QFrame;
 class QProcess;
 class QPushButton;
 class QSpinBox;
@@ -50,9 +52,13 @@ private:
     QComboBox *boot;
     QCheckBox *adbForward;
     QCheckBox *showCursor;
+    QCheckBox *autoStart;
+    QFrame *settingsPanel;
     QCheckBox *keymapEnabled;
     QPushButton *editKeymapButton;
     QPushButton *fullscreenButton;
+    QPushButton *mouseLockButton;
+    MouseLock *mouseLock;
     QLabel *vmStatus;
     Qmp *qmp;
     InputMapper *mapper;

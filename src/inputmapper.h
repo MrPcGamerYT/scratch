@@ -2,6 +2,7 @@
 #include "keymap.h"
 #include <QObject>
 #include <QList>
+#include <QSet>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -10,6 +11,7 @@
 #endif
 #include <windows.h>
 class Qmp;
+class ClickSequence;
 class QTimer;
 
 class InputMapper : public QObject {
@@ -30,7 +32,8 @@ private:
     HWND guest = nullptr;
     HHOOK hook = nullptr;
     QList<KeyBinding> bindings;
-    int heldKey = 0;
+    ClickSequence *sequence;
+    QSet<int> heldKeys;
     QTimer *focusTimer;
     static InputMapper *instance;
 };
