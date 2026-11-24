@@ -1,1 +1,129 @@
-# scratch
+# Project Nexus
+
+A Windows Android-player prototype using a source-built QEMU engine and Windows Hypervisor Platform (WHPX). The player opens a developer-prepared system image and does not offer disk creation, ISO selection or Android installation. A separately packaged developer tool prepares the image.
+
+**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it also has experimental aim/fire and optional multi-contact injection; support in Android and games is not yet verified, and it does not have a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
+
+## Player preview
+
+Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup**, not the emulator: controls do not save settings or operate Android. The Windows Qt player implements the corresponding layout and the existing working features described below; the keymap preview is illustrative and differs from the actual Qt editor.
+
+## Requirements
+
+- Windows 10/11 x64, hardware virtualization enabled in BIOS/UEFI, and Windows Hypervisor Platform enabled. A reboot may be required. In an **administrator** PowerShell:
+
+  ```powershell
+  Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All
+  ```
+
+  Check with `Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform`. The player does not silently fall back from WHPX.
+- The player bundle includes a source-built Nexus-patched QEMU in `qemu/bin`. A developer must supply a compatible, legally distributable, preinstalled x86_64 Android image at `images/android-base.qcow2`. The player has no OS image by default.
+- Guest compatibility, graphics, native-bridge support and redistribution rights depend on the image. Android-x86 9.0-r2 is old and potentially unpatched; do not use it for sensitive accounts or data. No proprietary translation libraries are provided.
+
+## Separate developer image tool
+
+Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separately from the **ProjectNexus-Windows** player artifact. Download a legally obtained Bliss OS x86-64 ISO from the [Bliss OS project](https://sourceforge.net/projects/blissos-x86/) and check the exact image's redistribution terms. The ISO is **not bundled**. On a Windows host with WHPX enabled, run the separate tool:
+
+```powershell
+# Run in the extracted developer tool directory.
+.\prepare-android.ps1 -Bliss -IsoPath 'C:\Android\bliss.iso' `
+  -DiskPath 'C:\Android\bliss-install.qcow2' -PlayerFolder 'C:\NexusPlayer'
+# Optional: add -ExpectedSha256 <trusted published 64-digit SHA-256> to reject a mismatching ISO.
+```
+
+The disk's parent folder must already exist. The tool attaches a newly created virtual disk, isolated UEFI variables and the ISO—not physical host disks. Follow the ISO's **installation** menu, create/format the virtual partition as instructed by that Bliss release, install UEFI GRUB if prompted, and shut down cleanly. The tool then boots the disk without the ISO for manual verification. Menus vary; Bliss documentation warns its old Auto-Install option is not supported on newer releases. See [Bliss VM instructions](https://docs.blissos.org/installation/install-in-a-virtual-machine/) and [QEMU notes](https://docs.blissos.org/installation/install-in-a-virtual-machine/install-in-qemu/). The workflow is interactive, not an unattended install, and **has not yet been verified by installing or booting Bliss on Windows**. Basic Q35/UEFI firmware startup is exercised in CI under TCG only.
+
+The tool will not overwrite an existing disk, UEFI variables, or staged image. If staging fails, the disk is retained and any already-staged firmware files must be backed up and manually removed before retrying. A failed installation is retained: use `-Bliss -Resume` with the same disk to boot it. To copy an existing Bliss disk, use `-Bliss -CopyFrom <source.qcow2> -SourceVars <source.qcow2.uefi-vars.fd>` with a new `-DiskPath`. Shut down all VMs and back up the disk and variables before copying. The staged UEFI variables are copied per-user on first launch; never distribute variables containing credentials or personal data. Back up the base, per-user disk and per-user UEFI variables together. A changed base or firmware template blocks startup rather than overwriting data. Legacy BIOS images continue to work without UEFI files.
+
+For Android-x86 9.0-r2 instead, omit `-Bliss`: its legacy BIOS installer offers Auto Installation. No existing legacy disk is migrated or selectable in the player.
+
+The prepared image starts automatically when the player opens, even if an older saved setting disabled automatic startup. If startup fails, use **Retry** after fixing the problem. For persistent user data, the player internally creates a separate per-user QCOW2 overlay under `%APPDATA%\ProjectNexus\Project Nexus\instances`; users are never asked to create or select disks. The base is not modified by normal VM writes. If the base is moved or changed, startup stops rather than replacing the overlay. Back up both. Legacy disks are preserved but not migrated or selectable in the new player.
+
+## Offline developer file editor (no ADB)
+
+The separately packaged Image Studio contains an **offline file browser**, running under a Linux desktop or Windows 11 WSLg. It copies a stopped, standalone QCOW2 image to a new filename, then lets the developer select a filesystem and browse, import/replace, export, create folders and delete files in the **copy**. It never edits the chosen source. This does not need Android to boot or ADB. Stop every VM and back up the source before copying; otherwise even the copy may be inconsistent. Do not open the working copy in a VM while the editor is running. Closing the editor flushes its changes.
+
+For Windows 11 with WSLg and an Ubuntu WSL distribution, install dependencies in Ubuntu (requires WSL setup and network access), then run the editor from the extracted developer package, with its actual path substituted:
+
+```bash
+sudo apt update
+sudo apt install python3-guestfs python3-tk qemu-utils libguestfs-tools
+export LIBGUESTFS_BACKEND=direct
+export LIBGUESTFS_BACKEND_SETTINGS=force_tcg
+/usr/bin/python3 /mnt/c/path/to/ImageStudio/offline-files/offline_editor.py
+```
+
+Libguestfs requires its Linux appliance/kernel and may need a working WSLg setup; this workflow has not yet been verified on a real Windows PC. Copy the working image to a safe location first, shut down the editor, then use `prepare-android.ps1 -Resume -DiskPath 'C:\path\working.qcow2' -PlayerFolder 'C:\NexusPlayer'` to boot-test and stage it. It won't replace an existing player base; changing the base also requires a deliberate user-overlay migration. The browser operates on one selected filesystem at a time and does **not** unpack nested `system.sfs` / `system.img`, decrypt partitions, preserve all Android SELinux metadata for new files, bypass verified boot, or build an Android OS. Edits may prevent booting; keep the original backup.
+
+## Bliss OS and licensing
+
+Bliss OS FOSS is the selected OS family for evaluation. It is Android-based and has Android-x86 lineage; x86-64 is the PC CPU architecture. The exact release, installation, compatibility, and performance have not been validated on this player. A Nexus-branded distribution should honestly credit the upstream OS and comply with each component's licenses, source obligations, trademarks, and any bundled app/Google-service rights; you cannot claim authorship of the upstream OS. Review the precise image and consult a qualified reviewer before redistribution. See the Bliss team's [licensing overview](https://archive.fosdem.org/2024/events/attachments/fosdem-2024-2957-introduction-to-blisslabs-and-bliss-os/slides/22755/BLISS_V1_5_FOSS1_XaqePfP.pdf).
+
+## Build and use the Qt player
+
+Install CMake 3.21+, Visual Studio 2022 C++ build tools (x64), Qt 6.2+ Widgets and Network matching MSVC, and the stable Rust toolchain with the `x86_64-pc-windows-msvc` target (`rustup target add x86_64-pc-windows-msvc`). The current integrated build uses a Release Rust static library; the supported packaged configuration is Release:
+
+```powershell
+cmake -S . -B build -DCMAKE_PREFIX_PATH='C:\Qt\6.8.3\msvc2022_64'
+cmake --build build --config Release
+.\build\Release\ProjectNexus.exe
+```
+
+For a standalone build deploy Qt with `windeployqt`, bundle the engine and prepare the image as above. CPU cores, memory, cursor visibility and optional loopback ADB forwarding are configurable in Settings and apply at the next start. Forwarding TCP does not enable ADB in Android. **Shut down** sends QEMU's `system_powerdown`; the guest may ignore it. Shut down inside Android if necessary. Forcibly closing can corrupt the guest disk.
+
+The player tries for 30 seconds to embed QEMU's visible window. QEMU's Windows display backend and DPI behavior can affect embedding, resizing, focus, and input. If embedding fails QEMU may remain in a separate window; shut down Android normally.
+
+## Dock controls and APKs
+
+**Install APK** requires a running image with TCP ADB enabled and authorized, local ADB forwarding enabled before startup, and Android platform-tools supplied by the developer in `platform-tools/adb.exe` beside the player or on PATH. Platform-tools is not bundled. Only install trusted APKs; the command may update an existing package. ADB exposes a debugging interface to local processes and is off by default. This integration is not yet verified against a real Android image.
+
+Volume, RAM cleanup and FPS are disabled because they are not implemented. The app does not force-trim Windows processes or claim to clean memory; those actions can harm responsiveness or interrupt work. FPS requires real guest frame instrumentation and a reliable display overlay, not a fabricated counter.
+
+The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
+
+## Keymap and mouse
+
+1. Start the VM and open the Android screen or game. Click **Keymap** in the top dock.
+2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
+3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
+4. Save, check **On** next to Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+
+In standard mode, actions use one virtual mouse pointer, and other mapped keys are ignored while a sequence runs. In experimental multi-touch mode, different mapped keys can use separate slots concurrently; multiple markers assigned to one key remain sequential. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
+
+### Experimental aim & fire
+
+In **Keymap → Configure aim & fire**, set the camera area and fire-button coordinates as percentages of the guest display and adjust sensitivity. Save. Click **Aim & fire** in the dock to arm it, click the Android display, then press **F8**. Move the physical mouse to send a camera drag; left mouse button sends a press at the fire position. Press **F8** again to release, or use **Disarm aim**. Losing focus, resizing the window, QMP failure, or closing the VM also releases the cursor and pointer.
+
+This is experimental and built independently, not BlueStacks parity. Enable **Settings → Preferences → Experimental multi-touch keymapping**, save and restart the player to send separate QEMU virtio touchscreen contacts for aim, fire and up to eight concurrent mapped keys. QEMU accepting the commands does not prove the Bliss guest recognizes the device; Android, game input, Windows hooks and performance remain unverified. In standard mode aiming pauses during firing and mapped keyboard taps are disabled while aim is armed. Aim restarts its drag at screen edges in both modes. There are no true WASD joystick/d-pad, ADS, MOBA, joystick or full macro controls yet.
+
+**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it. Aim uses its own temporary capture and F8 release. The Windows hooks and clipping require real-PC testing.
+
+## Scope and limitations
+
+- QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
+- ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
+- The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU virtio multitouch device and separate contact slots. Bliss guest support and real game behavior are **not verified**. There is no d-pad/joystick mapping, host-to-guest touch daemon, general-purpose macro recorder, or multi-instance UI yet.
+- One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
+- On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
+
+## Rust migration
+
+This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the small C ABI in `src/rustcore.h`. **Keymap validation and experimental aim-coordinate calculations run in Rust**; existing JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make the single-pointer input multitouch.
+
+## GitHub Actions tests
+
+All automated tests run in `.github/workflows/windows.yml` on pushes, pull requests, and manual workflow dispatch. The Windows jobs apply our patch to pinned QEMU source and build it and the Qt app, run Rust unit tests and test the Rust–C++ integration, download integrity, keymap serialization, simultaneous sequence timing, aim arithmetic and QMP event creation; test launcher arguments with a stub; test managed-disk safeguards with real qemu-img; smoke-test the bundled QEMU, QMP pointer events and SDL update batching with a synthetic VGA workload under TCG, and publish a Windows development artifact. The Linux jobs use real QEMU TCG to boot a tiny test sector and exercise the offline file editor against a test QCOW2 filesystem. None of the jobs proves that Bliss or Android boots or that Windows WHPX, window embedding, graphics, or Windows hook and Android game input work. The workflow and its artifact are available after this branch is pushed to GitHub.
+
+## Development status
+
+The download, launcher and embedding shell are the first milestones. Android is installed interactively using the stock ISO's installer; this is not an unattended OS installation. They require testing on a real Windows WHPX host with a compatible Android image; no Android boot, graphics, ADB, embedding, or latency guarantees are claimed. The Windows keyboard hook and Android interaction require testing on a real host; later work can add true multi-touch, native translation, and instance management.
+
+## Third-party licensing
+
+QEMU is open source, primarily GPL version 2, and can be redistributed under its terms; separate firmware and libraries have their own licenses. The development bundle contains QEMU and SeaBIOS source, build instructions, and notices in `qemu/licenses/`. Review those notices and the exact dependency, Qt and source-distribution obligations before public release. See [third-party notices](packaging/THIRD-PARTY.md). This is not legal advice.
+
+## QEMU engine development
+
+Project Nexus builds a **modified QEMU 10.2.0**, preserving QEMU's name, attribution and licensing. The first small engine patch is in [`packaging/qemu-patches/0001-sdl2-batch-present.patch`](packaging/qemu-patches/0001-sdl2-batch-present.patch). In the SDL 2D renderer it still uploads each changed rectangle, but batches screen presents that occur during one synchronous hardware refresh. Updates outside that refresh still present immediately. This may reduce redundant rendering work when VGA emits multiple dirty rectangles; it is not a new graphics driver, FPS limiter, or proof of improved Android game performance.
+
+GitHub Actions exercises the patch against a tiny VGA workload on the Windows build with SDL's dummy driver and reports rectangle uploads and screen presents. This is a regression and work-count check—not a real-world CPU, frame-time, boot-time or Android benchmark. A before/after comparison on the same real Windows machine and Android workload is needed before claiming any speedup. The bundled source archive contains the patched source and the separate patch, and the base revision is pinned in the workflow.

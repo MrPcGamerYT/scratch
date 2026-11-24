@@ -1,0 +1,8 @@
+# Local builds and VM artifacts
+/build/
+/out/
+*.qcow2
+*.iso
+*.img
+*.vhdx
+*.user

@@ -1,0 +1,75 @@
+#include "keymap.h"
+#include "rustcore.h"
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QSaveFile>
+#include <QVector>
+#include <cstddef>
+#include <cmath>
+
+static_assert(sizeof(NexusBinding) == 32 && offsetof(NexusBinding, x) == 8 &&
+              offsetof(NexusBinding, repeat) == 24 && offsetof(NexusBinding, interval_ms) == 28,
+              "Rust/C++ key binding ABI mismatch");
+bool validKey(int key) { return nexus_valid_key(key) != 0; }
+QString keyName(int key) { return key == 0x20 ? QStringLiteral("Space") : QString(QChar(key)); }
+
+static bool validBindings(const QList<KeyBinding> &bindings, QString *error) {
+    if (bindings.size() > 128) { *error = "Too many keymap markers (maximum 128)."; return false; }
+    QVector<NexusBinding> rustBindings; rustBindings.reserve(bindings.size());
+    for (const auto &b : bindings) rustBindings.append({b.key, b.x, b.y, static_cast<std::uint8_t>(b.repeat), b.intervalMs});
+    switch (nexus_validate_bindings(rustBindings.constData(), static_cast<std::size_t>(rustBindings.size()))) {
+    case 0: return true;
+    case 1: *error = "Too many keymap markers (maximum 128)."; break;
+    case 2: *error = "Invalid key, position, or repeat interval."; break;
+    case 3: *error = "Markers for the same key must use the same repeat settings."; break;
+    default: *error = "Could not validate keymap."; break;
+    }
+    return false;
+}
+
+bool loadKeymap(const QString &path, QList<KeyBinding> *bindings, QString *error) {
+    QFile f(path);
+    if (!f.exists()) { bindings->clear(); return true; }
+    if (!f.open(QIODevice::ReadOnly)) { *error = f.errorString(); return false; }
+    if (f.size() > 65536) { *error = "Profile is too large."; return false; }
+    QJsonParseError parse;
+    const auto doc = QJsonDocument::fromJson(f.readAll(), &parse);
+    const int version = doc.isObject() ? doc.object().value("version").toInt() : 0;
+    if (parse.error != QJsonParseError::NoError || (version != 1 && version != 2) || !doc.object().value("bindings").isArray()) {
+        *error = "Invalid keymap profile."; return false;
+    }
+    QList<KeyBinding> result;
+    const auto entries = doc.object().value("bindings").toArray();
+    if (entries.size() > 128) { *error = "Too many key bindings."; return false; }
+    for (const auto &entry : entries) {
+        if (!entry.isObject()) { *error = "Invalid key binding."; return false; }
+        const auto o = entry.toObject();
+        if (!o.value("key").isDouble() || !o.value("x").isDouble() || !o.value("y").isDouble()) { *error = "Invalid key binding fields."; return false; }
+        const double rawKey = o.value("key").toDouble();
+        if (!std::isfinite(rawKey) || rawKey != std::floor(rawKey) || rawKey < 0 || rawKey > 255) { *error = "Invalid key code."; return false; }
+        KeyBinding b{static_cast<int>(rawKey), o.value("x").toDouble(), o.value("y").toDouble()};
+        if (version == 2) {
+            if (!o.value("repeat").isBool() || !o.value("intervalMs").isDouble()) { *error = "Invalid repeat settings."; return false; }
+            double interval = o.value("intervalMs").toDouble();
+            if (!std::isfinite(interval) || interval != std::floor(interval) || interval < 100 || interval > 5000) { *error = "Invalid repeat interval."; return false; }
+            b.repeat = o.value("repeat").toBool(); b.intervalMs = static_cast<int>(interval);
+        }
+        result.append(b);
+    }
+    if (!validBindings(result, error)) return false;
+    *bindings = result; return true;
+}
+
+bool saveKeymap(const QString &path, const QList<KeyBinding> &bindings, QString *error) {
+    if (!validBindings(bindings, error)) return false;
+    QJsonArray entries;
+    for (const auto &b : bindings) entries.append(QJsonObject{{"key", b.key}, {"x", b.x}, {"y", b.y}, {"repeat", b.repeat}, {"intervalMs", b.intervalMs}});
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) { *error = f.errorString(); return false; }
+    const QByteArray bytes = QJsonDocument(QJsonObject{{"version", 2}, {"bindings", entries}}).toJson();
+    if (f.write(bytes) != bytes.size() || !f.commit()) { *error = f.errorString(); return false; }
+    return true;
+}
