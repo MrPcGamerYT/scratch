@@ -404,9 +404,12 @@ mod tests {
         assert!((sprint.x - 0.65).abs() < 1e-6);
 
         // Swipe midpoint and endpoints
-        assert_eq!(nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 0.0), NexusPoint { x: 0.2, y: 0.8 });
-        assert_eq!(nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 0.5), NexusPoint { x: 0.4, y: 0.6 });
-        assert_eq!(nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 1.0), NexusPoint { x: 0.6, y: 0.4 });
+        let sw0 = nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 0.0);
+        let sw5 = nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 0.5);
+        let sw1 = nexus_swipe_point(0.2, 0.8, 0.6, 0.4, 1.0);
+        assert!((sw0.x - 0.2).abs() < 1e-9 && (sw0.y - 0.8).abs() < 1e-9);
+        assert!((sw5.x - 0.4).abs() < 1e-9 && (sw5.y - 0.6).abs() < 1e-9);
+        assert!((sw1.x - 0.6).abs() < 1e-9 && (sw1.y - 0.4).abs() < 1e-9);
 
         // Pinch spread increases finger separation
         let start = nexus_pinch_points(0.5, 0.5, 0.20, 0.0, 1);
