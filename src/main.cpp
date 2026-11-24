@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
         QPushButton:disabled { color: #666777; background: #1c1d28; border-color: #292b37; }
         QPushButton#primary { background: #2563eb; border-color: #60a5fa; color: white; padding: 9px 16px; }
         QPushButton#primary:hover { background: #3b82f6; }
-        QPushButton#dockButton { background: transparent; border: 1px solid transparent; color: #b8b8cb; padding: 6px 2px; font-size: 10pt; font-weight: 500; }
+        QPushButton#dockButton { background: transparent; border: 1px solid transparent; color: #b8b8cb; padding: 2px 3px; font-size: 9pt; font-weight: 500; }
         QPushButton#dockButton:hover { background: #2a293b; border-color: #46405e; color: #f5f3ff; }
         QPushButton#dockButton:disabled { color: #5e6070; }
         QLineEdit, QSpinBox, QComboBox, QListWidget { background: #1b1c29; border: 1px solid #363748; border-radius: 7px; padding: 7px; selection-background-color: #2563eb; }

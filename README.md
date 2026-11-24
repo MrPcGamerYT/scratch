@@ -198,3 +198,21 @@ The default desktop screen now asks for only **1. Bliss PC ISO**, **2. extracted
 **Advanced options** contains Resume, workspace selection, optional ISO checksum, firmware mode and hardware/software execution. **Show technical log** reveals diagnostics; failures also reveal the log. **I finished this step** confirms a clean guest shutdown before the next stage. Both bundled QEMU tools are executable-self-checked before disk creation/boot, so blocked or incomplete bundles fail early with an actionable error. Actual Bliss partitioning/installation and boot verification remain guided and version-dependent; this does not blindly auto-format or auto-approve an installation.
 
 Browse uses a Qt-owned ISO/folder picker. File/message dialogs are excluded from the global borderless-window filter, preventing their flags/handles from being changed during Show (which could immediately cancel a picker). Regression tests check file selection, folder cancellation and persistence of the visible picker with the chrome filter active. The offline file editor remains available and retains its WSLg dependencies.
+
+### Compact player and Android display controls
+
+The player's single title bar is now 36 logical pixels high (previously 56),
+with compact dock controls and the same move/maximize/minimize/close behavior.
+Display settings provide landscape/portrait resolution presets and DPI overrides,
+plus Android-default reset. **Apply to running Android** is separate from Save:
+it changes the guest immediately using `wm size` and `wm density` through ADB.
+Android retains these overrides. Local ADB forwarding must have been enabled
+before launch; the guest must support and authorize TCP ADB, and trusted Android
+platform-tools must be supplied next to the player or on PATH. Operations are
+asynchronous, timed, and report errors/partial application rather than claiming
+success. Apply both Android defaults to recover from an unsuitable configuration.
+Resolution changes may require adjusting keymaps.
+
+This is still QEMU standard-VGA graphics with Rust runtime/input components, not
+a completed Rust-native GPU engine. Vulkan, DirectX, ASTC and GPU passthrough
+remain unavailable; resolution/DPI controls do not add hardware rendering.

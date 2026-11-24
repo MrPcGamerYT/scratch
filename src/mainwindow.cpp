@@ -67,14 +67,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *mark = new QLabel("N", header); mark->setObjectName("logoMark"); mark->setAlignment(Qt::AlignCenter); mark->setFixedSize(34, 34); headerLayout->addWidget(mark);
     auto *brand = new QLabel("NEXUS", header); brand->setObjectName("brand"); headerLayout->addWidget(brand);
     headerLayout->addStretch();
-    auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(6, 4, 6, 4); dockLayout->setSpacing(4);
+    auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(4, 0, 4, 0); dockLayout->setSpacing(4);
     auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
     auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
     editKeymapButton = dockButton("⌨  Keymap", dock); editKeymapButton->setToolTip("Open Keymap Studio (schemes, D-pad, swipes, pinch zoom, MOBA, macros)"); dockLayout->addWidget(editKeymapButton);
     keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
     overlayEnabled = new QCheckBox("Hints", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
-    fullscreenButton = dockButton("⛶  Full screen · F11", dock); dockLayout->addWidget(fullscreenButton);
+    fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
     aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Arm Aim, Shoot, ADS & Free-Look; multi-touch enables concurrent WASD & taps"); dockLayout->addWidget(aimButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
@@ -107,7 +107,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
     connect(apkButton, &QPushButton::clicked, this, [this] { installApk(); });
-    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.exec(); });
+    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.applyDisplay = [this](QString size, int dpi) { applyGuestDisplay(size, dpi); }; dialog.exec(); });
     auto toggleFullscreen = [this] { if (isFullScreen()) showNormal(); else showFullScreen(); };
     connect(fullscreenButton, &QPushButton::clicked, this, toggleFullscreen);
     auto *fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
@@ -277,6 +277,44 @@ void MainWindow::updateControls() {
     keymapEnabled->setEnabled(embedded && qmp->isReady() && profile.hasAnyInputBindings() && (!armed || runningMultiTouch));
     aimButton->setEnabled(embedded && qmp->isReady());
 }
+void MainWindow::applyGuestDisplay(const QString &size, int dpi) {
+    const QStringList sizes = {"reset", "1280x720", "1600x900", "1920x1080", "720x1280", "1080x1920"};
+    const QList<int> densities = {0, 160, 200, 240, 280, 320, 400, 480};
+    if (!sizes.contains(size) || !densities.contains(dpi)) return;
+    if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
+        QMessageBox::information(this, "Android display", "Start Android with local ADB forwarding enabled, authorize TCP debugging in Android, and wait for any current ADB operation to finish."); return;
+    }
+    QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
+    if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
+    if (adb.isEmpty()) { QMessageBox::warning(this, "Android display", "Supply Android platform-tools/adb.exe next to the player or on PATH. No display settings were changed."); return; }
+    const QString endpoint = "127.0.0.1:" + QString::number(runningAdbPort);
+    auto *task = new QProcess(this); apkTask = task;
+    connect(task, &QObject::destroyed, this, [this] { apkTask = nullptr; });
+    auto *timer = new QTimer(task); timer->setSingleShot(true);
+    task->setProperty("phase", 0);
+    connect(timer, &QTimer::timeout, task, [task] { task->setProperty("timedOut", true); task->kill(); });
+    connect(task, &QProcess::errorOccurred, this, [this, task, timer](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) { timer->stop(); QMessageBox::warning(this, "Android display", task->errorString()); task->deleteLater(); }
+    });
+    connect(task, &QProcess::finished, this, [=](int code, QProcess::ExitStatus status) {
+        timer->stop();
+        const QString output = QString::fromLocal8Bit(task->readAllStandardOutput() + task->readAllStandardError());
+        const int phase = task->property("phase").toInt();
+        const bool connected = output.contains("connected to " + endpoint, Qt::CaseInsensitive);
+        const bool error = output.contains("error", Qt::CaseInsensitive) || output.contains("exception", Qt::CaseInsensitive) || output.contains("denied", Qt::CaseInsensitive);
+        if (code != 0 || status != QProcess::NormalExit || task->property("timedOut").toBool() || error || (phase == 0 && !connected)) {
+            QMessageBox::warning(this, "Display change incomplete", "ADB could not finish. A previous command may already have applied. Reconnect and Apply Android default to reset both values.\n\n" + output.right(2000)); task->deleteLater(); return;
+        }
+        if (phase == 3) {
+            QMessageBox::information(this, "Android display", "Android reports these display values:\n\n" + output.trimmed()); task->deleteLater(); return;
+        }
+        task->setProperty("phase", phase + 1); timer->start(20000);
+        if (phase == 0) task->start(adb, {"-s", endpoint, "shell", "wm", "size", size});
+        else if (phase == 1) task->start(adb, {"-s", endpoint, "shell", "wm", "density", dpi == 0 ? QString("reset") : QString::number(dpi)});
+        else task->start(adb, {"-s", endpoint, "shell", "wm size; wm density"});
+    });
+    timer->start(15000); task->start(adb, {"connect", endpoint});
+}
 void MainWindow::installApk() {
     if (process->state() != QProcess::Running) {
         QMessageBox::information(this, "Install APK", "Start Android first. APK installation requires TCP ADB enabled in the Android image and local ADB forwarding enabled in Settings before startup."); return;
@@ -357,7 +395,7 @@ void MainWindow::changeEvent(QEvent *event) {
         if (auto *header = findChild<QFrame *>("header")) header->hide();
         if (menuWidget()) menuWidget()->setVisible(!fullscreen);
         statusBar()->hide();
-        fullscreenButton->setText(fullscreen ? "⛶  Exit full screen · F11" : "⛶  Full screen · F11");
+        fullscreenButton->setText(fullscreen ? "⛶  Exit full screen · F11" : "⛶  Full screen");
         overlay->refreshSync();
     }
 }

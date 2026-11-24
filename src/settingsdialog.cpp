@@ -95,7 +95,16 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
     note(form, "High-FPS unlock, VSync control and a live guest FPS counter are not implemented. A target value would not guarantee game FPS.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
-    form->addRow("Resolution", unavailable("Managed by Android")); form->addRow("Pixel density (DPI)", unavailable("Guest integration required"));
+    auto *resolution = new QComboBox(display); resolution->setObjectName("guestResolution");
+    resolution->addItem("Android default", "reset");
+    for (const auto &size : {"1280x720", "1600x900", "1920x1080", "720x1280", "1080x1920"}) resolution->addItem(size, size);
+    auto *density = new QComboBox(display); density->setObjectName("guestDensity");
+    density->addItem("Android default", 0);
+    for (int dpi : {160, 200, 240, 280, 320, 400, 480}) density->addItem(QString::number(dpi) + " DPI", dpi);
+    form->addRow("Resolution", resolution); form->addRow("Pixel density (DPI)", density);
+    auto *apply = new QPushButton("Apply to running Android", display); apply->setObjectName("applyGuestDisplay"); apply->setEnabled(running); form->addRow(apply);
+    note(form, "Requires platform-tools/adb.exe, local ADB forwarding enabled before launch, and authorized TCP debugging inside Android. Applies immediately, not on Save. Android retains overrides; select Android default in both fields and Apply to reset. Some apps may restart; keymap positions may need adjustment. This does not enable GPU acceleration.");
+    connect(apply, &QPushButton::clicked, this, [=] { if (applyDisplay) applyDisplay(resolution->currentData().toString(), density->currentData().toInt()); });
     showCursor = new QCheckBox("Show host mouse cursor", display); form->addRow(showCursor);
     addPage("Graphics", "Current backend capabilities — not simulated graphics options.", &form);
     form->addRow("Graphics renderer", unavailable("Standard VGA · compatibility")); form->addRow("ASTC textures", unavailable("Not supported"));
