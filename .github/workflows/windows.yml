@@ -117,10 +117,8 @@ jobs:
           $code = $LASTEXITCODE
           $output | ForEach-Object { Write-Output $_ }
           if ($code -ne 0) {
-            $output | ForEach-Object {
-              $text = ([string]$_).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-              Write-Output "::error::$text"
-            }
+            $text = ($output | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$text"
             exit $code
           }
       - name: PowerShell syntax and launcher contract tests

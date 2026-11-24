@@ -21,8 +21,11 @@ int main(int argc, char **argv) {
         stayedOpen = picker.isVisible() && picker.windowFlags() == flags && !picker.property("nexusChrome").toBool();
         picker.selectFile(iso);
         static_cast<QDialog *>(&picker)->accept();
+        std::cerr << "PICKER diagnostic visible=" << picker.isVisible() << " stable=" << stayedOpen << " selected=" << picker.selectedFiles().join("|").toStdString() << std::endl;
+        if (picker.isVisible()) picker.reject();
     });
-    if (picker.exec() != QDialog::Accepted || !stayedOpen || picker.selectedFiles().value(0) != iso) return 3;
+    const int result = picker.exec();
+    if (result != QDialog::Accepted || !stayedOpen || picker.selectedFiles().value(0) != iso) { std::cerr << "PICKER failure result=" << result << " flags=" << flags.toInt() << "/" << picker.windowFlags().toInt() << std::endl; return 3; }
     StudioPathDialog folders(&owner,"Choose workspace",temporary.path(),true);
     QTimer::singleShot(350, &folders, [&] {
         stayedOpen = folders.isVisible() && !folders.property("nexusChrome").toBool();
