@@ -49,6 +49,7 @@ BOOL CALLBACK findWindow(HWND hwnd, LPARAM data) {
 }
 QPushButton *dockButton(const QString &label, QWidget *parent) {
     auto *button = new QPushButton(label, parent);
+    button->setText(label.section("  ", 0, 0)); button->setFixedSize(30, 28);
     button->setObjectName("dockButton"); button->setToolTip(label); button->setAccessibleName(label);
     return button;
 }
@@ -71,11 +72,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
     auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
     editKeymapButton = dockButton("⌨  Keymap", dock); editKeymapButton->setToolTip("Open Keymap Studio (schemes, D-pad, swipes, pinch zoom, MOBA, macros)"); dockLayout->addWidget(editKeymapButton);
-    keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
-    overlayEnabled = new QCheckBox("Hints", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
+    keymapEnabled = new QCheckBox("", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
+    overlayEnabled = new QCheckBox("", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
     fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
     aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Arm Aim, Shoot, ADS & Free-Look; multi-touch enables concurrent WASD & taps"); dockLayout->addWidget(aimButton);
+    for (const auto &entry : {qMakePair(QString("◁  Back"), 4), qMakePair(QString("⌂  Home"), 3), qMakePair(QString("▢  Recent apps"), 187)}) {
+        auto *button = dockButton(entry.first, dock); dockLayout->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, code = entry.second] { androidAction(code); });
+    }
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
     launchButton = dockButton("Retry", header); launchButton->setToolTip("Retry starting the prepared Android system"); headerLayout->addWidget(launchButton);
@@ -276,6 +281,35 @@ void MainWindow::updateControls() {
     mouseLockButton->setEnabled(embedded && !armed);
     keymapEnabled->setEnabled(embedded && qmp->isReady() && profile.hasAnyInputBindings() && (!armed || runningMultiTouch));
     aimButton->setEnabled(embedded && qmp->isReady());
+}
+void MainWindow::androidAction(int keycode) {
+    if (keycode != 3 && keycode != 4 && keycode != 187) return;
+    if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
+        QMessageBox::information(this, "Android navigation", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
+    }
+    QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
+    if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
+    if (adb.isEmpty()) { QMessageBox::warning(this, "Android navigation", "Android platform-tools/adb.exe is required next to the player or on PATH."); return; }
+    auto *task = new QProcess(this); apkTask = task;
+    connect(task, &QObject::destroyed, this, [this] { apkTask = nullptr; });
+    auto *timer = new QTimer(task); timer->setSingleShot(true);
+    const QString endpoint = "127.0.0.1:" + QString::number(runningAdbPort);
+    connect(timer, &QTimer::timeout, task, [task] { task->setProperty("timeout", true); task->kill(); });
+    connect(task, &QProcess::errorOccurred, this, [this, task, timer](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) { timer->stop(); QMessageBox::warning(this, "Android navigation", task->errorString()); task->deleteLater(); }
+    });
+    connect(task, &QProcess::finished, this, [=](int code, QProcess::ExitStatus status) {
+        timer->stop();
+        const QString output = QString::fromLocal8Bit(task->readAllStandardOutput() + task->readAllStandardError());
+        const bool sent = task->property("sent").toBool();
+        if (code != 0 || status != QProcess::NormalExit || task->property("timeout").toBool() || output.contains("error", Qt::CaseInsensitive) || output.contains("exception", Qt::CaseInsensitive) || output.contains("denied", Qt::CaseInsensitive) || (!sent && !output.contains("connected to " + endpoint, Qt::CaseInsensitive))) {
+            QMessageBox::warning(this, "Android navigation failed", "Check Android TCP debugging and authorization.\n\n" + output.right(2000)); task->deleteLater(); return;
+        }
+        if (sent) { task->deleteLater(); return; }
+        task->setProperty("sent", true); timer->start(15000);
+        task->start(adb, {"-s", endpoint, "shell", "input", "keyevent", QString::number(keycode)});
+    });
+    timer->start(15000); task->start(adb, {"connect", endpoint});
 }
 void MainWindow::applyGuestDisplay(const QString &size, int dpi) {
     const QStringList sizes = {"reset", "1280x720", "1600x900", "1920x1080", "720x1280", "1080x1920"};

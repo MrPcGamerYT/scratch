@@ -116,6 +116,11 @@ button{color:inherit;cursor:pointer}
 .window-controls{display:flex;gap:3px;flex:none}.window-controls button{border:0;background:transparent;color:#a5b8d4;width:28px;height:30px;border-radius:5px}.window-controls button:hover{background:#263e60}.marker.pending{min-width:112px;border:2px dashed #60a5fa;background:#10213b;font-size:12px;color:white;pointer-events:none}
 body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:none}body.preview-fullscreen .shell{min-height:100vh}
 @media(max-width:800px){.header{flex-wrap:nowrap;padding:8px;gap:7px}.header .dock{order:initial;width:auto;flex:1;min-width:0}.brand{display:none}.window-controls button{width:22px}.logo{width:26px;height:26px}}
+.header{height:36px;min-height:36px;padding:1px 10px;gap:8px;background:#090c12}
+.header .logo{display:none}.brand strong{font-size:12px;letter-spacing:1px;color:#60a5fa}
+.dock{padding:0 4px;gap:4px;border:0;border-radius:0;background:transparent;box-shadow:none}
+.dock button{padding:2px 3px;font-size:16px;border-radius:4px;width:30px;height:28px}.dock .dock-icon{margin:0}.dock .dock-icon{font-size:12px}
+.window-controls button{height:28px!important;min-height:0!important;padding:2px 8px!important}
 </style>
 </head>
 <body>
@@ -131,8 +136,11 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
       <button id="openKeys"><span class="dock-icon">⌨</span>Keymap</button>
       <button id="toggleHints" aria-pressed="true" class="active-toggle"><span class="dock-icon">👁</span>Hints</button>
       <button data-demo="Mouse lock"><span class="dock-icon">◎</span>Lock</button>
-      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen · F11</button>
+      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen</button>
       <button id="openAimDock"><span class="dock-icon">⌖</span>Aim &amp; fire</button>
+      <button data-demo="Android Back (ADB)" title="Back" aria-label="Back">◁</button>
+      <button data-demo="Android Home (ADB)" title="Home" aria-label="Home">⌂</button>
+      <button data-demo="Android Recent apps (ADB)" title="Recent apps" aria-label="Recent apps">▢</button>
     </nav>
     <div class="dock-spacer"></div>
     <div class="window-controls" aria-label="Window controls">
@@ -308,9 +316,15 @@ tap 85 60 50</textarea>
 
 <script>
 const $ = s => document.querySelector(s);
+document.querySelectorAll('.dock button').forEach(button => {
+  const name = button.textContent.trim();
+  button.title = button.title || name; button.setAttribute('aria-label', button.getAttribute('aria-label') || name);
+  const icon = button.querySelector('.dock-icon');
+  if (icon) button.replaceChildren(icon);
+});
 const pages = {
   performance: `<h3>Performance</h3><p class="desc">Choose how much of your PC the virtual machine can use.</p><label class="field">CPU cores <input type="number" value="4" min="1" max="64"></label><label class="field">Memory <select><option>4096 MB</option><option>2048 MB</option><option>8192 MB</option></select></label><div class="note">Changes take effect the next time you start the player.</div>`,
-  display: `<h3>Display</h3><p class="desc">Window and cursor preferences. Guest display controls require Android integration.</p><div class="field">Resolution <div class="disabled">Managed by Android · not available yet</div></div><div class="field">Pixel density <div class="disabled">Managed by Android · not available yet</div></div><label class="check"><input type="checkbox" disabled> Show FPS at bottom left <span class="badge">NOT AVAILABLE YET</span></label><label class="check"><input type="checkbox" checked> Show host mouse cursor</label><div class="note">Live game FPS measurement is not available yet.</div>`,
+  display: `<h3>Display</h3><p class="desc">Resolution and pixel density for Android. Interactive UI preview only.</p><label class="field">Resolution <select id="guestResolution"><option>Android default</option><option>1280x720</option><option>1600x900</option><option>1920x1080</option><option>720x1280</option><option>1080x1920</option></select></label><label class="field">Pixel density (DPI) <select id="guestDensity"><option>Android default</option><option>160 DPI</option><option>200 DPI</option><option>240 DPI</option><option>280 DPI</option><option>320 DPI</option><option>400 DPI</option><option>480 DPI</option></select></label><button class="primary" id="applyGuestDisplay">Apply to running Android</button><div class="note" id="displayPreviewStatus">Desktop build requires ADB platform-tools, local forwarding and authorized TCP debugging. Changes apply immediately, independently of Save. Select Android default in both fields to reset.</div><label class="check"><input type="checkbox" checked> Show host mouse cursor</label><div class="note">This preview cannot change a real guest. Display controls do not add GPU acceleration.</div>`,
   graphics: `<h3>Graphics</h3><p class="desc">The current player uses QEMU's compatibility display.</p><div class="field">Renderer <div class="disabled">Standard VGA · compatibility</div></div><div class="field">GPU acceleration <div class="disabled">Not available in this build</div></div><div class="note">No GPU passthrough, DirectX acceleration or FPS limiter is configured.</div>`,
   device: `<h3>Device</h3><p class="desc">Device profiles require support from the Android system image.</p><div class="field">Phone profile <div class="disabled">Not available in this build</div></div>`,
   preferences: `<h3>Preferences</h3><p class="desc">Startup and debugging options.</p><div class="note">The prepared Android system starts automatically when the player opens.</div><label class="check"><input type="checkbox" checked> Experimental multi-touch keymapping</label><p class="dialog-sub">Enables 10-slot virtio touchscreen for concurrent WASD D-pad, Pinch Zoom, Aim, Fire &amp; ADS. Restart required; guest support is unverified.</p><label class="check"><input type="checkbox"> Enable local ADB forwarding</label><label class="field">Local ADB port <input type="number" value="5555"></label><div class="note">Local forwarding does not enable ADB inside Android.</div>`
@@ -326,6 +340,9 @@ function toast(msg) {
 
 function showPage(p) {
   $('#settingsPage').innerHTML = pages[p];
+  if (p === 'display') $('#applyGuestDisplay').onclick = () => {
+    $('#displayPreviewStatus').textContent = 'Preview only: ' + $('#guestResolution').value + ' / ' + $('#guestDensity').value + '. No Android VM is connected; no changes were applied.';
+  };
   document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === p));
 }
 showPage('performance');

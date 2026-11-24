@@ -32,6 +32,7 @@ private:
     void findGuestWindow();
     void editKeymap();
     void installApk();
+    void androidAction(int keycode);
     void applyGuestDisplay(const QString &size, int dpi);
     void updateControls();
     void setRunning(bool running);
