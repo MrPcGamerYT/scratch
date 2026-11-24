@@ -43,3 +43,14 @@ A guest-capability service, structured boot diagnostics, display backend abstrac
 and measured GPU acceleration need independent implementations and testing. A
 native renderer cannot be substituted merely by copying this host's function names.
 Rust remains the runtime/input migration path; QEMU remains the VM/display backend.
+
+## Additional input review
+
+`InputMapper.cs` registers Windows raw input and forwards buffers to the native
+`ImapHandleRawInput` function. The supplied wrapper does not contain the native
+mapper's processing implementation, so its smoothing/latency behavior cannot be
+reproduced from this file alone. Nexus currently uses Windows hooks and a 16 ms
+movement-coalescing timer for aim; it does not yet have equivalent raw-input
+transport or measured end-to-end latency. Independent X/Y sensitivity exists,
+but changing timer rates alone is not proof of smoother or faster gameplay.
+No QML files were found in the supplied archive or available chat uploads.

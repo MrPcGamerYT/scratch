@@ -74,12 +74,7 @@ int main(int argc, char **argv) {
     QFile emptyFirmware(tmp.path() + "/images/android-uefi-code.fd");
     QDir().mkpath(tmp.path() + "/images"); emptyFirmware.open(QIODevice::WriteOnly); emptyFirmware.close();
     if (!playerDiagnostics(tmp.path()).contains("incomplete/empty UEFI")) return 19;
-    auto *audio = dialog.findChild<QCheckBox *>("audioOutput");
-    if (!audio || audio->isChecked()) return 20;
-    audio->setChecked(true); discard->click();
-    if (audio->isChecked()) return 21;
-    audio->setChecked(true); save->click();
-    if (!QSettings().value("audioOutput").toBool()) return 22;
+    if (dialog.findChild<QCheckBox *>("audioOutput")) return 20; // automatic, no user toggle
     QMimeData mime;
     mime.setUrls({QUrl("https://example.invalid/test.apk")});
     if (!droppedApk(&mime).isEmpty()) return 23;

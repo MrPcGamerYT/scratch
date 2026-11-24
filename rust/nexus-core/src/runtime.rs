@@ -173,3 +173,43 @@ mod tests {
         }
     }
 }
+
+/// Explicit user-requested working-set trim, not a VM RAM allocation change.
+/// Returns 1 on success, 0 on Windows failure, -1 on unsupported platforms.
+/// The host supplies only its own PID or that of the QEMU child it owns.
+#[no_mangle]
+pub extern "C" fn nexus_trim_working_set(pid: u32) -> i32 {
+    if pid == 0 { return 0; }
+    #[cfg(windows)]
+    unsafe {
+        use std::ffi::c_void;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+            fn SetProcessWorkingSetSize(process: *mut c_void, minimum: usize, maximum: usize) -> i32;
+            fn CloseHandle(handle: *mut c_void) -> i32;
+        }
+        const PROCESS_SET_QUOTA: u32 = 0x0100;
+        let handle = OpenProcess(PROCESS_SET_QUOTA, 0, pid);
+        if handle.is_null() { return 0; }
+        let result = SetProcessWorkingSetSize(handle, usize::MAX, usize::MAX);
+        CloseHandle(handle);
+        i32::from(result != 0)
+    }
+    #[cfg(not(windows))]
+    { -1 }
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+    #[test]
+    fn rejects_zero_pid() { assert_eq!(nexus_trim_working_set(0), 0); }
+    #[test]
+    fn trims_only_when_explicitly_called() {
+        #[cfg(windows)]
+        assert_eq!(nexus_trim_working_set(std::process::id()), 1);
+        #[cfg(not(windows))]
+        assert_eq!(nexus_trim_working_set(std::process::id()), -1);
+    }
+}

@@ -13,6 +13,8 @@ const assert = require('node:assert/strict');
       assert.match(await page.locator('.preview-banner').innerText(), /not connected/);
 
       await page.locator("#keymapMenuButton").click();
+      assert.equal(await page.locator('#audioOutputPreview').count(), 0);
+      assert.equal(await page.locator('#cleanMemoryPreview').count(), 1);
       // Stage hints toggle works live
       assert(await page.locator('#stageOverlay .hint-pill').count() >= 1);
       await page.locator('#toggleHints').click();

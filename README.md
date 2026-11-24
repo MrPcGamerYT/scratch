@@ -230,16 +230,14 @@ not prove successful Android boot, ADB authorization or valid ISO contents.
 Use the single **Emulator preview** on port 4173. The preview reloads automatically
 when its HTML or wallpaper changes; it does not inspect a real Android guest.
 
-### Experimental audio output and APK drops
+### Automatic audio output and APK drops
 
-In Settings → Devices, opt into guest audio output, Save, and restart the player.
-The Rust launch policy adds Intel HDA with an output-only codec and DirectSound
-on Windows' default playback device. Disabled by default. A compatible Android
-HDA driver and a working Windows audio device are required; no microphone input,
-per-device routing or audible-playback guarantee is provided. Disable the option
-if guest startup or playback fails. Rust flag 16 selects audio; valid mask is 31.
-CI verifies the bundled QEMU advertises DirectSound and the HDA devices; this is
-not an end-to-end Android audio test.
+The player always adds Intel HDA with an output-only codec and DirectSound on
+Windows' default playback device. There is no end-user sound enable/disable switch;
+legacy `audioOutput` preferences are ignored. A compatible Android HDA driver and
+a working Windows audio device are required; microphone input and per-device
+routing are not implemented. Rust flag 16 selects audio; valid mask is 31. CI
+checks backend/device availability, not audible Android playback.
 
 Drop one local, non-empty `.apk` onto the player to use the existing confirmed ADB
 installation flow. Remote URLs, directories and multi-file drops are rejected.
@@ -247,3 +245,35 @@ Nothing installs without confirmation. Android must already be running with
 forwarded, authorized TCP ADB and platform-tools available. File extension checks
 are not malware scanning: install only packages you trust. Browser preview drops
 are simulations; files are not read or uploaded.
+
+
+### Prepared Android appliance and cleanup
+
+Developers install/customize Android in Image Studio, shut it down cleanly, verify
+boot without the ISO and publish it as `images/android-base.qcow2` together with
+any prepared UEFI files. Preserve that complete images folder when distributing
+the player. Branding/debloating must be performed in the guest or offline file
+editor before publishing; Nexus does not automatically customize Android.
+Ensure the guest and included apps are licensed for distribution.
+
+Users open ProjectNexus.exe, not the installer. A per-user copy-on-write disk
+protects the supplied base and preserves subsequent user changes. The startup
+screen animates while preparing the VM and connecting its display, then shows
+Android's own boot screen. Display attachment is **not** Android boot completion;
+there is no invented boot percentage. Firmware, driver, hardware-acceleration
+and prepared-image compatibility still need testing.
+
+Network uses user-mode NAT and virtio-net by default (no inbound LAN exposure).
+Guest driver, DHCP/DNS, host firewall and a working host internet connection are
+required. This does not imply every game/network protocol is supported.
+
+The ♻ toolbar action asks confirmation, uses authorized ADB `am kill-all` for
+eligible guest background processes, then requests a Windows working-set trim
+for Nexus and its owned QEMU process through Rust. It does not force-stop every
+app, erase data, reduce configured RAM, reclaim other PC apps' memory, or measure
+bytes saved. Trimming may cause page faults/stutter; it is manual, not automatic.
+Missing ADB/authorization or command failure is reported without claiming success.
+
+Real guest/game FPS, a movable measured-FPS HUD, accelerated graphics and a
+lower-latency raw-input transport remain unfinished. Do not substitute Qt paint
+rate or a timer count for game FPS. No zero-latency or fastest-emulator claim is made.

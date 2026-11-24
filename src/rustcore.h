@@ -67,4 +67,6 @@ struct NexusVmRequest {
 };
 std::size_t nexus_vm_plan(const NexusVmRequest *request, std::uint8_t *output, std::size_t capacity);
 std::int32_t nexus_whpx_available();
+// Manual working-set trim; 1 success, 0 failed, -1 unsupported.
+std::int32_t nexus_trim_working_set(std::uint32_t pid);
 }

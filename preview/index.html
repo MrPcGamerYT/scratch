@@ -123,6 +123,7 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
 .window-controls button{height:28px!important;min-height:0!important;padding:2px 8px!important}
 .toolbar-menu{position:absolute;top:75px;right:160px;z-index:9;background:#141923;border:1px solid #303d51;border-radius:8px;padding:6px;box-shadow:0 12px 32px #0009;min-width:210px}
 .toolbar-menu[hidden]{display:none}.toolbar-menu button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:10px;border-radius:5px}.toolbar-menu button:hover{background:#263449}
+.boot-spinner{width:24px;height:24px;margin:20px auto;border:3px solid #26364c;border-top-color:#60a5fa;border-radius:50%;animation:bootSpin 1.1s linear infinite}@keyframes bootSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.boot-spinner{animation:none}}
 </style>
 </head>
 <body>
@@ -139,6 +140,7 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
       <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen</button>
       <button id="keymapMenuButton" title="Keymap controls" aria-label="Keymap controls">⌨</button>
       <button id="volumeMenuButton" title="Volume" aria-label="Volume">♫</button>
+      <button id="cleanMemoryPreview" title="Clean background memory" aria-label="Clean background memory">♻</button>
       <button data-demo="Install APK"><span class="dock-icon">＋</span>Install APK</button>
       <button id="openSettings"><span class="dock-icon">⚙</span>Settings</button>
     </nav>
@@ -165,8 +167,9 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
       <div class="player-content">
         <div class="center-logo">N</div>
         <span class="kicker">Project Nexus</span>
-        <h1>Your world, ready to play.</h1>
-        <p>Open <b>Keymap</b> in the top dock to test the Nexus Keymap Studio: 8-way WASD D-pad with sprint, swipes, pinch zoom, MOBA skill pads, Aim/ADS/Free-Look, and multi-step macro scripts.</p>
+        <h1>Loading your Android</h1>
+        <div class="boot-spinner" aria-label="Boot animation preview"></div>
+        <p>The desktop player starts the developer-prepared Android disk automatically, with your own persistent data layer. This is a boot-screen UI demo—not a connected guest. Use <b>Keymap</b> to explore controls.</p>
       </div>
     </main>
   </div>
@@ -362,7 +365,7 @@ document.querySelectorAll('.dock button').forEach(button => {
   if (icon) button.replaceChildren(icon);
 });
 const pages = {
-  audio: `<h3>Audio output</h3><p class="desc">Desktop player supports opt-in Intel HDA output through Windows DirectSound.</p><label class="check"><input type="checkbox" id="audioOutputPreview"> Enable guest audio output (experimental)</label><div class="note">Desktop: Settings → Devices. Save and restart required. Uses the Windows default playback device. Android must provide a compatible HDA driver. Disabled by default; microphone and device routing are not implemented. Browser controls are demo-only and do not play guest audio.</div>`,
+  audio: `<h3>Audio output</h3><p class="desc">Automatic guest sound through Intel HDA and Windows DirectSound.</p><div class="field">Playback <div class="disabled">Windows default playback device · automatic</div></div><div class="note">Desktop sound is enabled by default without an on/off switch. Android needs a compatible HDA driver. Microphone capture and per-device routing are not implemented. This browser demo does not play guest audio.</div>`,
   diagnostics: `<h3>Diagnostics</h3><p class="desc">Package checks and bounded current-session events in the desktop player.</p><div class="note">Browser demo only — this page cannot inspect your PC, installed files or Android guest.</div><pre style="white-space:pre-wrap;background:#10131c;padding:16px;border-radius:8px">Engine: not connected (browser preview)
 QMP monitor: not connected
 Android display: not connected
@@ -406,6 +409,7 @@ $('#openAim').onclick = () => $('#aimOverlay').classList.add('open');
 $('#keymapMenuButton').onclick = () => { $('#keymapToolbarMenu').hidden = !$('#keymapToolbarMenu').hidden; $('#volumeToolbarMenu').hidden = true; };
 $('#volumeMenuButton').onclick = () => { $('#volumeToolbarMenu').hidden = !$('#volumeToolbarMenu').hidden; $('#keymapToolbarMenu').hidden = true; };
 document.addEventListener('click', e => { if (!e.target.closest('.toolbar-menu') && !e.target.closest('#keymapMenuButton, #volumeMenuButton')) document.querySelectorAll('.toolbar-menu').forEach(m => m.hidden = true); });
+$('#cleanMemoryPreview').onclick = () => toast('Preview only: desktop asks permission to stop eligible Android background processes and trim owned working sets. No RAM was cleared.');
 $('#openSettings').onclick = () => $('#settingsOverlay').classList.add('open');
 $('#openKeys').onclick = () => $('#keysOverlay').classList.add('open');
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.overlay').classList.remove('open'));

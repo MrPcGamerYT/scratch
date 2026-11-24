@@ -26,6 +26,7 @@
 #include <QFrame>
 #include <QEvent>
 #include <QShortcut>
+#include <QScopeGuard>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -100,6 +101,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         auto *action = volumeMenu->addAction(entry.first);
         connect(action, &QAction::triggered, this, [this, code = entry.second] { androidAction(code); });
     }
+    auto *cleanButton = dockButton("♻  Clean background memory", dock); dockLayout->addWidget(cleanButton);
+    cleanButton->setToolTip("Ask Android to stop eligible background processes and trim Nexus/QEMU working sets. May briefly slow apps; not a performance boost guarantee.");
+    connect(cleanButton, &QPushButton::clicked, this, [this] {
+        if (QMessageBox::question(this, "Clean background memory", "Ask Android to stop eligible background processes and trim this player's and QEMU's Windows working sets?\n\nApps may reload and memory can grow again. This does not clear app data, force-stop every app, or reduce configured VM RAM. Trimming can cause page faults and temporarily worsen smoothness.", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) androidAction(-1);
+    });
     auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
     auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
@@ -213,7 +219,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(embedTimer, &QTimer::timeout, this, [this] { findGuestWindow(); });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError errorCode) {
         recordEvent("Process error: " + process->errorString());
-        if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
+        if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); view->setStartupStatus("Engine failed to start", process->errorString()); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
@@ -239,6 +245,10 @@ void MainWindow::setRunning(bool running) {
 void MainWindow::launch() {
     if (process->state() != QProcess::NotRunning) return;
     engineErrorTail.clear(); recordEvent("Launch requested.");
+    view->setStartupStatus("Loading your Android", "Checking the prepared disk and firmware. Personal data stays in your per-user instance.", true);
+    const auto startupGuard = qScopeGuard([this] {
+        if (process->state() == QProcess::NotRunning) view->setStartupStatus("Android could not start", "Open Settings → Diagnostics. The prepared image and your personal disk have not been reset.");
+    });
     const QString root = QCoreApplication::applicationDirPath();
     const QString base = root + "/images/android-base.qcow2";
     const QString qemu = root + "/qemu/bin/qemu-system-x86_64.exe";
@@ -280,7 +290,7 @@ void MainWindow::launch() {
     const QByteArray firmwareBytes = (QFileInfo::exists(firmware + "/bios-256k.bin") ? firmware : QString()).toUtf8();
     const QByteArray codeBytes = (hasCode ? code : QString()).toUtf8();
     const QByteArray varsBytes = (hasCode ? vars : QString()).toUtf8();
-    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u) | (s.value("audioOutput", false).toBool() ? 16u : 0u);
+    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u) | 16u;
     const NexusVmRequest request{diskBytes.constData(), firmwareBytes.constData(), codeBytes.constData(), varsBytes.constData(), static_cast<std::uint32_t>(ram), static_cast<std::uint32_t>(cpus), static_cast<std::uint32_t>(port), flags};
     const auto size = nexus_vm_plan(&request, nullptr, 0);
     if (size == 0 || size > 1024 * 1024) { QMessageBox::critical(this, "VM configuration", "Rust runtime rejected the launch configuration."); return; }
@@ -293,6 +303,7 @@ void MainWindow::launch() {
         if (!value.isString()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch argument."); return; }
         args << value.toString();
     }
+    view->setStartupStatus("Starting Android", "Connecting to the VM display. Android may still be booting after its screen appears.", true);
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
     statusBar()->showMessage(softwareCpu ? "Starting with explicit software CPU emulation (slow)." : "Starting Android with WHPX...");
@@ -301,7 +312,7 @@ void MainWindow::findGuestWindow() {
     if (process->state() != QProcess::Running) return;
     WindowSearch search{static_cast<DWORD>(process->processId())}; EnumWindows(findWindow, reinterpret_cast<LPARAM>(&search));
     if (search.result && view->attach(search.result)) { embedTimer->stop(); updateControls(); statusBar()->showMessage("Android display connected."); }
-    else if (++embedAttempts >= 120) { embedTimer->stop(); statusBar()->showMessage("Could not embed the QEMU window; it may be running separately."); }
+    else if (++embedAttempts >= 120) { embedTimer->stop(); view->setStartupStatus("Waiting for Android display", "The VM may be running in a separate window. Open Settings → Diagnostics; no Android-ready state has been confirmed."); statusBar()->showMessage("Could not embed the QEMU window; it may be running separately."); }
 }
 void MainWindow::updateControls() {
     const bool running = process->state() == QProcess::Running;
@@ -314,31 +325,40 @@ void MainWindow::updateControls() {
     aimButton->setEnabled(embedded && qmp->isReady());
 }
 void MainWindow::androidAction(int keycode) {
-    if (keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
+    if (keycode != -1 && keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
     if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
-        QMessageBox::information(this, "Android navigation", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
+        QMessageBox::information(this, "Android controls", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
     }
     QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
     if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
-    if (adb.isEmpty()) { QMessageBox::warning(this, "Android navigation", "Android platform-tools/adb.exe is required next to the player or on PATH."); return; }
+    if (adb.isEmpty()) { QMessageBox::warning(this, "Android controls", "Android platform-tools/adb.exe is required next to the player or on PATH."); return; }
     auto *task = new QProcess(this); apkTask = task;
     connect(task, &QObject::destroyed, this, [this] { apkTask = nullptr; });
     auto *timer = new QTimer(task); timer->setSingleShot(true);
     const QString endpoint = "127.0.0.1:" + QString::number(runningAdbPort);
     connect(timer, &QTimer::timeout, task, [task] { task->setProperty("timeout", true); task->kill(); });
     connect(task, &QProcess::errorOccurred, this, [this, task, timer](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart) { timer->stop(); QMessageBox::warning(this, "Android navigation", task->errorString()); task->deleteLater(); }
+        if (error == QProcess::FailedToStart) { timer->stop(); QMessageBox::warning(this, "Android controls", task->errorString()); task->deleteLater(); }
     });
     connect(task, &QProcess::finished, this, [=](int code, QProcess::ExitStatus status) {
         timer->stop();
         const QString output = QString::fromLocal8Bit(task->readAllStandardOutput() + task->readAllStandardError());
         const bool sent = task->property("sent").toBool();
         if (code != 0 || status != QProcess::NormalExit || task->property("timeout").toBool() || output.contains("error", Qt::CaseInsensitive) || output.contains("exception", Qt::CaseInsensitive) || output.contains("denied", Qt::CaseInsensitive) || (!sent && !output.contains("connected to " + endpoint, Qt::CaseInsensitive))) {
-            QMessageBox::warning(this, "Android navigation failed", "Check Android TCP debugging and authorization.\n\n" + output.right(2000)); task->deleteLater(); return;
+            QMessageBox::warning(this, "Android control failed", "Check Android TCP debugging and authorization.\n\n" + output.right(2000)); task->deleteLater(); return;
         }
-        if (sent) { task->deleteLater(); return; }
+        if (sent) {
+            if (keycode == -1) {
+                const int guestTrim = nexus_trim_working_set(static_cast<std::uint32_t>(process->processId()));
+                const int playerTrim = nexus_trim_working_set(static_cast<std::uint32_t>(QCoreApplication::applicationPid()));
+                const QString result = QString("Android accepted the eligible-background-process cleanup request. This does not mean every background app was closed.\nQEMU working-set trim: %1\nNexus working-set trim: %2\n\nNo measured RAM saving or FPS improvement is claimed.").arg(guestTrim == 1 ? "requested successfully" : "failed").arg(playerTrim == 1 ? "requested successfully" : "failed");
+                recordEvent(result); QMessageBox::information(this, "Memory cleanup", result);
+            }
+            task->deleteLater(); return;
+        }
         task->setProperty("sent", true); timer->start(15000);
-        task->start(adb, {"-s", endpoint, "shell", "input", "keyevent", QString::number(keycode)});
+        if (keycode == -1) task->start(adb, {"-s", endpoint, "shell", "am", "kill-all"});
+        else task->start(adb, {"-s", endpoint, "shell", "input", "keyevent", QString::number(keycode)});
     });
     timer->start(15000); task->start(adb, {"connect", endpoint});
 }
