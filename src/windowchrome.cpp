@@ -1,5 +1,7 @@
 #include "windowchrome.h"
 #include <QDialog>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -50,6 +52,12 @@ bool WindowChrome::eventFilter(QObject *object, QEvent *event) {
     auto *widget = qobject_cast<QWidget *>(object);
     if (event->type() != QEvent::Show || !widget || !widget->isWindow() || widget->property("nexusChrome").toBool() ||
         (!qobject_cast<QMainWindow *>(widget) && !qobject_cast<QDialog *>(widget)) || widget->windowFlags().testFlag(Qt::FramelessWindowHint))
+        return QObject::eventFilter(object, event);
+    // Never hide/recreate file pickers or standard dialogs during Show. Native
+    // dialog helpers can interpret that as cancellation and close immediately.
+    if (qobject_cast<QFileDialog *>(widget) || qobject_cast<QMessageBox *>(widget))
+        return QObject::eventFilter(object, event);
+    if (!qobject_cast<QMainWindow *>(widget) && !qobject_cast<QVBoxLayout *>(widget->layout()))
         return QObject::eventFilter(object, event);
     widget->setProperty("nexusChrome", true);
     const auto geometry = widget->geometry();

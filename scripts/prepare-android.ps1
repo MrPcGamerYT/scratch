@@ -50,6 +50,14 @@ try {
     if (Test-Path -LiteralPath $target) { throw 'A prepared base already exists in the player folder. It will not be overwritten.' }
     if (-not (Test-Path -LiteralPath (Join-Path $PlayerFolder 'ProjectNexus.exe') -PathType Leaf)) { throw 'PlayerFolder must contain ProjectNexus.exe.' }
     if (-not (Test-Path -LiteralPath $img -PathType Leaf)) { throw "qemu-img not found: $img" }
+    Write-Host 'STAGE: Checking bundled QEMU tools before creating or booting any disk'
+    foreach ($tool in @('qemu-img.exe', 'qemu-system-x86_64.exe')) {
+        $exe = Join-Path $QemuDir $tool
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Bundled tool missing: $exe. Extract the complete Developer package." }
+        try { $version = & $exe --version 2>&1; $exitCode = $LASTEXITCODE }
+        catch { throw "Cannot launch $tool. It may be locked, blocked or missing a dependency. Close other tools and finish extracting the package. Details: $($_.Exception.Message)" }
+        if ($exitCode -ne 0) { throw "$tool self-check failed (exit $exitCode): $version. No VM was started." }
+    }
     if ($Resume) {
         if (-not (Test-Path -LiteralPath $disk -PathType Leaf)) { throw 'Resume requires an existing disk file.' }
         if ($Bliss -and -not (Test-Path -LiteralPath $vars -PathType Leaf)) { throw 'Resume requires the existing DiskPath.uefi-vars.fd file.' }
@@ -98,6 +106,7 @@ Other Android images can have different menus or may not support auto install.
 '@
             }
             $fwArgs = @{}; if ($Bliss) { $fwArgs = @{ UefiCodePath = $uefiCode; UefiVarsPath = $vars } }
+            Write-Host 'STAGE: Installing from ISO - complete the installer in the VM, then shut down cleanly'
             & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -IsoPath $IsoPath -DiskPath $disk -Boot iso -Acceleration $Acceleration @fwArgs
             if ($LASTEXITCODE -ne 0) { throw 'Installer VM failed. Do not stage this disk or assume installation completed. Preserve the log. If installation never started, use a fresh workspace with Install after fixing the error; Resume only boots an already installed disk.' }
             if ((Confirm-InstallationStage 'Did installation finish and the guest shut down cleanly? Approve to boot the disk.') -cne 'YES') { throw 'Not staged. Disk retained; use -Resume to boot it later.' }
@@ -109,6 +118,7 @@ Other Android images can have different menus or may not support auto install.
     if ($info.format -ne 'qcow2' -or $null -ne $info.'backing-filename') { throw 'Disk must be a standalone QCOW2 image with no backing file.' }
     & $img check $disk
     if ($LASTEXITCODE -ne 0) { throw 'Disk failed qemu-img check. It was not staged.' }
+    Write-Host 'STAGE: Verifying installed disk without ISO'
     Write-Host 'Booting the disk without an ISO. Verify Android starts, make permitted changes in the guest, then shut it down cleanly.'
     $fwArgs = @{}; if ($Bliss) { $fwArgs = @{ UefiCodePath = $uefiCode; UefiVarsPath = $vars } }
     & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -DiskPath $disk -Boot disk -Acceleration $Acceleration @fwArgs
@@ -116,6 +126,7 @@ Other Android images can have different menus or may not support auto install.
     if ((Confirm-InstallationStage 'Did Android boot and shut down cleanly, and are you ready to stage it?') -cne 'YES') { throw 'Not staged. Disk retained.' }
     & $img check $disk
     if ($LASTEXITCODE -ne 0) { throw 'Disk failed qemu-img check after boot. It was not staged.' }
+    Write-Host 'STAGE: Publishing validated image to the fixed player filename'
     New-Item -ItemType Directory -Force $targetDir | Out-Null
     if ($Bliss) {
         # Stage firmware before the disk so an incomplete copy cannot be auto-booted.
