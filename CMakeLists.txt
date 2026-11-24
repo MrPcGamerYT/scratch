@@ -38,7 +38,7 @@ add_library(nexus_controls STATIC
     src/aimmodel.cpp src/aimmodel.h
 )
 add_dependencies(nexus_controls nexus_rust_build)
-target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32)
+target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32 synchronization)
 target_include_directories(nexus_controls PUBLIC src)
 
 add_library(nexus_download STATIC src/imagedownload.cpp src/imagedownload.h)
