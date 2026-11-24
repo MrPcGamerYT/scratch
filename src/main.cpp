@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "windowchrome.h"
 #include <QApplication>
 
 int main(int argc, char *argv[]) {
@@ -42,6 +43,8 @@ int main(int argc, char *argv[]) {
         QProgressBar { border: 1px solid #393849; border-radius: 5px; text-align: center; }
         QProgressBar::chunk { background: #8b6fff; border-radius: 4px; }
     )");
+    WindowChrome chrome;
+    app.installEventFilter(&chrome);
     MainWindow window;
     window.show();
     return app.exec();

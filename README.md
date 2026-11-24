@@ -22,6 +22,22 @@ Run `python3 preview/server.py` from the repository root and open port 4173. Thi
 
 ## Separate developer image tool
 
+### Desktop preparation tool (Windows)
+
+Extract **ProjectNexus-ImageStudio-Developer** and open **NexusImageStudio.exe**. Qt runtime, QEMU, firmware and scripts must stay together. The GUI uses the PowerShell backend internally; you do not need to type commands. Windows PowerShell or PowerShell 7 and an enabled Windows Hypervisor Platform are required. The desktop tool provides source/workspace/player file pickers, source SHA-256 verification, live logs and log export, progress, explicit shutdown/boot checkpoints and safe resume. Never run a VM or offline editor on an image while it is being prepared.
+
+1. Choose **Install** for an ISO or ZIP containing exactly one ISO. Choose **Import** for a preinstalled standalone QCOW2, raw whole-disk, VHD or VHDX file, including a ZIP containing one such image. Leave **Bliss OS / UEFI** enabled for recent Bliss releases. An imported UEFI disk requires its original variables file.
+2. Choose a workspace (the working disk is always `android-install.qcow2`) and the extracted **player** folder containing `ProjectNexus.exe`.
+3. Start preparation. For installation, complete the actual Bliss installer in the QEMU window, then shut the guest down cleanly. Confirm the GUI checkpoint to boot without installation media. Verify Android starts and shut it down cleanly again before the final publish confirmation.
+4. The published name is **always `images/android-base.qcow2`** in the player folder. It is deliberately not editable and matches the emulator loader. Firmware uses the matching `android-uefi-code.fd` / `android-uefi-vars.fd` names. Start the player; it creates its separate per-user overlay automatically.
+5. For a retained installation, select **Resume** with the same workspace and firmware mode. **Cancel at checkpoint** retains the workspace; it does not abruptly kill a VM. Existing player images are refused, never silently replaced.
+
+ZIP is a container, not a boot format. Archives containing only `kernel`, `initrd.img`, `system.img`, `data.img` or installer scripts are **not supported as bootable disks**. The tool diagnoses them rather than copying a nonbootable partition into the player. Multiple candidate payloads are refused. Share the file listing of such a Bliss package before attempting a custom installation. Extraction ignores archive paths and writes only the chosen payload to a generated temporary name, with size/space limits; originals stay unchanged. Imported raw images require an MBR boot signature, but only the manual boot checkpoint can establish that a specific image boots. ZIP/image workflow tests use synthetic payloads and do not prove Bliss compatibility.
+
+The player, Settings, Keymap Studio, Aim dialog and desktop preparation window use borderless custom title bars with move, minimize, maximize/restore and close controls. Standard OS file/message dialogs retain native chrome where Qt does not provide a vertical layout; the main player and resizable dialogs retain sizing affordances.
+
+### PowerShell backend (optional)
+
 Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separately from the **ProjectNexus-Windows** player artifact. Download a legally obtained Bliss OS x86-64 ISO from the [Bliss OS project](https://sourceforge.net/projects/blissos-x86/) and check the exact image's redistribution terms. The ISO is **not bundled**. On a Windows host with WHPX enabled, run the separate tool:
 
 ```powershell

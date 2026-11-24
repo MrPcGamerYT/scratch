@@ -1,4 +1,5 @@
 #include "settingsdialog.h"
+#include "windowchrome.h"
 #include <QApplication>
 #include <QPushButton>
 #include <QSettings>
@@ -14,7 +15,11 @@ int main(int argc, char **argv) {
     QCoreApplication::setApplicationName("Isolated");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, tmp.path());
+    WindowChrome chrome;
+    app.installEventFilter(&chrome);
     SettingsDialog dialog(false);
+    dialog.show(); app.processEvents();
+    if (!dialog.windowFlags().testFlag(Qt::FramelessWindowHint)) return 9;
     auto *tabs = dialog.findChild<QTabWidget *>();
     auto *cpu = dialog.findChild<QSpinBox *>("cpuAllocation");
     auto *save = dialog.findChild<QPushButton *>("saveSettings");

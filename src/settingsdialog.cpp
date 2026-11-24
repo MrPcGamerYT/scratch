@@ -9,6 +9,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSysInfo>
+#include <QThread>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -83,6 +85,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     cpus = new QSpinBox(performance); cpus->setRange(1, 64); cpus->setObjectName("cpuAllocation");
     memory = new QSpinBox(performance); memory->setRange(512, 131072); memory->setSingleStep(512); memory->setSuffix(" MB"); memory->setObjectName("memoryAllocation");
     form->addRow("CPU allocation", cpus); form->addRow("Memory allocation", memory);
+    note(form, QString("Detected host: %1 logical CPU threads. Leave resources available for Windows; over-allocation can reduce performance.").arg(qMax(1, QThread::idealThreadCount())));
     form->addRow("Performance mode", unavailable("QEMU / WHPX with TCG fallback"));
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
     note(form, "High-FPS unlock, VSync control and a live guest FPS counter are not implemented. A target value would not guarantee game FPS.");
@@ -108,6 +111,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     adbPort = new QSpinBox(advanced); adbPort->setRange(1024, 65535); form->addRow("Local ADB port", adbPort);
     form->addRow("Root access", unavailable("Controlled by guest image")); note(form, "Forwarding binds to loopback. Enable Android debugging in the guest separately. Restart required.");
     addPage("About", "Project Nexus · native Qt player and Rust gesture core", &form);
+    note(form, QString("Host: %1 · %2\n").arg(QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture()));
     note(form, "Engine: QEMU x86_64\nInput: QMP pointer / experimental virtio multitouch\nKeymaps: v3 profiles with legacy import\n\nAndroid version, virtualization availability and game compatibility depend on the installed guest and host. No ARM translation or commercial-emulator compatibility is claimed.");
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
@@ -125,7 +129,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
     for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
-    connect(saveButton, &QPushButton::clicked, this, [=] { save(); *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
+    connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
     hasChanges = [=] { return snapshot() != *baseline; };
     connect(close, &QPushButton::clicked, this, &SettingsDialog::reject);
     restore();
@@ -134,8 +138,14 @@ void SettingsDialog::reject() {
     if (hasChanges && hasChanges() && QMessageBox::question(this, "Unsaved settings", "Discard your unsaved changes?", QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Discard) return;
     QDialog::reject();
 }
-void SettingsDialog::save() {
+bool SettingsDialog::save() {
     QSettings s; s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
+    s.sync();
+    if (s.status() != QSettings::NoError) {
+        QMessageBox::critical(this, "Settings not saved", "Could not write local settings. Check your user configuration folder permissions and free space.");
+        return false;
+    }
+    return true;
 }

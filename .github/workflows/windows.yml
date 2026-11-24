@@ -151,6 +151,18 @@ jobs:
             Write-Output "::error::$text"
             exit $code
           }
+      - name: Image Studio ZIP workflow contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $output = & pwsh -NoProfile -File ./tests/archive_studio_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe" 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $text = ($output | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$text"
+            exit $code
+          }
       - uses: actions/download-artifact@v4
         with:
           name: QEMU-source-build
@@ -217,6 +229,10 @@ jobs:
           Copy-Item -Recurse package/qemu image-studio/qemu
           Copy-Item scripts/launch.ps1 image-studio/
           Copy-Item scripts/prepare-android.ps1 image-studio/
+          Copy-Item scripts/image-studio.ps1 image-studio/
+          Copy-Item build/Release/NexusImageStudio.exe image-studio/
+          windeployqt --release image-studio/NexusImageStudio.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Image Studio Qt deployment failed.' }
           Copy-Item -Recurse image-studio-tools image-studio/offline-files
           Copy-Item README.md image-studio/
       - uses: actions/upload-artifact@v4

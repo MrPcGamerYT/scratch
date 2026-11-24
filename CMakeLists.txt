@@ -47,6 +47,7 @@ target_include_directories(nexus_download PUBLIC src)
 
 qt_add_executable(ProjectNexus WIN32
     src/main.cpp
+    src/windowchrome.cpp src/windowchrome.h
     src/mainwindow.cpp
     src/mainwindow.h
     src/settingsdialog.cpp
@@ -69,6 +70,9 @@ qt_add_executable(ProjectNexus WIN32
 qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
 target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32)
 
+qt_add_executable(NexusImageStudio WIN32 src/imagestudio.cpp src/windowchrome.cpp src/windowchrome.h)
+target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(download_tests tests/download_tests.cpp)
@@ -83,10 +87,12 @@ if(BUILD_TESTING)
     add_executable(managed_disk_tests tests/managed_disk_tests.cpp)
     target_link_libraries(managed_disk_tests PRIVATE nexus_controls)
     add_test(NAME managed_disk_tests COMMAND managed_disk_tests)
-    add_executable(settings_tests tests/settings_tests.cpp src/settingsdialog.cpp src/settingsdialog.h)
+    add_executable(settings_tests tests/settings_tests.cpp src/settingsdialog.cpp src/settingsdialog.h src/windowchrome.cpp src/windowchrome.h)
     target_include_directories(settings_tests PRIVATE src)
     target_link_libraries(settings_tests PRIVATE Qt6::Widgets)
     add_test(NAME settings_tests COMMAND settings_tests)
     set_tests_properties(settings_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME image_studio_ui_tests COMMAND NexusImageStudio --smoke-test)
+    set_tests_properties(image_studio_ui_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(qemu_stub tests/qemu_stub.cpp)
 endif()

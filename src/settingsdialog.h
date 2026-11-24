@@ -9,7 +9,7 @@ public:
     void reject() override;
 private:
     std::function<bool()> hasChanges;
-    void save();
+    bool save();
     QSpinBox *memory;
     QSpinBox *cpus;
     QSpinBox *adbPort;
