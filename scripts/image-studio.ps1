@@ -8,7 +8,8 @@ param(
     [string]$QemuDir = (Join-Path $PSScriptRoot 'qemu/bin'),
     [switch]$Bliss,
     [string]$ExpectedSha256 = '',
-    [string]$ApprovalDirectory = ''
+    [string]$ApprovalDirectory = '',
+    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx'
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -27,7 +28,7 @@ try {
     if (Test-Path -LiteralPath $target) { throw 'The player already has images/android-base.qcow2. Back it up; it will not be overwritten.' }
     New-Item -ItemType Directory -Force -Path $workspaceFull | Out-Null
     $disk = Join-Path $workspaceFull 'android-install.qcow2'
-    $arguments = @{ DiskPath = $disk; PlayerFolder = $PlayerFolder; QemuDir = $QemuDir; Bliss = $Bliss; ApprovalDirectory = $ApprovalDirectory }
+    $arguments = @{ DiskPath = $disk; PlayerFolder = $PlayerFolder; QemuDir = $QemuDir; Bliss = $Bliss; ApprovalDirectory = $ApprovalDirectory; Acceleration = $Acceleration }
     if ($Mode -eq 'Resume') { $arguments.Resume = $true }
     else {
         if (Test-Path -LiteralPath $disk) { throw 'Workspace already contains android-install.qcow2. Select Resume or an empty workspace.' }
@@ -35,7 +36,7 @@ try {
     }
     Write-Output "Fixed player output: $target"
     & (Join-Path $PSScriptRoot 'prepare-android.ps1') @arguments
-    if ($LASTEXITCODE -ne 0) { throw 'Preparation stopped. Review the log; keep the workspace for Resume.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Preparation stopped. Review the log; keep the log and workspace. Resume only if installation completed; otherwise select Install with a fresh workspace.' }
     Write-Output "SUCCESS: $target"
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)

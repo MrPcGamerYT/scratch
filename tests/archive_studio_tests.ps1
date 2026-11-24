@@ -22,9 +22,11 @@ try {
         if ($LASTEXITCODE -ne 1 -or (Test-Path (Join-Path $root "work-$name/android-install.qcow2"))) { throw "Non-ISO source was accepted: $name" }
     }
     Set-Content (Join-Path $root 'bliss.iso') 'synthetic ISO'
-    & $backend -Mode Install -Source (Join-Path $root 'bliss.iso') -Workspace (Join-Path $root 'work-iso') -PlayerFolder (Join-Path $root 'player') -QemuDir $root
+    & $backend -Mode Install -Acceleration tcg -Source (Join-Path $root 'bliss.iso') -Workspace (Join-Path $root 'work-iso') -PlayerFolder (Join-Path $root 'player') -QemuDir $root
     if ($LASTEXITCODE -ne 0) { throw 'ISO installation contract failed.' }
     if (-not (Test-Path (Join-Path $root 'player/images/android-base.qcow2'))) { throw 'Fixed output name was not published.' }
+    if ((Get-Content (Join-Path $root 'player/images/acceleration.txt') -Raw).Trim() -ne 'tcg') { throw 'Prepared player did not retain software mode.' }
+    if (@(Get-Content $env:NEXUS_TEST_LOG | Where-Object { $_ -ceq 'tcg,thread=multi' }).Count -ne 2) { throw 'ISO installer and disk verification must both use TCG.' }
     $global:LASTEXITCODE = 0
     Write-Host 'ISO-only validation, non-ISO rejection and fixed-name staging passed (stubbed, no Android).'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }

@@ -17,6 +17,11 @@ int main() {
     for (const auto value : doc.array()) { if (!value.isString()) return 4; args << value.toString(); }
     if (!args.contains(request.disk) || !args.contains("whpx,kernel-irqchip=off") || !args.contains("user,id=net0,hostfwd=tcp:127.0.0.1:5555-:5555")) return 5;
     if (!args.contains("if=pflash,format=raw,unit=1,file=C:/user/a,,b.fd")) return 6;
+    request.flags = 8;
+    const auto softwareSize = nexus_vm_plan(&request, nullptr, 0);
+    QByteArray software(static_cast<int>(softwareSize), '\0');
+    nexus_vm_plan(&request, reinterpret_cast<std::uint8_t *>(software.data()), softwareSize);
+    if (!software.contains("tcg,thread=multi") || software.contains("whpx")) return 8;
     request.cpus = 0;
     if (nexus_vm_plan(&request, nullptr, 0)) return 7;
     std::cout << "Rust VM launch policy C ABI / Qt JSON roundtrip passed; no Android boot or speed claim.\n";

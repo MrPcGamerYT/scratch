@@ -86,7 +86,12 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     memory = new QSpinBox(performance); memory->setRange(512, 131072); memory->setSingleStep(512); memory->setSuffix(" MB"); memory->setObjectName("memoryAllocation");
     form->addRow("CPU allocation", cpus); form->addRow("Memory allocation", memory);
     note(form, QString("Detected host: %1 logical CPU threads. Leave resources available for Windows; over-allocation can reduce performance.").arg(qMax(1, QThread::idealThreadCount())));
-    form->addRow("Performance mode", unavailable("QEMU / WHPX with TCG fallback"));
+    acceleration = new QComboBox; acceleration->setObjectName("vmAcceleration");
+    acceleration->addItem("Use prepared image's selection", "prepared");
+    acceleration->addItem("Hardware acceleration (WHPX)", "whpx");
+    acceleration->addItem("Software compatibility (TCG) — slow", "tcg");
+    form->addRow("CPU execution", acceleration);
+    note(form, "Software compatibility bypasses WHPX MMIO crashes, but can be extremely slow. There is no automatic fallback or compatibility guarantee. Restart player after changes.");
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
     note(form, "High-FPS unlock, VSync control and a live guest FPS counter are not implemented. A target value would not guarantee game FPS.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
@@ -116,7 +121,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()); };
     auto baseline = std::make_shared<QString>();
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); };
     auto restore = [=] {
@@ -124,10 +129,12 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         cpus->setValue(s.value("cpus", 4).toInt()); memory->setValue(s.value("memory", 4096).toInt());
         showCursor->setChecked(s.value("showCursor", true).toBool()); multitouch->setChecked(s.value("multiTouch", false).toBool());
         adbForward->setChecked(s.value("adbForward", false).toBool()); adbPort->setValue(s.value("adbPort", 5555).toInt());
+        acceleration->setCurrentIndex(qMax(0, acceleration->findData(s.value("acceleration", "prepared").toString())));
         *baseline = snapshot(); update();
     };
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
     for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
+    connect(acceleration, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
     hasChanges = [=] { return snapshot() != *baseline; };
@@ -142,6 +149,7 @@ bool SettingsDialog::save() {
     QSettings s; s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
+    s.setValue("acceleration", acceleration->currentData());
     s.sync();
     if (s.status() != QSettings::NoError) {
         QMessageBox::critical(this, "Settings not saved", "Could not write local settings. Check your user configuration folder permissions and free space.");

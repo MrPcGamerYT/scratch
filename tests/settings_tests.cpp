@@ -1,6 +1,8 @@
 #include "settingsdialog.h"
 #include "windowchrome.h"
 #include <QApplication>
+#include <QComboBox>
+#include "runtimeconfig.h"
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
@@ -37,6 +39,12 @@ int main(int argc, char **argv) {
     if (cpu->value() != 8) return 7;
     SettingsDialog reopened(true);
     if (reopened.findChild<QSpinBox *>("cpuAllocation")->value() != 8) return 8;
+    auto *accel = dialog.findChild<QComboBox *>("vmAcceleration");
+    if (!accel || accel->count() != 3) return 10;
+    accel->setCurrentIndex(accel->findData("tcg")); save->click();
+    if (selectedVmAcceleration(QSettings()) != "tcg") return 11;
+    accel->setCurrentIndex(accel->findData("whpx")); discard->click();
+    if (accel->currentData().toString() != "tcg") return 12;
     for (int i = 0; i < tabs->count(); ++i) tabs->setCurrentIndex(i);
     std::cout << "Settings categories, dirty state, discard and persistence passed.\n";
     return 0;

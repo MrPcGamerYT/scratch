@@ -9,6 +9,7 @@
 #include "qmp.h"
 #include "settingsdialog.h"
 #include "rustcore.h"
+#include "runtimeconfig.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QCheckBox>
@@ -233,7 +234,8 @@ void MainWindow::launch() {
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
     runningMultiTouch = s.value("multiTouch", false).toBool();
     runningAdbForward = s.value("adbForward", false).toBool(); runningAdbPort = port;
-    if (nexus_whpx_available() != 1) {
+    const bool softwareCpu = selectedVmAcceleration(s) == "tcg";
+    if (!softwareCpu && nexus_whpx_available() != 1) {
         QMessageBox::critical(this, "Hardware acceleration unavailable", "The Rust runtime could not confirm Windows Hypervisor Platform availability. Enable CPU virtualization in firmware and Windows Hypervisor Platform, then restart Windows. The player will not silently use slow software CPU emulation.");
         return;
     }
@@ -242,7 +244,7 @@ void MainWindow::launch() {
     const QByteArray firmwareBytes = (QFileInfo::exists(firmware + "/bios-256k.bin") ? firmware : QString()).toUtf8();
     const QByteArray codeBytes = (hasCode ? code : QString()).toUtf8();
     const QByteArray varsBytes = (hasCode ? vars : QString()).toUtf8();
-    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u);
+    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u);
     const NexusVmRequest request{diskBytes.constData(), firmwareBytes.constData(), codeBytes.constData(), varsBytes.constData(), static_cast<std::uint32_t>(ram), static_cast<std::uint32_t>(cpus), static_cast<std::uint32_t>(port), flags};
     const auto size = nexus_vm_plan(&request, nullptr, 0);
     if (size == 0 || size > 1024 * 1024) { QMessageBox::critical(this, "VM configuration", "Rust runtime rejected the launch configuration."); return; }
@@ -256,7 +258,8 @@ void MainWindow::launch() {
         args << value.toString();
     }
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
-    statusBar()->showMessage("Starting Android with WHPX...");
+    setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
+    statusBar()->showMessage(softwareCpu ? "Starting with explicit software CPU emulation (slow)." : "Starting Android with WHPX...");
 }
 void MainWindow::findGuestWindow() {
     if (process->state() != QProcess::Running) return;

@@ -10,16 +10,17 @@ param(
     [switch]$ForwardAdb,
     [ValidateRange(1024, 65535)][int]$AdbPort = 5555,
     [string]$UefiCodePath = '',
-    [string]$UefiVarsPath = ''
+    [string]$UefiVarsPath = '',
+    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'This launcher requires Windows.' }
-    $feature = Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform
-    if ($feature.State -ne 'Enabled') {
-        throw 'Windows Hypervisor Platform is not enabled. Enable it as administrator and restart Windows (see README).'
+    if ($Acceleration -eq 'whpx') {
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform
+        if ($feature.State -ne 'Enabled') { throw 'Windows Hypervisor Platform is not enabled. Enable it and restart Windows, or explicitly select Software compatibility (TCG) in Image Studio.' }
     }
     if ([bool]$UefiCodePath -ne [bool]$UefiVarsPath) { throw 'Provide both UEFI code and a writable per-VM vars file.' }
     if ($UefiCodePath) {
@@ -56,7 +57,8 @@ try {
     $order = if ($Boot -eq 'iso') { 'd' } else { 'c' }
     $net = 'user,id=net0'
     if ($ForwardAdb) { $net += ",hostfwd=tcp:127.0.0.1:${AdbPort}-:5555" }
-    $qemuArgs = @('-accel', 'whpx,kernel-irqchip=off', '-m', "$MemoryMB", '-smp', "$Cpus",
+    $accelerator = if ($Acceleration -eq 'tcg') { 'tcg,thread=multi' } else { 'whpx,kernel-irqchip=off' }
+    $qemuArgs = @('-accel', $accelerator, '-m', "$MemoryMB", '-smp', "$Cpus",
         '-vga', 'std', '-usb', '-device', 'usb-tablet', '-hda', $diskFull, '-boot', "order=$order",
         '-name', 'Project Nexus', '-netdev', $net, '-device', 'virtio-net-pci,netdev=net0,romfile=')
     if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) { $qemuArgs += @('-L', $firmware) }
@@ -65,10 +67,12 @@ try {
         $codeArg = $codeFull.Replace(',', ',,'); $varsArg = $varsFull.Replace(',', ',,')
         $qemuArgs += @('-machine', 'q35,vmport=off', '-drive', "if=pflash,format=raw,unit=0,readonly=on,file=$codeArg", '-drive', "if=pflash,format=raw,unit=1,file=$varsArg")
     }
+    if ($Acceleration -eq 'tcg') { $qemuArgs += @('-cpu', 'max') }
     if ($IsoPath) { $qemuArgs += @('-cdrom', [IO.Path]::GetFullPath($IsoPath)) }
-    Write-Host 'Starting QEMU with WHPX. Shut down Android before closing QEMU.'
+    Write-Host "Starting QEMU with $Acceleration. Shut down Android before closing QEMU."
+    if ($Acceleration -eq 'tcg') { Write-Warning 'Software CPU emulation selected explicitly. Installation/boot can be very slow; this bypasses WHPX but does not guarantee Bliss compatibility.' }
     & $qemu @qemuArgs
-    if ($LASTEXITCODE -ne 0) { throw "QEMU exited with code $LASTEXITCODE. If WHPX reports MMIO/virtual-processor emulation failures, preserve this log and report Windows build, CPU model and Bliss ISO version. Hardware acceleration being operational does not guarantee guest compatibility." }
+    if ($LASTEXITCODE -ne 0) { throw "QEMU exited with code $LASTEXITCODE. If WHPX reports MMIO/virtual-processor emulation failures, preserve this log and report Windows build, CPU model and Bliss ISO version. Hardware acceleration being operational does not guarantee guest compatibility. Try Software compatibility (TCG) explicitly in a fresh installation workspace; no automatic retry or fallback was performed." }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

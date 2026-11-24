@@ -48,6 +48,10 @@ public:
         workspace->setText(QDir::toNativeSeparators(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/Nexus Image Workspace"));
         hash = new QLineEdit; hash->setPlaceholderText("Optional publisher SHA-256 of the ISO"); form->addRow("Source integrity", hash);
         bliss = new QCheckBox("Bliss OS · UEFI firmware (recommended for recent Bliss releases)"); bliss->setChecked(true); form->addRow(bliss);
+        acceleration = new QComboBox; acceleration->setObjectName("installationAcceleration");
+        acceleration->addItem("Hardware acceleration (WHPX)", "whpx");
+        acceleration->addItem("Software compatibility (TCG) — slow; bypasses WHPX crashes", "tcg");
+        form->addRow("CPU execution", acceleration); inputs.append(acceleration);
         output = new QLabel; output->setObjectName("fixedOutputPath"); output->setTextInteractionFlags(Qt::TextSelectableByMouse); output->setWordWrap(true); form->addRow("Fixed emulator image", output);
         connect(player, &QLineEdit::textChanged, this, [this] { output->setText(QDir::toNativeSeparators(QDir(player->text()).absoluteFilePath("images/android-base.qcow2"))); });
         player->setText(QDir::toNativeSeparators(QCoreApplication::applicationDirPath()));
@@ -131,7 +135,7 @@ private:
         if (shell.isEmpty()) { QMessageBox::warning(this,"PowerShell missing","Install PowerShell or enable Windows PowerShell to run the preparation backend."); return; }
         approval = std::make_unique<QTemporaryDir>();
         if (!approval->isValid()) { QMessageBox::warning(this,"Workspace","Cannot create checkpoint directory."); approval.reset(); return; }
-        QStringList args{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Mode",QStringList{"Install","Resume"}[mode->currentIndex()],"-Workspace",workspace->text(),"-PlayerFolder",player->text(),"-QemuDir",root+"/qemu/bin","-ApprovalDirectory",approval->path()};
+        QStringList args{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Mode",QStringList{"Install","Resume"}[mode->currentIndex()],"-Acceleration",acceleration->currentData().toString(),"-Workspace",workspace->text(),"-PlayerFolder",player->text(),"-QemuDir",root+"/qemu/bin","-ApprovalDirectory",approval->path()};
         if (mode->currentIndex()==0) args << "-Source" << source->text();
         if (!hash->text().trimmed().isEmpty()) args << "-ExpectedSha256" << hash->text().trimmed();
         if (bliss->isChecked()) args << "-Bliss";
@@ -139,7 +143,7 @@ private:
         log->clear(); status->setText("Preparing… Watch this log and the VM window. Confirm each checkpoint only after clean shutdown."); progress->setRange(0,0);
         process->setWorkingDirectory(root); process->start(shell,args);
     }
-    QComboBox *mode;
+    QComboBox *mode, *acceleration;
     QLineEdit *source, *workspace, *player, *hash;
     QCheckBox *bliss;
     QLabel *output, *status;
@@ -159,7 +163,7 @@ int main(int argc, char **argv) {
     ImageStudio window;
     if (app.arguments().contains("--smoke-test")) {
         window.show(); app.processEvents();
-        return window.windowFlags().testFlag(Qt::FramelessWindowHint) && window.findChild<QComboBox *>("preparationMode")->count()==2 && window.findChild<QLabel *>("fixedOutputPath")->text().endsWith("android-base.qcow2") ? 0 : 1;
+        return window.windowFlags().testFlag(Qt::FramelessWindowHint) && window.findChild<QComboBox *>("preparationMode")->count()==2 && window.findChild<QComboBox *>("installationAcceleration")->count()==2 && window.findChild<QLabel *>("fixedOutputPath")->text().endsWith("android-base.qcow2") ? 0 : 1;
     }
     window.show(); return app.exec();
 }

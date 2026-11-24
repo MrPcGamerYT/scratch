@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $launcher = Join-Path $PSScriptRoot '../scripts/launch.ps1'
 # The CI runner need not have WHPX; test argument and filesystem behavior with a stub.
-function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) [pscustomobject]@{ State = 'Enabled' } }
+function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) if ($env:NEXUS_NO_WHPX -eq '1') { throw 'TCG must not query WHPX.' }; [pscustomobject]@{ State = 'Enabled' } }
 if ($Case -eq 'missing-rom') {
     $broken = Join-Path $env:NEXUS_TEST_DIR 'broken-engine'
     New-Item -ItemType Directory -Path (Join-Path $broken 'bin'), (Join-Path $broken 'share/qemu') | Out-Null
@@ -44,6 +44,13 @@ try {
     & $launcher -QemuDir $root -DiskPath $disk -Boot disk
     $argsLog = Get-Content $env:NEXUS_TEST_LOG
     if ($argsLog -cnotcontains 'order=c' -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
+    Remove-Item $env:NEXUS_TEST_LOG
+    $env:NEXUS_NO_WHPX = '1'
+    & $launcher -QemuDir $root -DiskPath $disk -Boot disk -Acceleration tcg
+    if ($LASTEXITCODE -ne 0) { throw 'Explicit TCG launch failed.' }
+    $env:NEXUS_NO_WHPX = '0'
+    $softwareArgs = Get-Content $env:NEXUS_TEST_LOG
+    if ($softwareArgs -cnotcontains 'tcg,thread=multi' -or $softwareArgs -cnotcontains 'max' -or $softwareArgs -contains 'whpx,kernel-irqchip=off') { throw 'Software mode did not bypass WHPX.' }
     foreach ($testCase in @('missing-disk', 'same-image', 'missing-rom')) {
         & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $PSCommandPath -Stub $Stub -Case $testCase
         if ($LASTEXITCODE -ne 1) { throw "Expected failure for $testCase, got $LASTEXITCODE" }

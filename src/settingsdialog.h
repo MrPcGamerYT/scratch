@@ -2,6 +2,7 @@
 #include <QDialog>
 #include <functional>
 class QSpinBox;
+class QComboBox;
 class QCheckBox;
 class SettingsDialog : public QDialog {
 public:
@@ -10,6 +11,7 @@ public:
 private:
     std::function<bool()> hasChanges;
     bool save();
+    QComboBox *acceleration;
     QSpinBox *memory;
     QSpinBox *cpus;
     QSpinBox *adbPort;

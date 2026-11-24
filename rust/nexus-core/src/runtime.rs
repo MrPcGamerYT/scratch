@@ -21,13 +21,13 @@ pub struct Config<'a> {
     pub memory_mb: u32,
     pub cpus: u32,
     pub adb_port: u32,
-    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB forwarding
+    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB, 8 = explicit software TCG
     pub flags: u32,
 }
 
 pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if !(512..=131072).contains(&c.memory_mb) || !(1..=64).contains(&c.cpus)
-        || !(1024..=65535).contains(&c.adb_port) || c.flags & !7 != 0 {
+        || !(1024..=65535).contains(&c.adb_port) || c.flags & !15 != 0 {
         return Err("Invalid VM resources, port or flags");
     }
     if c.disk.is_empty() || c.uefi_code.is_empty() != c.uefi_vars.is_empty()
@@ -38,9 +38,10 @@ pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if [c.disk, c.firmware_dir, c.uefi_code, c.uefi_vars].iter().any(|p| p.chars().any(|ch| ch.is_control())) {
         return Err("Control characters in image paths");
     }
-    let mut args: Vec<String> = vec!["-accel", "whpx,kernel-irqchip=off", "-m"].into_iter().map(str::to_owned).collect();
+    let mut args: Vec<String> = vec!["-accel", if c.flags & 8 != 0 { "tcg,thread=multi" } else { "whpx,kernel-irqchip=off" }, "-m"].into_iter().map(str::to_owned).collect();
     args.extend([c.memory_mb.to_string(), "-smp".into(), c.cpus.to_string()]);
     args.extend(["-vga", if c.flags & 1 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
+    if c.flags & 8 != 0 { args.extend(["-cpu".into(), "max".into()]); }
     if c.flags & 1 != 0 {
         args.extend(["-device", "VGA,id=nexus_display", "-device", "virtio-multitouch-pci,id=nexus_touch,display=nexus_display"].into_iter().map(str::to_owned));
     }
@@ -129,9 +130,16 @@ mod tests {
         assert!(args.iter().any(|a| a.contains("virtio-multitouch")));
         assert!(args.iter().any(|a| a == c.disk));
     }
+    #[test] fn explicit_software_mode() {
+        let mut c = config(); c.flags = 8;
+        let args = plan(&c).unwrap();
+        assert!(args.iter().any(|a| a == "tcg,thread=multi"));
+        assert!(args.windows(2).any(|a| a[0] == "-cpu" && a[1] == "max"));
+        assert!(!args.iter().any(|a| a.contains("whpx")));
+    }
     #[test] fn rejects_invalid_and_escapes_paths() {
         let mut c = config(); c.cpus = 0; assert!(plan(&c).is_err()); c.cpus = 4;
-        c.flags = 8; assert!(plan(&c).is_err()); c.flags = 0;
+        c.flags = 16; assert!(plan(&c).is_err()); c.flags = 0;
         c.uefi_code = "code.fd"; assert!(plan(&c).is_err());
         c.uefi_vars = "my,vars.fd";
         assert!(plan(&c).unwrap().iter().any(|a| a.contains("my,,vars.fd")));

@@ -134,7 +134,7 @@ Click **Aim & fire** in the dock to arm it, focus the Android display, and press
 
 ## Scope and limitations
 
-- QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
+- In the default hardware mode, QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
 - ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
 - The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU 10-slot virtio multitouch device (`slots 0..9`). Bliss guest support and real game behavior are **not verified**. There is no live event-recording macro recorder, host-to-guest touch daemon, or multi-instance UI yet.
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
@@ -179,3 +179,14 @@ The player's dock tools now live in its single draggable custom title bar, along
 The player and Developer packages require `qemu/share/qemu/kvmvapic.bin` in addition to the BIOS and VGA ROM. Older bundles omitted the virtual-APIC ROM. New builds supply it from the pinned QEMU revision, including when reusing a cached engine artifact, and ZIP packaging checks the ROM is present and nonempty. The installer checks for missing companion ROMs before disk creation when the bundled BIOS is detected; the player validates all required PC ROMs before startup.
 
 A subsequent `WHPX: Failed to emulate MMIO access` or virtual-processor crash can be a separate host/guest compatibility issue; adding a missing ROM does not prove this is resolved. Preserve Windows build, CPU model, exact ISO version/hash and the full log if it persists. Do not publish a disk from a failed installation. Resume is appropriate only for an installed disk; when installation never started, use Install with a fresh workspace after correcting the engine package. Never overwrite an existing working disk or disable host security protections to guess at a fix.
+
+### Workaround for WHPX MMIO / virtual-processor crashes
+
+`Windows Hypervisor Platform accelerator is operational` followed by `WHPX: Failed to emulate MMIO access` means enabling virtualization again is not a confirmed fix. The host accelerated execution path is failing; the exact cause depends on Windows, CPU, QEMU and guest. There is now an **explicit**, slower bypass:
+
+1. Extract the updated Developer and player packages into fresh folders; preserve prior images/workspaces.
+2. In Image Studio select **CPU execution → Software compatibility (TCG)**. Choose Install, the PC ISO and a fresh workspace. This passes `-accel tcg,thread=multi -cpu max` to BOTH installer and verification boots and does not query/initialize WHPX.
+3. Complete installation and verification normally. Software emulation can take much longer. It is not a gaming-performance fix and may still fail with an incompatible guest.
+4. On successful publishing, `images/acceleration.txt` records the explicitly chosen mode. The player uses this mode unless overridden in **Settings → Performance → CPU execution**. The default Settings choice is **Use prepared image's selection**. Software-mode player windows display a slow-software warning in their title. Restart after changing the setting.
+
+No automatic WHPX retry/fallback takes place; no existing disk is modified by a hidden retry. To try hardware acceleration later choose WHPX in Settings, with the understanding the original host crash may persist. Firmware smoke tests in CI exercise real bundled QEMU/Q35/UEFI under multi-thread TCG with the `max` CPU; they do NOT install your Bliss ISO or validate WHPX on your machine. Report Windows build (`winver`), CPU model and the exact ISO filename/hash with the complete log if either mode fails. Resume is only for an installed disk; it does not rerun the ISO installer on a blank/partially installed disk.
