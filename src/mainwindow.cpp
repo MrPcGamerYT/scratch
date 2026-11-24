@@ -206,6 +206,10 @@ void MainWindow::launch() {
     const QString base = root + "/images/android-base.qcow2";
     const QString qemu = root + "/qemu/bin/qemu-system-x86_64.exe";
     const QString img = root + "/qemu/bin/qemu-img.exe";
+    for (const QString &rom : {QStringLiteral("bios-256k.bin"), QStringLiteral("vgabios-stdvga.bin"), QStringLiteral("kvmvapic.bin")}) {
+        const QFileInfo file(root + "/qemu/share/qemu/" + rom);
+        if (!file.isFile() || file.size() <= 0) { QMessageBox::critical(this, "Incomplete engine firmware", "Missing or empty QEMU ROM: " + rom + ". Extract the complete updated player package."); return; }
+    }
     if (!QFileInfo(base).isFile()) { QMessageBox::information(this, "System image unavailable", "This player has no prepared Android system image. You can still configure and export schemes in Keymap Studio."); return; }
     if (!QFileInfo(qemu).isFile()) { QMessageBox::critical(this, "Engine unavailable", "The bundled QEMU engine is missing. Reinstall the complete player package."); return; }
     const QString imageDir = root + "/images";

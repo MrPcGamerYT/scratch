@@ -32,6 +32,15 @@ try {
     if (-not (Test-Path -LiteralPath $qemu -PathType Leaf)) { throw "QEMU not found: $qemu" }
     if ($Boot -eq 'iso' -and -not $IsoPath) { throw 'Specify -IsoPath when booting from ISO.' }
     if ($IsoPath -and -not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw "ISO not found: $IsoPath" }
+    $firmware = [IO.Path]::GetFullPath((Join-Path $QemuDir '../share/qemu'))
+    if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) {
+        foreach ($rom in @('bios-256k.bin', 'vgabios-stdvga.bin', 'kvmvapic.bin')) {
+            $romPath = Join-Path $firmware $rom
+            if (-not (Test-Path -LiteralPath $romPath -PathType Leaf) -or (Get-Item -LiteralPath $romPath).Length -le 0) {
+                throw "Incomplete QEMU firmware bundle: $rom is missing or empty in $firmware. Extract the complete updated package; no VM was started."
+            }
+        }
+    }
     $diskFull = [IO.Path]::GetFullPath($DiskPath)
     $diskParent = [IO.Path]::GetDirectoryName($diskFull)
     if (-not (Test-Path -LiteralPath $diskParent -PathType Container)) { throw "Disk directory does not exist: $diskParent" }
@@ -50,7 +59,6 @@ try {
     $qemuArgs = @('-accel', 'whpx,kernel-irqchip=off', '-m', "$MemoryMB", '-smp', "$Cpus",
         '-vga', 'std', '-usb', '-device', 'usb-tablet', '-hda', $diskFull, '-boot', "order=$order",
         '-name', 'Project Nexus', '-netdev', $net, '-device', 'virtio-net-pci,netdev=net0,romfile=')
-    $firmware = [IO.Path]::GetFullPath((Join-Path $QemuDir '../share/qemu'))
     if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) { $qemuArgs += @('-L', $firmware) }
     if ($UefiCodePath) {
         # QEMU's key=value syntax escapes literal commas by doubling them.
@@ -60,7 +68,7 @@ try {
     if ($IsoPath) { $qemuArgs += @('-cdrom', [IO.Path]::GetFullPath($IsoPath)) }
     Write-Host 'Starting QEMU with WHPX. Shut down Android before closing QEMU.'
     & $qemu @qemuArgs
-    if ($LASTEXITCODE -ne 0) { throw "QEMU exited with code $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "QEMU exited with code $LASTEXITCODE. If WHPX reports MMIO/virtual-processor emulation failures, preserve this log and report Windows build, CPU model and Bliss ISO version. Hardware acceleration being operational does not guarantee guest compatibility." }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

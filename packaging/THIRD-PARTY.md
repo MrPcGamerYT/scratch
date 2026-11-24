@@ -9,3 +9,5 @@ The VM engine is a **modified QEMU 10.2.0** build, not a new emulator written by
 - The Qt shell uses Qt 6.8.3. Qt is available under LGPL and other licenses; see https://www.qt.io/licensing/open-source-lgpl-obligations and https://download.qt.io/archive/qt/6.8/6.8.3/ for source. The QEMU engine is a separate program.
 
 These are development build notices, not a legal opinion or a guarantee of complete redistribution compliance. Before making a public release, audit the exact binary dependencies, firmware, Qt configuration, corresponding source, license notices, and any modifications with a qualified reviewer. Do not remove upstream copyright notices.
+
+- `kvmvapic.bin` is the x86 virtual-APIC option ROM from QEMU `pc-bios` at the pinned revision above; corresponding source is in the bundled QEMU source archive (`pc-bios/optionrom/`). It is shipped in both player and developer packages. See upstream source headers and license notices.

@@ -178,11 +178,13 @@ jobs:
           repository: qemu/qemu
           ref: 698104725efad4b29079d857dfdebbd804e34c99
           path: uefi-firmware-source
-      - name: Add upstream UEFI firmware and notices
+      - name: Add required upstream PC ROMs, UEFI firmware and notices
         shell: pwsh
         run: |
           python -c "import bz2,pathlib; s=pathlib.Path('uefi-firmware-source/pc-bios'); d=pathlib.Path('package/qemu/share/qemu'); [(d / n).write_bytes(bz2.decompress((s / (n + '.bz2')).read_bytes())) for n in ('edk2-x86_64-code.fd','edk2-i386-vars.fd')]"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Cached QEMU artifacts from older builds did not include this ROM.
+          Copy-Item uefi-firmware-source/pc-bios/kvmvapic.bin package/qemu/share/qemu/
           Copy-Item uefi-firmware-source/pc-bios/edk2-licenses.txt package/qemu/licenses/
           Copy-Item packaging/THIRD-PARTY.md package/qemu/licenses/
       - name: Test bundled QEMU without MSYS2 installed

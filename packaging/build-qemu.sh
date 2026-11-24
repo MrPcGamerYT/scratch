@@ -16,8 +16,8 @@ cd "$root/qemu-build"
 ninja -j 2 qemu-system-x86_64.exe qemu-img.exe
 mkdir -p "$prefix/bin"
 cp qemu-system-x86_64.exe qemu-img.exe "$prefix/bin/"
-# Only the two firmware images needed by the PC/std-vga configuration are shipped.
-cp "$source/pc-bios/bios-256k.bin" "$source/pc-bios/vgabios-stdvga.bin" "$prefix/share/qemu/"
+# PC/std-vga firmware plus the virtual-APIC option ROM used by x86 CPUs.
+cp "$source/pc-bios/bios-256k.bin" "$source/pc-bios/vgabios-stdvga.bin" "$source/pc-bios/kvmvapic.bin" "$prefix/share/qemu/"
 for image in edk2-x86_64-code.fd edk2-i386-vars.fd; do
     bzip2 -dc "$source/pc-bios/$image.bz2" > "$prefix/share/qemu/$image"
 done

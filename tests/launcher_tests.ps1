@@ -6,6 +6,16 @@ $ErrorActionPreference = 'Stop'
 $launcher = Join-Path $PSScriptRoot '../scripts/launch.ps1'
 # The CI runner need not have WHPX; test argument and filesystem behavior with a stub.
 function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) [pscustomobject]@{ State = 'Enabled' } }
+if ($Case -eq 'missing-rom') {
+    $broken = Join-Path $env:NEXUS_TEST_DIR 'broken-engine'
+    New-Item -ItemType Directory -Path (Join-Path $broken 'bin'), (Join-Path $broken 'share/qemu') | Out-Null
+    Copy-Item $Stub (Join-Path $broken 'bin/qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $broken 'bin/qemu-img.exe')
+    Set-Content (Join-Path $broken 'share/qemu/bios-256k.bin') 'fixture BIOS'
+    Set-Content (Join-Path $broken 'share/qemu/vgabios-stdvga.bin') 'fixture VGA'
+    & $launcher -QemuDir (Join-Path $broken 'bin') -DiskPath (Join-Path $broken 'must-not-exist.qcow2') -IsoPath $env:NEXUS_TEST_ISO -Boot iso
+    exit $LASTEXITCODE
+}
 if ($Case -eq 'missing-disk') {
     & $launcher -QemuDir $env:NEXUS_TEST_DIR -DiskPath (Join-Path $env:NEXUS_TEST_DIR 'missing.qcow2') -Boot disk
     exit $LASTEXITCODE
@@ -34,10 +44,11 @@ try {
     & $launcher -QemuDir $root -DiskPath $disk -Boot disk
     $argsLog = Get-Content $env:NEXUS_TEST_LOG
     if ($argsLog -cnotcontains 'order=c' -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
-    foreach ($testCase in @('missing-disk', 'same-image')) {
+    foreach ($testCase in @('missing-disk', 'same-image', 'missing-rom')) {
         & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $PSCommandPath -Stub $Stub -Case $testCase
         if ($LASTEXITCODE -ne 1) { throw "Expected failure for $testCase, got $LASTEXITCODE" }
     }
+    if (Test-Path (Join-Path $root 'broken-engine/must-not-exist.qcow2')) { throw 'Missing ROM must be caught before disk creation.' }
     $global:LASTEXITCODE = 0
     Write-Host 'Launcher contract tests passed.'
 } finally {

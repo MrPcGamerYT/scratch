@@ -97,7 +97,7 @@ Other Android images can have different menus or may not support auto install.
             }
             $fwArgs = @{}; if ($Bliss) { $fwArgs = @{ UefiCodePath = $uefiCode; UefiVarsPath = $vars } }
             & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -IsoPath $IsoPath -DiskPath $disk -Boot iso @fwArgs
-            if ($LASTEXITCODE -ne 0) { throw 'Installer VM failed. Disk was retained; use -Resume after investigating.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Installer VM failed. Do not stage this disk or assume installation completed. Preserve the log. If installation never started, use a fresh workspace with Install after fixing the error; Resume only boots an already installed disk.' }
             if ((Confirm-InstallationStage 'Did installation finish and the guest shut down cleanly? Approve to boot the disk.') -cne 'YES') { throw 'Not staged. Disk retained; use -Resume to boot it later.' }
         }
     }
