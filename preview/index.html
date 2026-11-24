@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Project Nexus — Keymap Studio &amp; Player Preview</title>
 <style>
-:root{color-scheme:dark;--surface:#181925;--line:#2d2e3c;--text:#f3f2f9;--muted:#999baa;--purple:#957dff;--cyan:#57d9ff;--mint:#7cf7c4;--amber:#ffd166;--pink:#ff7ab8;--canvas:#0d0e16}
+:root{color-scheme:dark;--surface:#181925;--line:#2d2e3c;--text:#f3f2f9;--muted:#999baa;--purple:#60a5fa;--cyan:#57d9ff;--mint:#7cf7c4;--amber:#ffd166;--pink:#ff7ab8;--canvas:#0d0e16}
 *{box-sizing:border-box}
 body{margin:0;background:#0e0f17;color:var(--text);font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}
 button,input,select,textarea{font:inherit}
@@ -12,7 +12,7 @@ button{color:inherit;cursor:pointer}
 .preview-banner{display:flex;align-items:center;justify-content:center;gap:8px;background:#241d3e;border-bottom:1px solid #43356b;color:#d4caff;padding:8px 15px;font-size:12px;text-align:center}
 .preview-banner b{color:#fff}
 .shell{min-height:calc(100vh - 35px);display:flex;flex-direction:column}
-.header{min-height:72px;display:flex;align-items:center;padding:10px 22px;gap:12px;background:#161722;border-bottom:1px solid #282936}
+.header{min-height:56px;display:flex;align-items:center;padding:10px 22px;gap:12px;background:linear-gradient(100deg,#0a1220,#14243b);border-bottom:1px solid #282936}
 .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#aa92ff,#735ae6);display:grid;place-items:center;color:#fff;font-size:18px;font-weight:800;box-shadow:0 3px 20px #8568ff35;flex:none}
 .brand strong{font-size:15px;letter-spacing:.14em}
 .dock-spacer{flex:1}
@@ -113,6 +113,9 @@ button{color:inherit;cursor:pointer}
   .header{flex-wrap:wrap}.dock{order:3;width:100%}.brand{margin-right:auto}.dock-spacer,.power{display:none}
   .edit-body{grid-template-columns:1fr}.field,.aim-content .field{grid-template-columns:1fr;gap:5px}.settings-nav{width:120px}
 }
+.window-controls{display:flex;gap:3px;flex:none}.window-controls button{border:0;background:transparent;color:#a5b8d4;width:28px;height:30px;border-radius:5px}.window-controls button:hover{background:#263e60}.marker.pending{min-width:112px;border:2px dashed #60a5fa;background:#10213b;font-size:12px;color:white;pointer-events:none}
+body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:none}body.preview-fullscreen .shell{min-height:100vh}
+@media(max-width:800px){.header{flex-wrap:nowrap;padding:8px;gap:7px}.header .dock{order:initial;width:auto;flex:1;min-width:0}.brand{display:none}.window-controls button{width:22px}.logo{width:26px;height:26px}}
 </style>
 </head>
 <body>
@@ -128,15 +131,14 @@ button{color:inherit;cursor:pointer}
       <button id="openKeys"><span class="dock-icon">⌨</span>Keymap</button>
       <button id="toggleHints" aria-pressed="true" class="active-toggle"><span class="dock-icon">👁</span>Hints</button>
       <button data-demo="Mouse lock"><span class="dock-icon">◎</span>Lock</button>
-      <button class="unavailable" data-demo="Volume (not available yet)"><span class="dock-icon">♪</span>Volume</button>
-      <button data-demo="Full screen"><span class="dock-icon">⛶</span>Full screen</button>
+      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen · F11</button>
       <button id="openAimDock"><span class="dock-icon">⌖</span>Aim &amp; fire</button>
-      <button class="unavailable" data-demo="RAM cleanup (not available yet)"><span class="dock-icon">✦</span>RAM</button>
     </nav>
     <div class="dock-spacer"></div>
-    <div class="power">
-      <button class="quiet" data-demo="Shutdown">Stop</button>
-      <button class="primary" data-demo="Retry startup">Retry</button>
+    <div class="window-controls" aria-label="Window controls">
+      <button data-demo="Minimize window" aria-label="Minimize">−</button>
+      <button id="previewMaximize" aria-label="Maximize">□</button>
+      <button data-demo="Close window" aria-label="Close">×</button>
     </div>
   </header>
   <div class="work">
@@ -224,7 +226,7 @@ button{color:inherit;cursor:pointer}
             <svg class="canvas-svg" id="canvasSvg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
             <div id="canvasNodes"></div>
           </div>
-          <p class="canvas-hint">Choose a control tool above and click the canvas to place it. Drag handles to adjust coordinates; click the key button to capture any keyboard or mouse input.</p>
+          <p class="canvas-hint">Click an empty HUD spot, then press a keyboard key or mouse button to bind it. Escape cancels. Drag existing markers to reposition them; other tools remain available above.</p>
           <div class="conflict-bar" id="conflictBar">✓ Zero key conflicts across active scheme controls.</div>
         </div>
         <div class="edit-side">
@@ -371,6 +373,17 @@ let activeTool = 'tap';
 let hintsVisible = true;
 let snapToGrid = false;
 let listeningForKey = false;
+let pendingBinding = null;
+function commitPending(key) {
+  if (!pendingBinding) return;
+  pushUndo();
+  const m = modeSelect.value;
+  state.controls.push({type:'tap',key,x:pendingBinding.x,y:pendingBinding.y,mode:m,delay:Number(delayInput.value)||250,burst:m==='burst'?(Number(burstInput.value)||3):1});
+  selectedId = state.controls.length-1; pendingBinding=null; syncInspector(); renderAll();
+}
+function togglePreviewFullscreen(){document.body.classList.toggle('preview-fullscreen');}
+$('#toggleFullscreen').onclick=togglePreviewFullscreen;
+$('#previewMaximize').onclick=()=>toast('Preview only — native player supports maximize and restore.');
 let undoStack = [], redoStack = [];
 let selectedId = -1, draggingInfo = null;
 
@@ -567,6 +580,7 @@ function renderStageHints() {
 function renderAll() {
   const nodes = $('#canvasNodes'), svg = $('#canvasSvg'), list = $('#bindingList');
   nodes.replaceChildren(); svg.replaceChildren(); list.replaceChildren();
+  if(pendingBinding){const pending=document.createElement('div');pending.className='marker pending';pending.textContent='Press a key…';pending.style.left=pendingBinding.x+'%';pending.style.top=pendingBinding.y+'%';nodes.appendChild(pending);}
 
   // Draw swipe & sequential lines
   const tapGroups = new Map();
@@ -738,6 +752,15 @@ $('#captureKeyBtn').onclick = () => {
   $('#captureKeyBtn').textContent = listeningForKey ? 'Press any key or right-click…' : 'Click & press any key / mouse…';
 };
 window.addEventListener('keydown', e => {
+  if(pendingBinding){
+    e.preventDefault();e.stopPropagation();
+    if(e.key==='Escape'){pendingBinding=null;renderAll();return;}
+    if(e.key==='F11'||e.key==='Meta'||e.repeat)return;
+    const names={' ':'Space','Control':'Ctrl','ArrowUp':'Up','ArrowDown':'Down','ArrowLeft':'Left','ArrowRight':'Right'};
+    commitPending(names[e.key]||(e.key.length===1?e.key.toUpperCase():e.key));return;
+  }
+  if(e.key==='F11'){e.preventDefault();togglePreviewFullscreen();return;}
+
   if (listeningForKey) {
     e.preventDefault();
     if (e.key !== 'Escape') {
@@ -787,7 +810,11 @@ function canvasPos(e) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if(pendingBinding){e.preventDefault();commitPending(({0:'Left Click',1:'Middle Click',2:'Right Click',3:'Mouse 4',4:'Mouse 5'})[e.button]||'Mouse 4');return;}
   if (e.button !== 0) return;
+  if(!e.target.closest('.marker[data-index]') && (activeTool==='tap'||activeTool==='select')){
+    pendingBinding=canvasPos(e);renderAll();e.preventDefault();return;
+  }
   const hit = e.target.closest('.marker[data-index]');
   if (hit) {
     pushUndo();
@@ -823,6 +850,8 @@ canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
 });
 
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('wheel',e=>{if(pendingBinding){e.preventDefault();commitPending(e.deltaY<0?'Wheel Up':'Wheel Down');}},{passive:false});
 canvas.addEventListener('pointermove', e => {
   if (!draggingInfo) return;
   const c = state.controls[draggingInfo.index];

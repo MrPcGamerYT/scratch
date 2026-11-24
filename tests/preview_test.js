@@ -19,6 +19,10 @@ const assert = require('node:assert/strict');
       await page.locator('#toggleHints').click();
       assert(await page.locator('#stageOverlay .hint-pill').count() >= 1);
 
+      assert.equal(await page.getByRole('button', {name:'Retry', exact:true}).count(),0);
+      await page.keyboard.press('F11');
+      assert(await page.locator('body').evaluate(el=>el.classList.contains('preview-fullscreen')));
+      await page.keyboard.press('F11');
       // Settings pages preserve honest status
       await page.locator('#openSettings').click();
       assert(await page.locator('#settingsOverlay').isVisible());
@@ -53,7 +57,21 @@ const assert = require('node:assert/strict');
       const countBefore = await page.locator('#canvasNodes .marker').count();
       await page.locator('#demoCanvas').click({ position: { x: 30, y: 30 } });
       assert.equal(await page.locator('#canvasNodes .marker').count(), countBefore + 1);
+      assert(await page.locator('.marker.pending').isVisible());
+      await page.keyboard.press('b');
+      assert.equal(await page.locator('.marker.pending').count(), 0);
       assert.match(await page.locator('#bindingList').innerText(), /B ↻/);
+
+      // Cancel leaves no serialized binding; the next mouse press binds at the pending spot.
+      const committed = await page.locator('#bindingList button').count();
+      await page.locator('#demoCanvas').click({position:{x:90,y:90}});
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('.marker.pending').count(),0);
+      assert.equal(await page.locator('#bindingList button').count(),committed);
+      await page.locator('#demoCanvas').click({position:{x:90,y:90}});
+      await page.locator('#demoCanvas').click({position:{x:90,y:90},button:'right'});
+      assert.equal(await page.locator('.marker.pending').count(),0);
+      assert.match(await page.locator('#bindingList').innerText(),/Right Click/);
 
       // Place a Macro Script and verify live script validation
       await page.locator('[data-tool="script"]').click();

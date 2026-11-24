@@ -54,7 +54,7 @@ pub struct NexusScriptStep {
     pub y2: f64,
 }
 
-/// Supported Win32 virtual keys and synthetic mouse binding codes (0x101..=0x106).
+/// Supported Win32 virtual keys and synthetic mouse binding codes (0x101..=0x107).
 /// System keys such as Escape (0x1B) and Left/Right Windows (0x5B/0x5C) are excluded.
 #[no_mangle]
 pub extern "C" fn nexus_valid_key(key: i32) -> u8 {
@@ -70,7 +70,7 @@ pub extern "C" fn nexus_valid_key(key: i32) -> u8 {
         | 0x70..=0x7B                            // F1..F12
         | 0xA0..=0xA5                            // L/R Shift, Ctrl, Alt
         | 0xBA..=0xC0 | 0xDB..=0xDE              // Punctuation / OEM keys
-        | 0x101..=0x106                          // Mouse Right, Middle, X1, X2, WheelUp, WheelDown
+        | 0x101..=0x107                          // Mouse Right, Middle, X1, X2, WheelUp, WheelDown
     );
     // F11 belongs to the player fullscreen action, including embedded guest focus.
     u8::from(valid && key != 0x7A)

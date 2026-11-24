@@ -168,6 +168,8 @@ public:
     bool snapToGrid = false;
     bool pickingScriptCoord = false;
     int defaultTapKey = 'F';
+    bool awaitingBinding = false;
+    QPointF pendingBinding;
 
     std::function<void()> beforeMutate;
     std::function<void()> onMutated;
@@ -202,7 +204,38 @@ public:
         return QPointF(ux, uy);
     }
 
+    void completeBinding(int key) {
+        if (!awaitingBinding || !validKey(key)) return;
+        if (beforeMutate) beforeMutate();
+        KeyBinding binding;
+        binding.key = key; binding.x = pendingBinding.x(); binding.y = pendingBinding.y();
+        profile.taps.append(binding);
+        sel = {SelType::Tap, static_cast<int>(profile.taps.size()) - 1};
+        awaitingBinding = false;
+        update();
+        if (onMutated) onMutated();
+        if (onSelectionChanged) onSelectionChanged();
+    }
 protected:
+    bool event(QEvent *event) override {
+        if (awaitingBinding && event->type() == QEvent::ShortcutOverride) { event->accept(); return true; }
+        if (awaitingBinding && event->type() == QEvent::KeyPress) { keyPressEvent(static_cast<QKeyEvent *>(event)); return true; }
+        return QWidget::event(event);
+    }
+    void keyPressEvent(QKeyEvent *event) override {
+        if (!awaitingBinding) { QWidget::keyPressEvent(event); return; }
+        if (event->isAutoRepeat()) return;
+        if (event->key() == Qt::Key_Escape) { awaitingBinding = false; update(); }
+        else completeBinding(qtKeyToBindingKey(event->key(), event->modifiers()));
+        event->accept();
+    }
+    void wheelEvent(QWheelEvent *event) override {
+        if (awaitingBinding && event->angleDelta().y()) { completeBinding(event->angleDelta().y() > 0 ? MouseWheelUp : MouseWheelDown); event->accept(); }
+        else QWidget::wheelEvent(event);
+    }
+    void focusOutEvent(QFocusEvent *event) override {
+        awaitingBinding = false; update(); QWidget::focusOutEvent(event);
+    }
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
@@ -363,6 +396,12 @@ protected:
             p.drawText(QRectF(pt.x() - 22, pt.y() - 18, 44, 36), Qt::AlignCenter, text);
         }
 
+        if (awaitingBinding) {
+            const auto point = toScreen(r, pendingBinding.x(), pendingBinding.y());
+            const QRectF box(point.x() - 53, point.y() - 20, 106, 40);
+            p.setPen(QPen(QColor("#60a5fa"), 2, Qt::DashLine)); p.setBrush(QColor("#10213b")); p.drawRoundedRect(box, 10, 10);
+            p.setPen(Qt::white); p.drawText(box, Qt::AlignCenter, "Press a key…");
+        }
         // 7. Aim / Fire / ADS / Free-Look markers
         if (profile.aim.enabled) {
             const auto &a = profile.aim;
@@ -402,6 +441,7 @@ protected:
     }
 
     void mousePressEvent(QMouseEvent *event) override {
+        if (awaitingBinding) { completeBinding(mouseButtonToBindingKey(event->button())); event->accept(); return; }
         if (event->button() != Qt::LeftButton) return;
         const auto r = imageRect();
         if (!r.contains(event->position())) return;
@@ -423,35 +463,16 @@ protected:
             return;
         }
 
-        if (activeTool == ToolKind::Select) {
-            sel = {SelType::None, -1};
-            update();
-            if (onSelectionChanged) onSelectionChanged();
-            return;
+        if ((activeTool == ToolKind::Tap || activeTool == ToolKind::Select) && profile.taps.size() < 128) {
+            pendingBinding = toUnit(r, event->position()); awaitingBinding = true;
+            dragging = false; setFocus(Qt::MouseFocusReason); update(); event->accept(); return;
         }
 
         const QPointF u = toUnit(r, event->position());
         if (beforeMutate) beforeMutate();
 
         switch (activeTool) {
-        case ToolKind::Tap:
-            if (profile.taps.size() < 128) {
-                KeyBinding b;
-                b.key = defaultTapKey;
-                b.x = u.x(); b.y = u.y();
-                for (const auto &existing : profile.taps) {
-                    if (existing.key == b.key) {
-                        b.repeat = existing.repeat;
-                        b.intervalMs = existing.intervalMs;
-                        b.burstCount = existing.burstCount;
-                        break;
-                    }
-                }
-                profile.taps.append(b);
-                sel = {SelType::Tap, static_cast<int>(profile.taps.size()) - 1};
-                dragging = true;
-            }
-            break;
+        case ToolKind::Tap: break;
         case ToolKind::Dpad:
             if (profile.dpads.size() < 8) {
                 DpadControl d;
@@ -759,6 +780,7 @@ KeymapDialog::KeymapDialog(const QPixmap &screenshot, const KeymapProfile &profi
     body->setSpacing(12);
 
     canvas = new KeymapCanvas(screenshot, this);
+    canvas->setObjectName("keymapCanvas");
     canvas->profile = profile;
     body->addWidget(canvas, 1);
 

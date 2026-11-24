@@ -173,6 +173,8 @@ LRESULT CALLBACK InputMapper::mouseHookProc(int code, WPARAM message, LPARAM dat
     bool wheel = false;
 
     switch (message) {
+    case WM_LBUTTONDOWN: buttonKey = MouseLeftButton; down = true; break;
+    case WM_LBUTTONUP: buttonKey = MouseLeftButton; up = true; break;
     case WM_RBUTTONDOWN: buttonKey = MouseRightButton; down = true; break;
     case WM_RBUTTONUP:   buttonKey = MouseRightButton; up = true; break;
     case WM_MBUTTONDOWN: buttonKey = MouseMiddleButton; down = true; break;

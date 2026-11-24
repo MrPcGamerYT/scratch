@@ -17,11 +17,16 @@ namespace {
 class TitleBar : public QWidget {
 public:
     TitleBar(QWidget *window) : QWidget(window), target(window) {
-        setObjectName("nativeTitleBar"); setFixedHeight(38);
+        setObjectName("nativeTitleBar"); setFixedHeight(window->property("nexusPlayer").toBool() ? 56 : 38);
         setStyleSheet("#nativeTitleBar{background:#090c12;} #nativeTitleBar QLabel{color:#bdc7da;background:transparent;font-size:12px;} #nativeTitleBar QPushButton{background:transparent;border:0;border-radius:4px;padding:4px;color:#cbd5e1;} #nativeTitleBar QPushButton:hover{background:#253149;}");
         auto *row = new QHBoxLayout(this); row->setContentsMargins(12, 3, 6, 3);
         auto *label = new QLabel(window->windowTitle(), this); label->setAttribute(Qt::WA_TransparentForMouseEvents); row->addWidget(label); row->addStretch();
         connect(window, &QWidget::windowTitleChanged, label, &QLabel::setText);
+        if (window->property("nexusPlayer").toBool()) {
+            label->setText("NEXUS"); label->setStyleSheet("font-weight:800;font-size:15px;letter-spacing:2px;color:#60a5fa;");
+            if (auto *dock = window->findChild<QWidget *>("topDock")) { dock->setParent(this); row->addWidget(dock); dock->show(); }
+            row->addStretch();
+        }
         auto button = [&](const QString &text, const QString &description) {
             auto *b = new QPushButton(text, this); b->setFixedSize(32, 28); b->setAccessibleName(description); b->setToolTip(description); row->addWidget(b); return b;
         };

@@ -24,7 +24,7 @@ static_assert(sizeof(NexusPoint) == 16 && sizeof(NexusPinchPair) == 32 &&
               "Rust/C++ extended keymap ABI mismatch");
 
 bool validKey(int key) { return nexus_valid_key(key) != 0; }
-bool isMouseBindingKey(int key) { return key >= MouseRightButton && key <= MouseWheelDown; }
+bool isMouseBindingKey(int key) { return key >= MouseRightButton && key <= MouseLeftButton; }
 
 static int canonicalModifierGroup(int key) {
     if (key == 0x10 || key == 0xA0 || key == 0xA1) return 0x10;
@@ -93,6 +93,7 @@ QString keyName(int key) {
     case 0xDC: return QStringLiteral("\\");
     case 0xDD: return QStringLiteral("]");
     case 0xDE: return QStringLiteral("'");
+    case MouseLeftButton: return QStringLiteral("Left Click");
     case MouseRightButton: return QStringLiteral("Right Click");
     case MouseMiddleButton: return QStringLiteral("Middle Click");
     case MouseX1Button: return QStringLiteral("Mouse 4");
@@ -128,6 +129,7 @@ QString keyShortBadge(int key) {
     case 0x28: return QStringLiteral("↓");
     case 0x2D: return QStringLiteral("INS");
     case 0x2E: return QStringLiteral("DEL");
+    case MouseLeftButton: return QStringLiteral("LMB");
     case MouseRightButton: return QStringLiteral("RMB");
     case MouseMiddleButton: return QStringLiteral("MMB");
     case MouseX1Button: return QStringLiteral("M4");
@@ -182,6 +184,7 @@ int qtKeyToBindingKey(int qtKey, Qt::KeyboardModifiers modifiers) {
 
 int mouseButtonToBindingKey(Qt::MouseButton button) {
     switch (button) {
+    case Qt::LeftButton: return MouseLeftButton;
     case Qt::RightButton: return MouseRightButton;
     case Qt::MiddleButton: return MouseMiddleButton;
     case Qt::BackButton: return MouseX1Button;
@@ -200,7 +203,7 @@ QList<QPair<int, QString>> allBindableKeys() {
         0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B,
         0xC0, 0xBD, 0xBB, 0xDB, 0xDD, 0xDC, 0xBA, 0xDE, 0xBC, 0xBE, 0xBF,
         0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
-        MouseRightButton, MouseMiddleButton, MouseX1Button, MouseX2Button, MouseWheelUp, MouseWheelDown
+        MouseLeftButton, MouseRightButton, MouseMiddleButton, MouseX1Button, MouseX2Button, MouseWheelUp, MouseWheelDown
     };
     for (int k : extras) items.append({k, keyName(k)});
     return items;
@@ -470,6 +473,7 @@ QStringList detectKeyConflicts(const KeymapProfile &profile) {
         record(profile.aim.toggleKey, QStringLiteral("Aim Toggle"));
         if (profile.aim.suspendKey != 0) record(profile.aim.suspendKey, QStringLiteral("Aim Suspend"));
         if (profile.aim.freeLookEnabled && profile.aim.freeLookKey != 0) record(profile.aim.freeLookKey, QStringLiteral("Free-Look"));
+        if (profile.aim.fireEnabled) record(MouseLeftButton, QStringLiteral("Aim Fire (Left Click)"));
         if (profile.aim.adsEnabled) record(MouseRightButton, QStringLiteral("Aim ADS (Right Click)"));
     }
     QStringList warnings;

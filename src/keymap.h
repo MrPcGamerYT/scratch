@@ -7,6 +7,7 @@
 #include <Qt>
 
 enum SpecialInputCode : int {
+    MouseLeftButton = 0x107,
     MouseRightButton  = 0x101,
     MouseMiddleButton = 0x102,
     MouseX1Button     = 0x103,

@@ -79,7 +79,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
     launchButton = dockButton("Retry", header); launchButton->setToolTip("Retry starting the prepared Android system"); headerLayout->addWidget(launchButton);
     shutdownButton = dockButton("Stop", header); headerLayout->addWidget(shutdownButton);
-    root->addWidget(header);
+    header->hide(); // Dock is adopted by the single custom title bar.
+    statusBar()->hide();
 
     auto *viewport = new QFrame(central); viewport->setObjectName("viewportPanel"); auto *v = new QVBoxLayout(viewport); v->setContentsMargins(0, 0, 0, 0);
     view = new EmulatorView(viewport); v->addWidget(view, 1); root->addWidget(viewport, 1); setCentralWidget(central);
@@ -346,9 +347,9 @@ void MainWindow::changeEvent(QEvent *event) {
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange) {
         const bool fullscreen = isFullScreen();
-        if (auto *header = findChild<QFrame *>("header")) header->setVisible(!fullscreen);
+        if (auto *header = findChild<QFrame *>("header")) header->hide();
         if (menuWidget()) menuWidget()->setVisible(!fullscreen);
-        statusBar()->setVisible(!fullscreen);
+        statusBar()->hide();
         fullscreenButton->setText(fullscreen ? "⛶  Exit full screen · F11" : "⛶  Full screen · F11");
         overlay->refreshSync();
     }
