@@ -70,7 +70,8 @@ pub extern "C" fn nexus_valid_key(key: i32) -> u8 {
         | 0xBA..=0xC0 | 0xDB..=0xDE              // Punctuation / OEM keys
         | 0x101..=0x106                          // Mouse Right, Middle, X1, X2, WheelUp, WheelDown
     );
-    u8::from(valid)
+    // F11 belongs to the player fullscreen action, including embedded guest focus.
+    u8::from(valid && key != 0x7A)
 }
 
 fn valid_unit(v: f64) -> bool {
@@ -366,6 +367,7 @@ mod tests {
 
     #[test]
     fn rejects_reserved_keys_bad_fields_and_conflicting_modes() {
+        assert_eq!(nexus_valid_key(0x7A), 0); // F11 reserved for fullscreen
         assert_eq!(nexus_valid_key(0x1B), 0); // Escape disallowed
         assert_eq!(nexus_valid_key(0x5B), 0); // Left Win disallowed
         assert_eq!(nexus_valid_key(0x0D), 1); // Enter allowed

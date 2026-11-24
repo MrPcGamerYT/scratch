@@ -21,6 +21,10 @@ with tempfile.TemporaryDirectory() as d:
         g.part_disk('/dev/sda', 'mbr'); g.mkfs('ext4', '/dev/sda1'); g.mount('/dev/sda1', '/')
         g.write('/original.txt', b'original contents'); g.umount_all(); g.shutdown()
     finally: g.close()
+    raw, raw_copy = root/'raw-source.img', root/'raw-copy.qcow2'
+    subprocess.run(['qemu-img', 'convert', '-f', 'qcow2', '-O', 'raw', str(original), str(raw)], check=True)
+    mod.create_copy(str(raw), str(raw_copy))
+    subprocess.run(['qemu-img', 'compare', '-f', 'raw', '-F', 'qcow2', str(raw), str(raw_copy)], check=True)
     mod.create_copy(str(original), str(work))
     try: mod.create_copy(str(original), str(work)); raise AssertionError('Overwrite accepted')
     except FileExistsError: pass

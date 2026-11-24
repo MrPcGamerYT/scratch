@@ -138,6 +138,7 @@ enum class ToolKind : int {
     Zoom = 4,
     Moba = 5,
     Script = 6,
+    Aim = 7,
 };
 
 enum class SelType : int {
@@ -379,7 +380,7 @@ protected:
                 p.setBrush(QColor(130, 28, 34, 215));
                 p.drawEllipse(fp, 15, 15);
                 p.setPen(Qt::white);
-                p.drawText(QRectF(fp.x() - 18, fp.y() - 15, 36, 30), Qt::AlignCenter, "LMB");
+                p.drawText(QRectF(fp.x() - 18, fp.y() - 15, 36, 30), Qt::AlignCenter, "FIRE");
             }
             if (a.adsEnabled) {
                 const QPointF ap = toScreen(r, a.adsX, a.adsY);
@@ -501,6 +502,14 @@ protected:
                 sel = {SelType::Script, static_cast<int>(profile.scripts.size()) - 1};
                 dragging = true;
             }
+            break;
+        case ToolKind::Aim:
+            profile.aim.enabled = true;
+            profile.aim.fireEnabled = true;
+            profile.aim.showCrosshair = true;
+            profile.aim.anchorX = 0.5; profile.aim.anchorY = 0.5;
+            profile.aim.fireX = u.x(); profile.aim.fireY = u.y();
+            sel = {SelType::Aim, 0}; dragHandle = 1; dragging = true;
             break;
         case ToolKind::Select:
             break;
@@ -739,8 +748,9 @@ KeymapDialog::KeymapDialog(const QPixmap &screenshot, const KeymapProfile &profi
     makeTool("⤢ Pinch Zoom", ToolKind::Zoom);
     makeTool("⚡ MOBA Skill", ToolKind::Moba);
     makeTool("⌘ Macro Script", ToolKind::Script);
+    makeTool("⌖ Aim & Fire", ToolKind::Aim);
     paletteRow->addStretch();
-    auto *aimDialogBtn = new QPushButton("⌖ Aim, Shoot & ADS…", this);
+    auto *aimDialogBtn = new QPushButton("Aim options…", this);
     paletteRow->addWidget(aimDialogBtn);
     root->addLayout(paletteRow);
 
@@ -926,7 +936,7 @@ KeymapDialog::KeymapDialog(const QPixmap &screenshot, const KeymapProfile &profi
     {
         auto *w = new QWidget;
         auto *v = new QVBoxLayout(w);
-        auto *lbl = new QLabel("Drag ⌖ (Camera Anchor), LMB (Fire), RMB (ADS), and 👁 (Free-Look) directly on the canvas, or open full Aim settings.", w);
+        auto *lbl = new QLabel("Choose Aim & Fire, then click the game’s fire button to place its HUD. Drag FIRE to reposition it. The capture cursor and crosshair stay at screen center while aim is locked; the toggle key unlocks them. Drag ⌖ only for games that need a different guest camera touch area. ADS and Free-Look markers can also be dragged.", w);
         lbl->setWordWrap(true);
         v->addWidget(lbl);
         auto *openBtn = new QPushButton("Open Full Aim, ADS & Crosshair Settings…", w);

@@ -6,3 +6,7 @@
 *.img
 *.vhdx
 *.user
+
+# Python tools
+__pycache__/
+*.pyc

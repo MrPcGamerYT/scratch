@@ -268,6 +268,7 @@ LRESULT CALLBACK AimController::keyboardProc(int code, WPARAM msg, LPARAM data) 
         const auto *key = reinterpret_cast<const KBDLLHOOKSTRUCT *>(data);
         if (!(key->flags & LLKHF_INJECTED)) {
             const int vk = static_cast<int>(key->vkCode);
+            if (vk == VK_F11) return CallNextHookEx(nullptr, code, msg, data);
             const bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
             const bool up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
 

@@ -196,6 +196,8 @@ void KeymapOverlay::paintEvent(QPaintEvent *) {
     if (crosshairActive && currentProfile.aim.showCrosshair) {
         p.save();
         p.setOpacity(0.95);
+        if (currentProfile.aim.fireEnabled && !showHints)
+            drawKeyPill(&p, QPointF(currentProfile.aim.fireX * w, currentProfile.aim.fireY * h), QStringLiteral("FIRE · LMB"), QColor("#ff7875"));
         const QPointF center(w * 0.5, h * 0.5);
         const qreal sz = std::clamp(currentProfile.aim.crosshairSize, 4, 64);
         QColor col(currentProfile.aim.crosshairColor);

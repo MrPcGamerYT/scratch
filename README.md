@@ -36,6 +36,22 @@ ZIP is a container, not a boot format. Archives containing only `kernel`, `initr
 
 The player, Settings, Keymap Studio, Aim dialog and desktop preparation window use borderless custom title bars with move, minimize, maximize/restore and close controls. Standard OS file/message dialogs retain native chrome where Qt does not provide a vertical layout; the main player and resizable dialogs retain sizing affordances.
 
+### Android OTA `payload.bin` packages
+
+A ZIP whose large file is `payload.bin` is normally an **OTA update**, not a PC installer. Image Studio now offers **Inspect OTA partitions** and **Extract OTA partitions (payload.bin / ZIP)**. Select the source and workspace; Windows **Python 3.10+** is required for these two operations (standard library only). Extraction goes to a new `workspace/ota-partitions` folder and never stages or replaces `android-base.qcow2`.
+
+The extractor parses modern CrAU manifests and supports full OTA REPLACE, BZip2/XZ replacement, ZERO and DISCARD operations. It checks destination bounds, operation hashes and new partition hashes when supplied, limits decompression and refuses unsupported/incremental operations before writing output. It does **not authenticate OTA publisher signatures**; verify a publisher-supplied source SHA-256 in the tool. Legacy manifest layouts, incremental updates and additional compression types are not supported. These paths have synthetic tests, not validation against your specific Bliss release.
+
+**An extracted `system.img` is still not a bootable PC disk.** Payload partitions require the matching bootloader, disk layout, kernel and verified-boot configuration. Do not rename them to `android-base.qcow2`. Supply the package/partition listing to determine whether it is even intended for x86-64 PCs; some OTA packages target phones. Use the Bliss PC ISO or a preinstalled whole disk for the existing bootable installation workflow.
+
+**Edit offline image files (WSLg)** opens the existing file editor from the desktop tool. Requires Windows 11 WSLg with Ubuntu and `sudo apt install python3-tk python3-guestfs qemu-utils libguestfs-tools`. It can copy and edit standalone QCOW2 disks or raw `.img` partitions by converting a new copy to QCOW2 first. Select a filesystem and use import/replace, export, new folder and delete. Sources remain unchanged. EROFS, dynamic-super, encrypted/verified-boot and nested filesystem images may need separate tools. Editing files does not rebuild/sign a payload or automatically install those partitions into a VM. Keep the working copy offline until the editor closes.
+
+### Fullscreen and Aim & Fire placement
+
+**F11** toggles fullscreen, including when the embedded guest has focus. The player title bar, action toolbar and status bar hide in fullscreen and return on exit. F11 is reserved and cannot be used as a game binding. The Windows hook ignores F11 when another application or an app modal dialog has focus; other apps are not given a global fullscreen shortcut.
+
+In Keymap Studio choose **Aim & Fire**, then click the game's fire-button location. A **FIRE** marker appears immediately and can be dragged like other controls; there is no coordinate-entry dialog required to place it. The aim anchor starts centered. **Aim options** configures the toggle key, sensitivity, ADS and Free-Look. Once armed in the player, the toggle key locks/unlocks aim: host cursor capture and the visible crosshair stay centered, while the game fire touch uses your draggable FIRE location. The guest camera-touch anchor may be dragged separately for games requiring a different touch region; it does not move the host cursor-lock center. A fire-location hint remains visible while the active crosshair is shown, even with general hints off.
+
 ### PowerShell backend (optional)
 
 Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separately from the **ProjectNexus-Windows** player artifact. Download a legally obtained Bliss OS x86-64 ISO from the [Bliss OS project](https://sourceforge.net/projects/blissos-x86/) and check the exact image's redistribution terms. The ISO is **not bundled**. On a Windows host with WHPX enabled, run the separate tool:

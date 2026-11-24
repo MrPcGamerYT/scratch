@@ -122,6 +122,7 @@ LRESULT CALLBACK InputMapper::keyHookProc(int code, WPARAM message, LPARAM data)
     if (!down && !up) return CallNextHookEx(nullptr, code, message, data);
 
     const int key = static_cast<int>(event->vkCode);
+    if (key == VK_F11) return CallNextHookEx(nullptr, code, message, data);
     if (up) {
         const bool wasHeld = self->heldKeys.remove(key);
         const bool released = self->engine->handleKeyRelease(key);

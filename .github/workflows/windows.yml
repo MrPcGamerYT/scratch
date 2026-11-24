@@ -71,6 +71,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - name: OTA payload extraction tests
+        run: python tests/payload_tests.py
       - name: Rust core unit tests
         shell: pwsh
         run: |

@@ -15,6 +15,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
+#include <QEvent>
+#include <QShortcut>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -53,6 +55,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mapper = new InputMapper(qmp, this);
     mouseLock = new MouseLock(this);
     aim = new AimController(qmp, this);
+    setProperty("nexusPlayer", true);
     setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(1100, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
@@ -67,10 +70,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
     overlayEnabled = new QCheckBox("Hints", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
-    auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
-    fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
+    fullscreenButton = dockButton("⛶  Full screen · F11", dock); dockLayout->addWidget(fullscreenButton);
     aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Arm Aim, Shoot, ADS & Free-Look; multi-touch enables concurrent WASD & taps"); dockLayout->addWidget(aimButton);
-    auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
     launchButton = dockButton("Retry", header); launchButton->setToolTip("Retry starting the prepared Android system"); headerLayout->addWidget(launchButton);
@@ -102,7 +103,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
     connect(apkButton, &QPushButton::clicked, this, [this] { installApk(); });
     connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.exec(); });
-    connect(fullscreenButton, &QPushButton::clicked, this, [this] { if (isFullScreen()) showNormal(); else showFullScreen(); });
+    auto toggleFullscreen = [this] { if (isFullScreen()) showNormal(); else showFullScreen(); };
+    connect(fullscreenButton, &QPushButton::clicked, this, toggleFullscreen);
+    auto *fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
+    fullscreenShortcut->setContext(Qt::WindowShortcut);
+    connect(fullscreenShortcut, &QShortcut::activated, this, toggleFullscreen);
     connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
     connect(overlayEnabled, &QCheckBox::toggled, this, [this](bool shown) {
         QSettings s; s.setValue("keymap/showHints", shown);
@@ -326,4 +331,16 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     }
     overlay->hide();
     event->accept();
+}
+
+void MainWindow::changeEvent(QEvent *event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        const bool fullscreen = isFullScreen();
+        if (auto *header = findChild<QFrame *>("header")) header->setVisible(!fullscreen);
+        if (menuWidget()) menuWidget()->setVisible(!fullscreen);
+        statusBar()->setVisible(!fullscreen);
+        fullscreenButton->setText(fullscreen ? "⛶  Exit full screen · F11" : "⛶  Full screen · F11");
+        overlay->refreshSync();
+    }
 }
