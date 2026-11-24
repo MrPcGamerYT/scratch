@@ -29,6 +29,9 @@ protected:
     void changeEvent(QEvent *event) override;
 private:
     void launch();
+    void recordEvent(const QString &message);
+    QString sessionLog;
+    QString engineErrorTail;
     void findGuestWindow();
     void editKeymap();
     void installApk();

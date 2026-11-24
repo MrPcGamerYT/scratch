@@ -216,3 +216,16 @@ Resolution changes may require adjusting keymaps.
 This is still QEMU standard-VGA graphics with Rust runtime/input components, not
 a completed Rust-native GPU engine. Vulkan, DirectX, ASTC and GPU passthrough
 remain unavailable; resolution/DPI controls do not add hardware rendering.
+
+### Player diagnostics
+
+Settings → Diagnostics provides read-only non-empty package-file checks, UEFI
+pair validation, ADB executable discovery, configured engine/resources and a
+refreshable current-session log. Copy explicitly places the report on your local
+clipboard; nothing is uploaded. Review paths/usernames before sharing. QEMU stderr
+is drained while running and bounded (16 KB error tail, 64 KB session history),
+so long-running guests cannot accumulate unlimited error output. The report does
+not prove successful Android boot, ADB authorization or valid ISO contents.
+
+Use the single **Emulator preview** on port 4173. The preview reloads automatically
+when its HTML or wallpaper changes; it does not inspect a real Android guest.

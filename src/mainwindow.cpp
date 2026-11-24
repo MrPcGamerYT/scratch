@@ -16,6 +16,7 @@
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDateTime>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
@@ -128,7 +129,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
     connect(apkButton, &QPushButton::clicked, this, [this] { installApk(); });
-    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.applyDisplay = [this](QString size, int dpi) { applyGuestDisplay(size, dpi); }; dialog.exec(); });
+    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.sessionDiagnostics = [this] { return QString("Process: %1; QMP: %2; display embedded: %3\n").arg(process->state() == QProcess::Running ? "running" : "stopped").arg(qmp->isReady() ? "ready" : "not ready").arg(view->windowHandle() ? "yes" : "no") + sessionLog; }; dialog.applyDisplay = [this](QString size, int dpi) { applyGuestDisplay(size, dpi); }; dialog.exec(); });
     auto toggleFullscreen = [this] { if (isFullScreen()) showNormal(); else showFullScreen(); };
     connect(fullscreenButton, &QPushButton::clicked, this, toggleFullscreen);
     auto *fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
@@ -207,22 +208,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(qmp, &Qmp::error, this, [this](const QString &message) { aim->disarm(); if (keymapEnabled->isChecked()) keymapEnabled->setChecked(false); statusBar()->showMessage("QEMU monitor: " + message); });
     connect(embedTimer, &QTimer::timeout, this, [this] { findGuestWindow(); });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError errorCode) {
+        recordEvent("Process error: " + process->errorString());
         if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
-        const QString output = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
+        const QString output = (engineErrorTail + QString::fromLocal8Bit(process->readAllStandardError())).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
         if (status == QProcess::CrashExit || code != 0) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
+    });
+    connect(statusBar(), &QStatusBar::messageChanged, this, [this](const QString &message) { recordEvent(message); });
+    connect(process, &QProcess::readyReadStandardError, this, [this] {
+        const auto output = QString::fromLocal8Bit(process->readAllStandardError());
+        engineErrorTail = (engineErrorTail + output).right(16000); recordEvent("QEMU: " + output);
     });
     QTimer::singleShot(0, this, [this] { launch(); });
 }
 
+void MainWindow::recordEvent(const QString &message) {
+    if (message.trimmed().isEmpty()) return;
+    sessionLog = (sessionLog + QDateTime::currentDateTimeUtc().toString(Qt::ISODate) + " " + message.left(16000) + "\n").right(65536);
+}
 void MainWindow::setRunning(bool running) {
     launchButton->setVisible(!running); launchButton->setEnabled(!running); vmStatus->setText(running ? "●  ONLINE" : "●  OFFLINE"); updateControls();
 }
 void MainWindow::launch() {
     if (process->state() != QProcess::NotRunning) return;
+    engineErrorTail.clear(); recordEvent("Launch requested.");
     const QString root = QCoreApplication::applicationDirPath();
     const QString base = root + "/images/android-base.qcow2";
     const QString qemu = root + "/qemu/bin/qemu-system-x86_64.exe";

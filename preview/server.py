@@ -15,6 +15,20 @@ FILES = {
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if urlsplit(self.path).path == "/preview-revision":
+            import hashlib
+            digest = hashlib.sha256()
+            for path in sorted({entry[0] for entry in FILES.values()}):
+                if path.is_file():
+                    digest.update(path.read_bytes())
+            body = digest.hexdigest().encode("ascii")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         entry = FILES.get(urlsplit(self.path).path)
         if not entry or not entry[0].is_file():
             self.send_error(404)

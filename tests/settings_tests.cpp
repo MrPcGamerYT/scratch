@@ -3,6 +3,9 @@
 #include <QApplication>
 #include <QComboBox>
 #include "runtimeconfig.h"
+#include "diagnostics.h"
+#include <QPlainTextEdit>
+#include <QFile>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
@@ -27,7 +30,7 @@ int main(int argc, char **argv) {
     auto *save = dialog.findChild<QPushButton *>("saveSettings");
     QPushButton *discard = nullptr;
     for (auto *button : dialog.findChildren<QPushButton *>()) if (button->text() == "Discard") discard = button;
-    if (!tabs || tabs->count() != 12 || !cpu || !save || !discard) return 2;
+    if (!tabs || tabs->count() != 13 || !cpu || !save || !discard) return 2;
     if (save->isEnabled() || discard->isEnabled() || cpu->value() != 4) return 3;
     cpu->setValue(6);
     if (!save->isEnabled() || !discard->isEnabled()) return 4;
@@ -58,6 +61,17 @@ int main(int argc, char **argv) {
     reopened.applyDisplay = [&](QString size, int dpi) { applied = size == "reset" && dpi == 0; };
     resolution->setCurrentIndex(0); density->setCurrentIndex(0); apply->click();
     if (!applied) return 15;
+    auto *report = reopened.findChild<QPlainTextEdit *>("diagnosticsReport");
+    auto *refresh = reopened.findChild<QPushButton *>("refreshDiagnostics");
+    if (!report || !report->isReadOnly() || !refresh) return 16;
+    reopened.sessionDiagnostics = [] { return QString("test-session-event"); };
+    refresh->click();
+    if (!report->toPlainText().contains("test-session-event")) return 17;
+    const auto missing = playerDiagnostics(tmp.path());
+    if (!missing.contains("MISSING/EMPTY") || !missing.contains("legacy BIOS")) return 18;
+    QFile emptyFirmware(tmp.path() + "/images/android-uefi-code.fd");
+    QDir().mkpath(tmp.path() + "/images"); emptyFirmware.open(QIODevice::WriteOnly); emptyFirmware.close();
+    if (!playerDiagnostics(tmp.path()).contains("incomplete/empty UEFI")) return 19;
     for (int i = 0; i < tabs->count(); ++i) tabs->setCurrentIndex(i);
     std::cout << "Settings categories, dirty state, discard and persistence passed.\n";
     return 0;

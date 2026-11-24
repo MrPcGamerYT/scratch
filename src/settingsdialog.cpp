@@ -1,4 +1,9 @@
 #include "settingsdialog.h"
+#include "diagnostics.h"
+#include <QCoreApplication>
+#include <QPlainTextEdit>
+#include <QClipboard>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFormLayout>
@@ -124,6 +129,14 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     adbForward = new QCheckBox("Enable local ADB forwarding", advanced); form->addRow(adbForward);
     adbPort = new QSpinBox(advanced); adbPort->setRange(1024, 65535); form->addRow("Local ADB port", adbPort);
     form->addRow("Root access", unavailable("Controlled by guest image")); note(form, "Forwarding binds to loopback. Enable Android debugging in the guest separately. Restart required.");
+    auto *diagnosticsPage = addPage("Diagnostics", "Read-only package checks and current-session events. Review local paths before sharing.", &form);
+    auto *report = new QPlainTextEdit(diagnosticsPage); report->setObjectName("diagnosticsReport"); report->setReadOnly(true); report->setMinimumHeight(210);
+    report->setPlainText(playerDiagnostics(QCoreApplication::applicationDirPath())); form->addRow(report);
+    auto *refreshReport = new QPushButton("Refresh diagnostics", diagnosticsPage); refreshReport->setObjectName("refreshDiagnostics"); form->addRow(refreshReport);
+    auto *copyReport = new QPushButton("Copy report and session log", diagnosticsPage); copyReport->setObjectName("copyDiagnostics"); form->addRow(copyReport);
+    auto refresh = [=] { report->setPlainText(playerDiagnostics(QCoreApplication::applicationDirPath()) + (sessionDiagnostics ? "\n\nCurrent session:\n" + sessionDiagnostics() : "\n\nNo player session attached.")); };
+    connect(refreshReport, &QPushButton::clicked, this, refresh);
+    connect(copyReport, &QPushButton::clicked, this, [=] { refresh(); QApplication::clipboard()->setText(report->toPlainText()); });
     addPage("About", "Project Nexus · native Qt player and Rust gesture core", &form);
     note(form, QString("Host: %1 · %2\n").arg(QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture()));
     note(form, "Engine: QEMU x86_64\nInput: QMP pointer / experimental virtio multitouch\nKeymaps: v3 profiles with legacy import\n\nAndroid version, virtualization availability and game compatibility depend on the installed guest and host. No ARM translation or commercial-emulator compatibility is claimed.");

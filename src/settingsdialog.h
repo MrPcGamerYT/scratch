@@ -9,6 +9,7 @@ public:
     explicit SettingsDialog(bool running, QWidget *parent = nullptr);
     void reject() override;
     std::function<void(QString, int)> applyDisplay;
+    std::function<QString()> sessionDiagnostics;
 private:
     std::function<bool()> hasChanges;
     bool save();

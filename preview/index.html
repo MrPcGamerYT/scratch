@@ -187,6 +187,7 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
         <button data-page="graphics">Graphics</button>
         <button data-page="device">Device</button>
         <button data-page="preferences">Preferences</button>
+        <button data-page="diagnostics">Diagnostics</button>
       </nav>
       <section class="settings-main" id="settingsPage"></section>
     </div>
@@ -325,6 +326,23 @@ tap 85 60 50</textarea>
 <div class="toast" role="status" id="toast"></div>
 
 <script>
+// One persistent preview: reload this tab when its UI or assets change.
+(async function watchPreview() {
+  let revision;
+  async function check() {
+    try {
+      const response = await fetch('/preview-revision', {cache: 'no-store'});
+      if (response.ok) {
+        const next = await response.text();
+        if (revision && revision !== next) { location.reload(); return; }
+        revision = next;
+      }
+    } catch (_) { /* Keep the preview usable during a server restart. */ }
+    setTimeout(check, 2000);
+  }
+  check();
+})();
+
 const $ = s => document.querySelector(s);
 document.querySelectorAll('.dock button').forEach(button => {
   const name = button.textContent.trim();
@@ -333,6 +351,20 @@ document.querySelectorAll('.dock button').forEach(button => {
   if (icon) button.replaceChildren(icon);
 });
 const pages = {
+  diagnostics: `<h3>Diagnostics</h3><p class="desc">Package checks and bounded current-session events in the desktop player.</p><div class="note">Browser demo only — this page cannot inspect your PC, installed files or Android guest.</div><pre style="white-space:pre-wrap;background:#10131c;padding:16px;border-radius:8px">Engine: not connected (browser preview)
+QMP monitor: not connected
+Android display: not connected
+ADB authorization: not tested
+Graphics backend: QEMU standard VGA (desktop)
+GPU acceleration: not implemented
+
+Desktop report checks:
+• QEMU and qemu-img executables
+• Required BIOS / VGA / APIC ROMs
+• Android base disk and UEFI firmware pair
+• ADB executable availability
+• Configured CPU, RAM and acceleration mode
+• Timestamped session events and QEMU errors</pre><div class="note">Desktop: Settings → Diagnostics → Refresh diagnostics / Copy report and session log. Reports may include local paths and usernames: review before sharing.</div>`,
   performance: `<h3>Performance</h3><p class="desc">Choose how much of your PC the virtual machine can use.</p><label class="field">CPU cores <input type="number" value="4" min="1" max="64"></label><label class="field">Memory <select><option>4096 MB</option><option>2048 MB</option><option>8192 MB</option></select></label><div class="note">Changes take effect the next time you start the player.</div>`,
   display: `<h3>Display</h3><p class="desc">Resolution and pixel density for Android. Interactive UI preview only.</p><label class="field">Resolution <select id="guestResolution"><option>Android default</option><option>1280x720</option><option>1600x900</option><option>1920x1080</option><option>720x1280</option><option>1080x1920</option></select></label><label class="field">Pixel density (DPI) <select id="guestDensity"><option>Android default</option><option>160 DPI</option><option>200 DPI</option><option>240 DPI</option><option>280 DPI</option><option>320 DPI</option><option>400 DPI</option><option>480 DPI</option></select></label><button class="primary" id="applyGuestDisplay">Apply to running Android</button><div class="note" id="displayPreviewStatus">Desktop build requires ADB platform-tools, local forwarding and authorized TCP debugging. Changes apply immediately, independently of Save. Select Android default in both fields to reset.</div><label class="check"><input type="checkbox" checked> Show host mouse cursor</label><div class="note">This preview cannot change a real guest. Display controls do not add GPU acceleration.</div>`,
   graphics: `<h3>Graphics</h3><p class="desc">The current player uses QEMU's compatibility display.</p><div class="field">Renderer <div class="disabled">Standard VGA · compatibility</div></div><div class="field">GPU acceleration <div class="disabled">Not available in this build</div></div><div class="note">No GPU passthrough, DirectX acceleration or FPS limiter is configured.</div>`,
