@@ -195,6 +195,10 @@ jobs:
             if ($LASTEXITCODE -ne 0 -or ($accels -join "`n") -notmatch 'whpx') { throw "Bundled QEMU missing WHPX, exit $LASTEXITCODE : $accels" }
             $displays = & $qemu -display help 2>&1
             if ($LASTEXITCODE -ne 0 -or ($displays -join "`n") -notmatch 'sdl') { throw "Bundled QEMU missing SDL, exit $LASTEXITCODE : $displays" }
+            $audio = & $qemu -audiodev help 2>&1
+            if ($LASTEXITCODE -ne 0 -or ($audio -join "`n") -notmatch 'dsound') { throw "Bundled QEMU missing DirectSound: $audio" }
+            $devices = & $qemu -device help 2>&1
+            if ($LASTEXITCODE -ne 0 -or ($devices -join "`n") -notmatch 'hda-output' -or ($devices -join "`n") -notmatch 'ich9-intel-hda') { throw "Bundled QEMU missing HDA output devices" }
             $env:QEMU_SYSTEM = $qemu
             $env:QEMU_IMG = $img
             $env:QEMU_DATA = "$PWD/package/qemu/share/qemu"

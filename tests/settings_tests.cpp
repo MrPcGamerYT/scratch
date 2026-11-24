@@ -4,6 +4,8 @@
 #include <QComboBox>
 #include "runtimeconfig.h"
 #include "diagnostics.h"
+#include "apkdrop.h"
+#include <QCheckBox>
 #include <QPlainTextEdit>
 #include <QFile>
 #include <QPushButton>
@@ -72,6 +74,25 @@ int main(int argc, char **argv) {
     QFile emptyFirmware(tmp.path() + "/images/android-uefi-code.fd");
     QDir().mkpath(tmp.path() + "/images"); emptyFirmware.open(QIODevice::WriteOnly); emptyFirmware.close();
     if (!playerDiagnostics(tmp.path()).contains("incomplete/empty UEFI")) return 19;
+    auto *audio = dialog.findChild<QCheckBox *>("audioOutput");
+    if (!audio || audio->isChecked()) return 20;
+    audio->setChecked(true); discard->click();
+    if (audio->isChecked()) return 21;
+    audio->setChecked(true); save->click();
+    if (!QSettings().value("audioOutput").toBool()) return 22;
+    QMimeData mime;
+    mime.setUrls({QUrl("https://example.invalid/test.apk")});
+    if (!droppedApk(&mime).isEmpty()) return 23;
+    QFile apk(tmp.path() + "/trusted.APK"); apk.open(QIODevice::WriteOnly); apk.write("test"); apk.close();
+    mime.setUrls({QUrl::fromLocalFile(apk.fileName())});
+    if (droppedApk(&mime).isEmpty()) return 24;
+    mime.setUrls({QUrl::fromLocalFile(apk.fileName()), QUrl::fromLocalFile(apk.fileName())});
+    if (!droppedApk(&mime).isEmpty()) return 25;
+    mime.setUrls({QUrl::fromLocalFile(tmp.path())});
+    if (!droppedApk(&mime).isEmpty()) return 26;
+    QFile emptyApk(tmp.path() + "/empty.apk"); emptyApk.open(QIODevice::WriteOnly); emptyApk.close();
+    mime.setUrls({QUrl::fromLocalFile(emptyApk.fileName())});
+    if (!droppedApk(&mime).isEmpty()) return 27;
     for (int i = 0; i < tabs->count(); ++i) tabs->setCurrentIndex(i);
     std::cout << "Settings categories, dirty state, discard and persistence passed.\n";
     return 0;

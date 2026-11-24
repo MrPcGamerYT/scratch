@@ -229,3 +229,21 @@ not prove successful Android boot, ADB authorization or valid ISO contents.
 
 Use the single **Emulator preview** on port 4173. The preview reloads automatically
 when its HTML or wallpaper changes; it does not inspect a real Android guest.
+
+### Experimental audio output and APK drops
+
+In Settings → Devices, opt into guest audio output, Save, and restart the player.
+The Rust launch policy adds Intel HDA with an output-only codec and DirectSound
+on Windows' default playback device. Disabled by default. A compatible Android
+HDA driver and a working Windows audio device are required; no microphone input,
+per-device routing or audible-playback guarantee is provided. Disable the option
+if guest startup or playback fails. Rust flag 16 selects audio; valid mask is 31.
+CI verifies the bundled QEMU advertises DirectSound and the HDA devices; this is
+not an end-to-end Android audio test.
+
+Drop one local, non-empty `.apk` onto the player to use the existing confirmed ADB
+installation flow. Remote URLs, directories and multi-file drops are rejected.
+Nothing installs without confirmation. Android must already be running with
+forwarded, authorized TCP ADB and platform-tools available. File extension checks
+are not malware scanning: install only packages you trust. Browser preview drops
+are simulations; files are not read or uploaded.

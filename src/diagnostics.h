@@ -26,6 +26,7 @@ inline QString playerDiagnostics(const QString &root) {
     report << "" << "Configured CPU engine: " + selectedVmAcceleration(settings)
         << QString("Configured resources: %1 CPU(s), %2 MB RAM").arg(qBound(1, settings.value("cpus", 4).toInt(), 64)).arg(qBound(512, settings.value("memory", 4096).toInt(), 131072))
         << QString("Configured local ADB forwarding: %1 (restart required after changes)").arg(settings.value("adbForward", false).toBool() ? "enabled" : "disabled")
+        << QString("Configured audio output: %1 (experimental HDA/DirectSound; restart required)").arg(settings.value("audioOutput", false).toBool() ? "enabled" : "disabled")
         << "Graphics: QEMU standard VGA; no accelerated GPU backend"
         << "Rust: runtime launch policy and input core; QEMU remains the VM engine"
         << "" << "These checks do not verify ISO integrity, Android boot, ADB authorization or game compatibility."

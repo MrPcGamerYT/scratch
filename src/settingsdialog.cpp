@@ -119,7 +119,8 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     note(form, "Requires virtio multitouch support in the Android guest and a player restart. Single-pointer fallback remains available.");
     note(form, "Open Keymap Studio from the player toolbar for schemes, D-pad, taps, swipes, pinch zoom, MOBA skills and scripts. Aim settings configure ADS and free-look.");
     addPage("Devices", "Audio and camera forwarding capabilities.", &form);
-    form->addRow("Speaker / microphone", unavailable("No device routing UI yet")); form->addRow("Camera", unavailable("Not supported"));
+    audioOutput = new QCheckBox("Enable guest audio output (experimental)"); audioOutput->setObjectName("audioOutput"); form->addRow(audioOutput);
+    note(form, "Restart required. Adds an Intel HDA output device using the Windows default DirectSound playback device. Android needs a compatible HDA driver. Disabled by default; turn off if it causes startup or sound problems. Microphone capture and per-device routing are not implemented."); form->addRow("Camera", unavailable("Not supported"));
     addPage("Gamepad", "Controller integration status.", &form); form->addRow("Gamepad detection", unavailable("Not implemented")); note(form, "Keyboard and mouse mapping are available in Keymap Studio. Controller rumble and XInput mapping are not implemented.");
     addPage("Preferences", "Player configuration and save behavior.", &form); note(form, "Settings are saved locally with QSettings. Save writes only supported options; Discard restores your saved values without closing this window.");
     addPage("Phone", "Device identity is controlled by the installed Android system image.", &form); form->addRow("Phone profile", unavailable("Guest integration required")); note(form, "No device spoofing, carrier override or high-FPS game unlock is provided.");
@@ -143,7 +144,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(audioOutput->isChecked()); };
     auto baseline = std::make_shared<QString>();
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); };
     auto restore = [=] {
@@ -152,10 +153,11 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         showCursor->setChecked(s.value("showCursor", true).toBool()); multitouch->setChecked(s.value("multiTouch", false).toBool());
         adbForward->setChecked(s.value("adbForward", false).toBool()); adbPort->setValue(s.value("adbPort", 5555).toInt());
         acceleration->setCurrentIndex(qMax(0, acceleration->findData(s.value("acceleration", "prepared").toString())));
+        audioOutput->setChecked(s.value("audioOutput", false).toBool());
         *baseline = snapshot(); update();
     };
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
-    for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
+    for (auto *check : {showCursor, multitouch, adbForward, audioOutput}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
     connect(acceleration, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
@@ -172,6 +174,7 @@ bool SettingsDialog::save() {
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
     s.setValue("acceleration", acceleration->currentData());
+    s.setValue("audioOutput", audioOutput->isChecked());
     s.sync();
     if (s.status() != QSettings::NoError) {
         QMessageBox::critical(this, "Settings not saved", "Could not write local settings. Check your user configuration folder permissions and free space.");

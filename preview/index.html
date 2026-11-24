@@ -186,6 +186,7 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
         <button data-page="display">Display</button>
         <button data-page="graphics">Graphics</button>
         <button data-page="device">Device</button>
+        <button data-page="audio">Audio</button>
         <button data-page="preferences">Preferences</button>
         <button data-page="diagnostics">Diagnostics</button>
       </nav>
@@ -344,6 +345,16 @@ tap 85 60 50</textarea>
 })();
 
 const $ = s => document.querySelector(s);
+// Preview a drop without reading or uploading its contents.
+document.addEventListener('dragover', event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); });
+document.addEventListener('drop', event => {
+  if (!event.dataTransfer.files.length) return;
+  event.preventDefault();
+  const files = event.dataTransfer.files;
+  toast(files.length === 1 && /\.apk$/i.test(files[0].name) && files[0].size > 0
+    ? 'Preview only: desktop asks for confirmation before installing this APK. No file uploaded.'
+    : 'Drop exactly one non-empty APK file. No file uploaded.');
+});
 document.querySelectorAll('.dock button').forEach(button => {
   const name = button.textContent.trim();
   button.title = button.title || name; button.setAttribute('aria-label', button.getAttribute('aria-label') || name);
@@ -351,6 +362,7 @@ document.querySelectorAll('.dock button').forEach(button => {
   if (icon) button.replaceChildren(icon);
 });
 const pages = {
+  audio: `<h3>Audio output</h3><p class="desc">Desktop player supports opt-in Intel HDA output through Windows DirectSound.</p><label class="check"><input type="checkbox" id="audioOutputPreview"> Enable guest audio output (experimental)</label><div class="note">Desktop: Settings → Devices. Save and restart required. Uses the Windows default playback device. Android must provide a compatible HDA driver. Disabled by default; microphone and device routing are not implemented. Browser controls are demo-only and do not play guest audio.</div>`,
   diagnostics: `<h3>Diagnostics</h3><p class="desc">Package checks and bounded current-session events in the desktop player.</p><div class="note">Browser demo only — this page cannot inspect your PC, installed files or Android guest.</div><pre style="white-space:pre-wrap;background:#10131c;padding:16px;border-radius:8px">Engine: not connected (browser preview)
 QMP monitor: not connected
 Android display: not connected

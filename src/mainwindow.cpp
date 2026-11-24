@@ -16,6 +16,10 @@
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include "apkdrop.h"
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -63,7 +67,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mapper = new InputMapper(qmp, this);
     mouseLock = new MouseLock(this);
     aim = new AimController(qmp, this);
-    setProperty("nexusPlayer", true);
+    setProperty("nexusPlayer", true); setAcceptDrops(true);
     setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(1100, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
@@ -276,7 +280,7 @@ void MainWindow::launch() {
     const QByteArray firmwareBytes = (QFileInfo::exists(firmware + "/bios-256k.bin") ? firmware : QString()).toUtf8();
     const QByteArray codeBytes = (hasCode ? code : QString()).toUtf8();
     const QByteArray varsBytes = (hasCode ? vars : QString()).toUtf8();
-    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u);
+    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u) | (s.value("audioOutput", false).toBool() ? 16u : 0u);
     const NexusVmRequest request{diskBytes.constData(), firmwareBytes.constData(), codeBytes.constData(), varsBytes.constData(), static_cast<std::uint32_t>(ram), static_cast<std::uint32_t>(cpus), static_cast<std::uint32_t>(port), flags};
     const auto size = nexus_vm_plan(&request, nullptr, 0);
     if (size == 0 || size > 1024 * 1024) { QMessageBox::critical(this, "VM configuration", "Rust runtime rejected the launch configuration."); return; }
@@ -376,7 +380,15 @@ void MainWindow::applyGuestDisplay(const QString &size, int dpi) {
     });
     timer->start(15000); task->start(adb, {"connect", endpoint});
 }
-void MainWindow::installApk() {
+void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
+    if (!droppedApk(event->mimeData()).isEmpty()) event->acceptProposedAction();
+}
+void MainWindow::dropEvent(QDropEvent *event) {
+    const auto path = droppedApk(event->mimeData());
+    if (path.isEmpty()) return;
+    event->acceptProposedAction(); installApk(path);
+}
+void MainWindow::installApk(const QString &path) {
     if (process->state() != QProcess::Running) {
         QMessageBox::information(this, "Install APK", "Start Android first. APK installation requires TCP ADB enabled in the Android image and local ADB forwarding enabled in Settings before startup."); return;
     }
@@ -387,7 +399,7 @@ void MainWindow::installApk() {
     QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
     if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
     if (adb.isEmpty()) { QMessageBox::information(this, "Install APK", "Android platform-tools (adb.exe) were not found. A developer must supply platform-tools next to the player or on PATH. No APK was installed."); return; }
-    const QString apk = QFileDialog::getOpenFileName(this, "Choose a trusted APK", QString(), "Android packages (*.apk)");
+    const QString apk = path.isEmpty() ? QFileDialog::getOpenFileName(this, "Choose a trusted APK", QString(), "Android packages (*.apk)") : path;
     if (apk.isEmpty()) return;
     if (QMessageBox::question(this, "Install APK", "Install this APK into Android? Only install APKs you trust. Existing apps with the same package may be updated.\n\n" + QFileInfo(apk).fileName(), QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
     const QString endpoint = "127.0.0.1:" + QString::number(runningAdbPort);

@@ -20,4 +20,5 @@ private:
     QCheckBox *showCursor;
     QCheckBox *adbForward;
     QCheckBox *multitouch;
+    QCheckBox *audioOutput;
 };

@@ -20,11 +20,15 @@ class QProcess;
 class QPushButton;
 class QTimer;
 class QCloseEvent;
+class QDragEnterEvent;
+class QDropEvent;
 
 class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
 private:
@@ -34,7 +38,7 @@ private:
     QString engineErrorTail;
     void findGuestWindow();
     void editKeymap();
-    void installApk();
+    void installApk(const QString &path = QString());
     void androidAction(int keycode);
     void applyGuestDisplay(const QString &size, int dpi);
     void updateControls();

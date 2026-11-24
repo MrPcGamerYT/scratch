@@ -21,13 +21,13 @@ pub struct Config<'a> {
     pub memory_mb: u32,
     pub cpus: u32,
     pub adb_port: u32,
-    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB, 8 = explicit software TCG
+    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB, 8 = explicit software TCG, 16 = opt-in DirectSound output
     pub flags: u32,
 }
 
 pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if !(512..=131072).contains(&c.memory_mb) || !(1..=64).contains(&c.cpus)
-        || !(1024..=65535).contains(&c.adb_port) || c.flags & !15 != 0 {
+        || !(1024..=65535).contains(&c.adb_port) || c.flags & !31 != 0 {
         return Err("Invalid VM resources, port or flags");
     }
     if c.disk.is_empty() || c.uefi_code.is_empty() != c.uefi_vars.is_empty()
@@ -47,6 +47,9 @@ pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     }
     if !c.uefi_code.is_empty() {
         args.extend(["-machine".into(), "q35,vmport=off".into(), "-drive".into(), format!("if=pflash,format=raw,unit=0,readonly=on,file={}", c.uefi_code.replace(',', ",,")), "-drive".into(), format!("if=pflash,format=raw,unit=1,file={}", c.uefi_vars.replace(',', ",,"))]);
+    }
+    if c.flags & 16 != 0 {
+        args.extend(["-audiodev", "dsound,id=nexus_audio", "-device", "ich9-intel-hda,id=nexus_hda", "-device", "hda-output,bus=nexus_hda.0,audiodev=nexus_audio"].into_iter().map(str::to_owned));
     }
     if c.flags & 2 != 0 { args.extend(["-display".into(), "sdl,show-cursor=off".into()]); }
     if !c.firmware_dir.is_empty() { args.extend(["-L".into(), c.firmware_dir.into()]); }
@@ -137,9 +140,19 @@ mod tests {
         assert!(args.windows(2).any(|a| a[0] == "-cpu" && a[1] == "max"));
         assert!(!args.iter().any(|a| a.contains("whpx")));
     }
+    #[test] fn optional_audio_output_only() {
+        let mut c = config();
+        assert!(!plan(&c).unwrap().iter().any(|a| a == "-audiodev"));
+        c.flags = 16 | 8;
+        let args = plan(&c).unwrap();
+        assert!(args.windows(2).any(|a| a[0] == "-audiodev" && a[1] == "dsound,id=nexus_audio"));
+        assert!(args.iter().any(|a| a == "hda-output,bus=nexus_hda.0,audiodev=nexus_audio"));
+        assert!(!args.iter().any(|a| a.contains("duplex") || a.contains("hda-micro")));
+        c.flags = 31; assert!(plan(&c).is_ok());
+    }
     #[test] fn rejects_invalid_and_escapes_paths() {
         let mut c = config(); c.cpus = 0; assert!(plan(&c).is_err()); c.cpus = 4;
-        c.flags = 16; assert!(plan(&c).is_err()); c.flags = 0;
+        c.flags = 32; assert!(plan(&c).is_err()); c.flags = 0;
         c.uefi_code = "code.fd"; assert!(plan(&c).is_err());
         c.uefi_vars = "my,vars.fd";
         assert!(plan(&c).unwrap().iter().any(|a| a.contains("my,,vars.fd")));
