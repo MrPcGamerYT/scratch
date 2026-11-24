@@ -153,7 +153,7 @@ jobs:
             Write-Output "::error::$text"
             exit $code
           }
-      - name: Image Studio ZIP workflow contracts
+      - name: Image Studio ISO-only workflow contracts
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
@@ -226,6 +226,7 @@ jobs:
           New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item build/Release/ProjectNexus.exe package/
           windeployqt --release package/ProjectNexus.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Player Qt deployment failed.' }
           Copy-Item README.md package/
           New-Item -ItemType Directory -Path image-studio -Force | Out-Null
           Copy-Item -Recurse package/qemu image-studio/qemu
@@ -235,17 +236,22 @@ jobs:
           Copy-Item build/Release/NexusImageStudio.exe image-studio/
           windeployqt --release image-studio/NexusImageStudio.exe
           if ($LASTEXITCODE -ne 0) { throw 'Image Studio Qt deployment failed.' }
-          Copy-Item -Recurse image-studio-tools image-studio/offline-files
+          New-Item -ItemType Directory -Path image-studio/offline-files -Force | Out-Null
+          Copy-Item image-studio-tools/offline_editor.py,image-studio-tools/image_workspace.py image-studio/offline-files/
           Copy-Item README.md image-studio/
+      - name: Create and verify portable ZIP downloads
+        run: python packaging/package_release.py package image-studio downloads
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-Windows
-          path: package/
+          compression-level: 0
+          path: downloads/player/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-ImageStudio-Developer
-          path: image-studio/
+          compression-level: 0
+          path: downloads/studio/
           if-no-files-found: error
   offline-files:
     name: Offline image editor (Linux libguestfs)

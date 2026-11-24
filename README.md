@@ -22,29 +22,22 @@ Run `python3 preview/server.py` from the repository root and open port 4173. Thi
 
 ## Separate developer image tool
 
-### Desktop preparation tool (Windows)
+### Desktop preparation tool — ISO only (Windows)
 
-Extract **ProjectNexus-ImageStudio-Developer** and open **NexusImageStudio.exe**. Qt runtime, QEMU, firmware and scripts must stay together. The GUI uses the PowerShell backend internally; you do not need to type commands. Windows PowerShell or PowerShell 7 and an enabled Windows Hypervisor Platform are required. The desktop tool provides source/workspace/player file pickers, source SHA-256 verification, live logs and log export, progress, explicit shutdown/boot checkpoints and safe resume. Never run a VM or offline editor on an image while it is being prepared.
+Download **ProjectNexus-Windows** and **ProjectNexus-ImageStudio-Developer** from the latest successful build. Each GitHub artifact download contains a product ZIP and its `.zip.sha256` checksum. Extract the GitHub download, then extract the enclosed product ZIP into a normal folder. Do not run EXEs inside an archive. Keep all DLLs, Qt plugins, scripts and QEMU files together.
 
-1. Choose **Install** for an ISO or ZIP containing exactly one ISO. Choose **Import** for a preinstalled standalone QCOW2, raw whole-disk, VHD or VHDX file, including a ZIP containing one such image. Leave **Bliss OS / UEFI** enabled for recent Bliss releases. An imported UEFI disk requires its original variables file.
-2. Choose a workspace (the working disk is always `android-install.qcow2`) and the extracted **player** folder containing `ProjectNexus.exe`.
-3. Start preparation. For installation, complete the actual Bliss installer in the QEMU window, then shut the guest down cleanly. Confirm the GUI checkpoint to boot without installation media. Verify Android starts and shut it down cleanly again before the final publish confirmation.
-4. The published name is **always `images/android-base.qcow2`** in the player folder. It is deliberately not editable and matches the emulator loader. Firmware uses the matching `android-uefi-code.fd` / `android-uefi-vars.fd` names. Start the player; it creates its separate per-user overlay automatically.
-5. For a retained installation, select **Resume** with the same workspace and firmware mode. **Cancel at checkpoint** retains the workspace; it does not abruptly kill a VM. Existing player images are refused, never silently replaced.
+Both product ZIPs are created with ZIP64 support, CRC-tested and every entry is verified against a SHA-256 manifest before upload. `MANIFEST.sha256` is inside each product ZIP. Check the downloaded product ZIP in PowerShell with `Get-FileHash .\ProjectNexus-Windows.zip -Algorithm SHA256` (or the Developer ZIP name) and compare against its sibling `.sha256` file. A mismatch means the download is incomplete or changed: download again before extraction.
 
-ZIP is a container, not a boot format. Archives containing only `kernel`, `initrd.img`, `system.img`, `data.img` or installer scripts are **not supported as bootable disks**. The tool diagnoses them rather than copying a nonbootable partition into the player. Multiple candidate payloads are refused. Share the file listing of such a Bliss package before attempting a custom installation. Extraction ignores archive paths and writes only the chosen payload to a generated temporary name, with size/space limits; originals stay unchanged. Imported raw images require an MBR boot signature, but only the manual boot checkpoint can establish that a specific image boots. ZIP/image workflow tests use synthetic payloads and do not prove Bliss compatibility.
+Open **NexusImageStudio.exe**. The desktop preparation tool now accepts **only a Bliss OS x86-64 PC installer `.iso`**, not ZIPs, OTA payloads or disk imports. It requires Windows PowerShell or PowerShell 7 and Windows Hypervisor Platform enabled.
 
-The player, Settings, Keymap Studio, Aim dialog and desktop preparation window use borderless custom title bars with move, minimize, maximize/restore and close controls. Standard OS file/message dialogs retain native chrome where Qt does not provide a vertical layout; the main player and resizable dialogs retain sizing affordances.
+1. Choose **Install from Bliss OS PC ISO** and select the ISO. An optional publisher SHA-256 can verify it before disk creation.
+2. Choose an empty workspace and the player folder containing `ProjectNexus.exe`.
+3. Leave Bliss UEFI enabled for a UEFI-based release. Start preparation, install Bliss in the VM, and shut it down cleanly.
+4. Confirm the checkpoint to boot the installed disk without the ISO. Verify Android starts; shut down cleanly and confirm publishing.
+5. The fixed output is `images/android-base.qcow2`, with matching UEFI firmware files. No disk renaming is needed. Existing published images are never overwritten.
+6. **Resume retained ISO installation** continues the workspace's `android-install.qcow2`; it does not accept another image format.
 
-### Android OTA `payload.bin` packages
-
-A ZIP whose large file is `payload.bin` is normally an **OTA update**, not a PC installer. Image Studio now offers **Inspect OTA partitions** and **Extract OTA partitions (payload.bin / ZIP)**. Select the source and workspace; Windows **Python 3.10+** is required for these two operations (standard library only). Extraction goes to a new `workspace/ota-partitions` folder and never stages or replaces `android-base.qcow2`.
-
-The extractor parses modern CrAU manifests and supports full OTA REPLACE, BZip2/XZ replacement, ZERO and DISCARD operations. It checks destination bounds, operation hashes and new partition hashes when supplied, limits decompression and refuses unsupported/incremental operations before writing output. It does **not authenticate OTA publisher signatures**; verify a publisher-supplied source SHA-256 in the tool. Legacy manifest layouts, incremental updates and additional compression types are not supported. These paths have synthetic tests, not validation against your specific Bliss release.
-
-**An extracted `system.img` is still not a bootable PC disk.** Payload partitions require the matching bootloader, disk layout, kernel and verified-boot configuration. Do not rename them to `android-base.qcow2`. Supply the package/partition listing to determine whether it is even intended for x86-64 PCs; some OTA packages target phones. Use the Bliss PC ISO or a preinstalled whole disk for the existing bootable installation workflow.
-
-**Edit offline image files (WSLg)** opens the existing file editor from the desktop tool. Requires Windows 11 WSLg with Ubuntu and `sudo apt install python3-tk python3-guestfs qemu-utils libguestfs-tools`. It can copy and edit standalone QCOW2 disks or raw `.img` partitions by converting a new copy to QCOW2 first. Select a filesystem and use import/replace, export, new folder and delete. Sources remain unchanged. EROFS, dynamic-super, encrypted/verified-boot and nested filesystem images may need separate tools. Editing files does not rebuild/sign a payload or automatically install those partitions into a VM. Keep the working copy offline until the editor closes.
+**Edit offline image files (WSLg)** remains available for editing a new disk copy. Requires Windows 11 WSLg/Ubuntu with `sudo apt install python3-tk python3-guestfs qemu-utils libguestfs-tools`. Shut down all VMs first, choose a new working copy, mount a supported filesystem and edit files. Close the editor to flush changes. Originals stay unchanged; unsupported/verified/encrypted filesystems may need additional tooling. ISO preparation does not edit the ISO itself, and editing root files may break Android verified boot. OTA extraction utilities remain in the source repository for reference but are not included in the ISO-only desktop package.
 
 ### Fullscreen and Aim & Fire placement
 
