@@ -8,6 +8,9 @@
 #include "mouselock.h"
 #include "qmp.h"
 #include "settingsdialog.h"
+#include "rustcore.h"
+#include <QJsonDocument>
+#include <QJsonArray>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCoreApplication>
@@ -224,23 +227,29 @@ void MainWindow::launch() {
     const int cpus = qBound(1, s.value("cpus", 4).toInt(), 64);
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
     runningMultiTouch = s.value("multiTouch", false).toBool();
-    QStringList args = {"-accel", "whpx,kernel-irqchip=off", "-m", QString::number(ram), "-smp", QString::number(cpus),
-                        "-vga", runningMultiTouch ? "none" : "std", "-usb", "-device", "usb-tablet", "-hda", disk, "-boot", "order=c",
-                        "-name", "Project Nexus", "-qmp", "stdio"};
-    if (runningMultiTouch) args << "-device" << "VGA,id=nexus_display" << "-device" << "virtio-multitouch-pci,id=nexus_touch,display=nexus_display";
-    if (hasCode) {
-        QString escapedCode = code, escapedVars = vars; escapedCode.replace(",", ",,"); escapedVars.replace(",", ",,");
-        args << "-machine" << "q35,vmport=off"
-             << "-drive" << "if=pflash,format=raw,unit=0,readonly=on,file=" + escapedCode
-             << "-drive" << "if=pflash,format=raw,unit=1,file=" + escapedVars;
-    }
-    if (!s.value("showCursor", true).toBool()) args << "-display" << "sdl,show-cursor=off";
-    const QString firmware = root + "/qemu/share/qemu";
-    if (QFileInfo::exists(firmware + "/bios-256k.bin")) args << "-L" << firmware;
-    QString net = "user,id=net0";
     runningAdbForward = s.value("adbForward", false).toBool(); runningAdbPort = port;
-    if (runningAdbForward) net += ",hostfwd=tcp:127.0.0.1:" + QString::number(port) + "-:5555";
-    args << "-netdev" << net << "-device" << "virtio-net-pci,netdev=net0,romfile=";
+    if (nexus_whpx_available() != 1) {
+        QMessageBox::critical(this, "Hardware acceleration unavailable", "The Rust runtime could not confirm Windows Hypervisor Platform availability. Enable CPU virtualization in firmware and Windows Hypervisor Platform, then restart Windows. The player will not silently use slow software CPU emulation.");
+        return;
+    }
+    const QString firmware = root + "/qemu/share/qemu";
+    const QByteArray diskBytes = disk.toUtf8();
+    const QByteArray firmwareBytes = (QFileInfo::exists(firmware + "/bios-256k.bin") ? firmware : QString()).toUtf8();
+    const QByteArray codeBytes = (hasCode ? code : QString()).toUtf8();
+    const QByteArray varsBytes = (hasCode ? vars : QString()).toUtf8();
+    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u);
+    const NexusVmRequest request{diskBytes.constData(), firmwareBytes.constData(), codeBytes.constData(), varsBytes.constData(), static_cast<std::uint32_t>(ram), static_cast<std::uint32_t>(cpus), static_cast<std::uint32_t>(port), flags};
+    const auto size = nexus_vm_plan(&request, nullptr, 0);
+    if (size == 0 || size > 1024 * 1024) { QMessageBox::critical(this, "VM configuration", "Rust runtime rejected the launch configuration."); return; }
+    QByteArray encoded(static_cast<int>(size), '\0');
+    if (nexus_vm_plan(&request, reinterpret_cast<std::uint8_t *>(encoded.data()), size) != size) { QMessageBox::critical(this, "VM configuration", "Rust launch-plan encoding failed."); return; }
+    const auto document = QJsonDocument::fromJson(encoded);
+    if (!document.isArray() || document.array().isEmpty()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch plan."); return; }
+    QStringList args;
+    for (const auto &value : document.array()) {
+        if (!value.isString()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch argument."); return; }
+        args << value.toString();
+    }
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     statusBar()->showMessage("Starting Android with WHPX...");
 }

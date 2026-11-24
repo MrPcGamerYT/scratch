@@ -56,4 +56,14 @@ NexusPinchPair nexus_pinch_points(double center_x, double center_y, double radiu
 NexusPoint nexus_moba_target(double skill_x, double skill_y, double radius,
                              double origin_x, double origin_y, double cursor_x, double cursor_y);
 std::uint32_t nexus_validate_script_steps(const NexusScriptStep *steps, std::size_t length);
+// Caller owns UTF-8 NUL-terminated strings and output buffer for each call.
+struct NexusVmRequest {
+    const char *disk;
+    const char *firmware_dir;
+    const char *uefi_code;
+    const char *uefi_vars;
+    std::uint32_t memory_mb, cpus, adb_port, flags;
+};
+std::size_t nexus_vm_plan(const NexusVmRequest *request, std::uint8_t *output, std::size_t capacity);
+std::int32_t nexus_whpx_available();
 }

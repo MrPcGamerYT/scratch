@@ -1,6 +1,8 @@
 //! Input-policy and touch-geometry core for the Windows Qt player.
-//! No QEMU, Qt or Android code is replaced by this crate, and no external
-//! crates are used.
+//! Owns VM launch policy and WHPX preflight as well as input geometry.
+//! QEMU remains the VM backend; Qt remains the UI. No external crates are used.
+
+pub mod runtime;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

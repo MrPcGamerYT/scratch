@@ -21,7 +21,7 @@ set(NEXUS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/cargo/x86_64-pc-windows-msvc/rel
 add_custom_command(OUTPUT "${NEXUS_RUST_LIB}"
     COMMAND "${CARGO_EXECUTABLE}" build --locked --release --target x86_64-pc-windows-msvc
             --manifest-path "${NEXUS_RUST_DIR}/Cargo.toml" --target-dir "${CMAKE_CURRENT_BINARY_DIR}/cargo"
-    DEPENDS "${NEXUS_RUST_DIR}/Cargo.toml" "${NEXUS_RUST_DIR}/Cargo.lock" "${NEXUS_RUST_DIR}/src/lib.rs"
+    DEPENDS "${NEXUS_RUST_DIR}/Cargo.toml" "${NEXUS_RUST_DIR}/Cargo.lock" "${NEXUS_RUST_DIR}/src/lib.rs" "${NEXUS_RUST_DIR}/src/runtime.rs"
     VERBATIM)
 add_custom_target(nexus_rust_build DEPENDS "${NEXUS_RUST_LIB}")
 add_library(nexus_rust STATIC IMPORTED GLOBAL)
@@ -75,6 +75,9 @@ target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(vmplan_tests tests/vmplan_tests.cpp)
+    target_link_libraries(vmplan_tests PRIVATE nexus_controls)
+    add_test(NAME vmplan_tests COMMAND vmplan_tests)
     add_executable(download_tests tests/download_tests.cpp)
     target_link_libraries(download_tests PRIVATE nexus_download)
     add_test(NAME download_tests COMMAND download_tests)

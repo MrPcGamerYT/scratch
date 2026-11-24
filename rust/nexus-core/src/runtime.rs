@@ -1,0 +1,154 @@
+//! Rust-owned VM launch policy. QEMU remains the device/virtualization backend.
+use std::ffi::{c_char, CStr};
+
+#[repr(C)]
+pub struct VmRequest {
+    pub disk: *const c_char,
+    pub firmware_dir: *const c_char,
+    pub uefi_code: *const c_char,
+    pub uefi_vars: *const c_char,
+    pub memory_mb: u32,
+    pub cpus: u32,
+    pub adb_port: u32,
+    pub flags: u32,
+}
+
+pub struct Config<'a> {
+    pub disk: &'a str,
+    pub firmware_dir: &'a str,
+    pub uefi_code: &'a str,
+    pub uefi_vars: &'a str,
+    pub memory_mb: u32,
+    pub cpus: u32,
+    pub adb_port: u32,
+    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB forwarding
+    pub flags: u32,
+}
+
+pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
+    if !(512..=131072).contains(&c.memory_mb) || !(1..=64).contains(&c.cpus)
+        || !(1024..=65535).contains(&c.adb_port) || c.flags & !7 != 0 {
+        return Err("Invalid VM resources, port or flags");
+    }
+    if c.disk.is_empty() || c.uefi_code.is_empty() != c.uefi_vars.is_empty()
+        || (!c.uefi_code.is_empty() && (c.uefi_code.eq_ignore_ascii_case(c.uefi_vars)
+            || c.disk.eq_ignore_ascii_case(c.uefi_vars) || c.disk.eq_ignore_ascii_case(c.uefi_code))) {
+        return Err("Invalid disk or UEFI paths");
+    }
+    if [c.disk, c.firmware_dir, c.uefi_code, c.uefi_vars].iter().any(|p| p.chars().any(|ch| ch.is_control())) {
+        return Err("Control characters in image paths");
+    }
+    let mut args: Vec<String> = vec!["-accel", "whpx,kernel-irqchip=off", "-m"].into_iter().map(str::to_owned).collect();
+    args.extend([c.memory_mb.to_string(), "-smp".into(), c.cpus.to_string()]);
+    args.extend(["-vga", if c.flags & 1 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
+    if c.flags & 1 != 0 {
+        args.extend(["-device", "VGA,id=nexus_display", "-device", "virtio-multitouch-pci,id=nexus_touch,display=nexus_display"].into_iter().map(str::to_owned));
+    }
+    if !c.uefi_code.is_empty() {
+        args.extend(["-machine".into(), "q35,vmport=off".into(), "-drive".into(), format!("if=pflash,format=raw,unit=0,readonly=on,file={}", c.uefi_code.replace(',', ",,")), "-drive".into(), format!("if=pflash,format=raw,unit=1,file={}", c.uefi_vars.replace(',', ",,"))]);
+    }
+    if c.flags & 2 != 0 { args.extend(["-display".into(), "sdl,show-cursor=off".into()]); }
+    if !c.firmware_dir.is_empty() { args.extend(["-L".into(), c.firmware_dir.into()]); }
+    let net = if c.flags & 4 != 0 { format!("user,id=net0,hostfwd=tcp:127.0.0.1:{}-:5555", c.adb_port) } else { "user,id=net0".into() };
+    args.extend(["-netdev".into(), net, "-device".into(), "virtio-net-pci,netdev=net0,romfile=".into()]);
+    Ok(args)
+}
+
+fn json(args: &[String]) -> String {
+    let mut result = String::from("[");
+    for (index, arg) in args.iter().enumerate() {
+        if index != 0 { result.push(','); }
+        result.push('"');
+        for ch in arg.chars() {
+            match ch { '"' => result.push_str("\\\""), '\\' => result.push_str("\\\\"), ch if ch.is_control() => { result.push_str(&format!("\\u{:04x}", ch as u32)); }, ch => result.push(ch) }
+        }
+        result.push('"');
+    }
+    result.push(']'); result
+}
+
+/// Returns JSON byte count (no terminator), or zero for invalid configuration.
+/// With a null output or insufficient capacity no output bytes are written.
+/// Safety: request must point to a valid VmRequest, each path to a live NUL-
+/// terminated UTF-8 string; non-null output must permit capacity writable bytes
+/// and must not overlap the request or its strings. Caller retains ownership.
+#[no_mangle]
+pub unsafe extern "C" fn nexus_vm_plan(request: *const VmRequest, output: *mut u8, capacity: usize) -> usize {
+    if request.is_null() { return 0; }
+    let r = &*request;
+    unsafe fn text<'a>(p: *const c_char) -> Option<&'a str> { if p.is_null() { None } else { CStr::from_ptr(p).to_str().ok() } }
+    let Some(disk) = text(r.disk) else { return 0; };
+    let Some(firmware_dir) = text(r.firmware_dir) else { return 0; };
+    let Some(uefi_code) = text(r.uefi_code) else { return 0; };
+    let Some(uefi_vars) = text(r.uefi_vars) else { return 0; };
+    let c = Config { disk, firmware_dir, uefi_code, uefi_vars, memory_mb: r.memory_mb, cpus: r.cpus, adb_port: r.adb_port, flags: r.flags };
+    let Ok(args) = plan(&c) else { return 0; };
+    let encoded = json(&args);
+    if !output.is_null() && capacity >= encoded.len() { std::ptr::copy_nonoverlapping(encoded.as_ptr(), output, encoded.len()); }
+    encoded.len()
+}
+
+/// 1: WHPX reports hypervisor present; 0: absent; -1: API unavailable/error.
+/// This checks host capability, not whether a particular VM can start.
+#[no_mangle]
+pub extern "C" fn nexus_whpx_available() -> i32 {
+    #[cfg(windows)]
+    unsafe {
+        use std::ffi::c_void;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn LoadLibraryW(name: *const u16) -> *mut c_void;
+            fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+            fn FreeLibrary(module: *mut c_void) -> i32;
+        }
+        let name: Vec<u16> = "WinHvPlatform.dll\0".encode_utf16().collect();
+        let library = LoadLibraryW(name.as_ptr());
+        if library.is_null() { return -1; }
+        let symbol = GetProcAddress(library, b"WHvGetCapability\0".as_ptr().cast());
+        if symbol.is_null() { FreeLibrary(library); return -1; }
+        let capability: unsafe extern "system" fn(u32, *mut c_void, u32, *mut u32) -> i32 = std::mem::transmute(symbol);
+        let mut present: i32 = 0; let mut written = 0;
+        let status = capability(0, (&mut present as *mut i32).cast(), 4, &mut written);
+        FreeLibrary(library);
+        if status < 0 || written < 4 { -1 } else { i32::from(present != 0) }
+    }
+    #[cfg(not(windows))]
+    { -1 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn config() -> Config<'static> { Config { disk: "C:/Nexus/my disk.qcow2", firmware_dir: "", uefi_code: "", uefi_vars: "", memory_mb: 4096, cpus: 4, adb_port: 5555, flags: 0 } }
+    #[test] fn acceleration_and_network() {
+        let mut c = config(); c.flags = 5;
+        let args = plan(&c).unwrap();
+        assert!(args.iter().any(|a| a == "whpx,kernel-irqchip=off"));
+        assert!(!args.iter().any(|a| a.contains("tcg")));
+        assert!(args.iter().any(|a| a.contains("hostfwd=tcp:127.0.0.1:5555")));
+        assert!(args.iter().any(|a| a.contains("virtio-multitouch")));
+        assert!(args.iter().any(|a| a == c.disk));
+    }
+    #[test] fn rejects_invalid_and_escapes_paths() {
+        let mut c = config(); c.cpus = 0; assert!(plan(&c).is_err()); c.cpus = 4;
+        c.flags = 8; assert!(plan(&c).is_err()); c.flags = 0;
+        c.uefi_code = "code.fd"; assert!(plan(&c).is_err());
+        c.uefi_vars = "my,vars.fd";
+        assert!(plan(&c).unwrap().iter().any(|a| a.contains("my,,vars.fd")));
+        assert_eq!(json(&["C:\\a\"b".into()]), "[\"C:\\\\a\\\"b\"]");
+    }
+    #[test] fn ffi_capacity_and_invalid_requests() {
+        let path = std::ffi::CString::new("disk.qcow2").unwrap();
+        let empty = std::ffi::CString::new("").unwrap();
+        let r = VmRequest { disk: path.as_ptr(), firmware_dir: empty.as_ptr(), uefi_code: empty.as_ptr(), uefi_vars: empty.as_ptr(), memory_mb: 4096, cpus: 4, adb_port: 5555, flags: 0 };
+        unsafe {
+            assert_eq!(nexus_vm_plan(std::ptr::null(), std::ptr::null_mut(), 0), 0);
+            let size = nexus_vm_plan(&r, std::ptr::null_mut(), 0); assert!(size > 0);
+            let mut bytes = vec![0xAA; size];
+            assert_eq!(nexus_vm_plan(&r, bytes.as_mut_ptr(), size - 1), size);
+            assert!(bytes.iter().all(|b| *b == 0xAA));
+            assert_eq!(nexus_vm_plan(&r, bytes.as_mut_ptr(), size), size);
+            assert_eq!(bytes[0], b'[');
+        }
+    }
+}

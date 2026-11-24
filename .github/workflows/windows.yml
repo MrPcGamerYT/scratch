@@ -87,6 +87,8 @@ jobs:
             }
             exit $code
           }
+      - name: Rust launch policy microbenchmark (not game FPS)
+        run: cargo run --locked --release --manifest-path rust/nexus-core/Cargo.toml --bin runtime-bench
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
