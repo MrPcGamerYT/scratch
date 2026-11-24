@@ -1,16 +1,28 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
+
 (async () => {
-  const browser = await chromium.launch({headless:true});
+  const browser = await chromium.launch({ headless: true });
   try {
-    for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
-      const page = await browser.newPage({viewport});
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      const page = await browser.newPage({ viewport });
       await page.goto('http://127.0.0.1:4173/');
+
+      // Never expose repository internals
       assert.equal((await page.request.get('http://127.0.0.1:4173/.git/config')).status(), 404);
       assert.match(await page.locator('.preview-banner').innerText(), /not connected/);
+
+      // Stage hints toggle works live
+      assert(await page.locator('#stageOverlay .hint-pill').count() >= 1);
+      await page.locator('#toggleHints').click();
+      assert.equal(await page.locator('#stageOverlay .hint-pill').count(), 0);
+      await page.locator('#toggleHints').click();
+      assert(await page.locator('#stageOverlay .hint-pill').count() >= 1);
+
+      // Settings pages preserve honest status
       await page.locator('#openSettings').click();
       assert(await page.locator('#settingsOverlay').isVisible());
-      for (const name of ['display','graphics','device']) {
+      for (const name of ['display', 'graphics', 'device']) {
         await page.locator(`[data-page="${name}"]`).click();
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);
         if (name === 'display') assert(await page.getByText('Show FPS at bottom left').locator('input').isDisabled());
@@ -19,37 +31,68 @@ const assert = require('node:assert/strict');
       assert(await page.getByText('Experimental multi-touch keymapping').isVisible());
       await page.locator('#settingsOverlay [data-save]').click();
       assert.match(await page.locator('#toast').innerText(), /Preview only/);
+
+      // Keymap Studio: templates, extended keys, repeat/burst, D-pad/Swipe/Zoom/MOBA/Script, Undo/Redo
       await page.locator('#openKeys').click();
       assert.match(await page.locator('#keysOverlay').innerText(), /preview only/i);
-      assert.match(await page.locator('#keysOverlay').innerText(), /WASD joystick.*not implemented/i);
-      assert.equal(await page.locator('#keySelect option').count(), 37);
-      await page.locator('#keySelect').selectOption({label:'B'});
+      assert(await page.locator('#keySelect option').count() >= 50);
+
+      // Load MOBA template and verify MOBA skills appear
+      await page.locator('#presetSelect').selectOption('moba');
+      assert.match(await page.locator('#bindingList').innerText(), /MOBA Skill Q/);
+      assert.match(await page.locator('#conflictBar').innerText(), /Zero key conflicts/);
+
+      // Place a Repeat tap marker and remove it, then test Undo
+      await page.locator('[data-tool="tap"]').click();
+      await page.locator('#keySelect').selectOption({ label: 'B' });
       assert(await page.locator('#repeatDelay').isDisabled());
       await page.locator('#modeSelect').selectOption('repeat');
       assert(await page.locator('#repeatDelay').isEnabled());
-      await page.locator('#repeatDelay').fill('400');
+      await page.locator('#repeatDelay').fill('125');
       await page.locator('#repeatDelay').dispatchEvent('change');
-      let count = await page.locator('.demo-canvas .marker').count();
-      await page.locator('#demoCanvas').click({position:{x:20,y:20}});
-      assert.equal(await page.locator('.demo-canvas .marker').count(), count+1);
+      const countBefore = await page.locator('#canvasNodes .marker').count();
+      await page.locator('#demoCanvas').click({ position: { x: 30, y: 30 } });
+      assert.equal(await page.locator('#canvasNodes .marker').count(), countBefore + 1);
       assert.match(await page.locator('#bindingList').innerText(), /B ↻/);
+
+      // Place a Macro Script and verify live script validation
+      await page.locator('[data-tool="script"]').click();
+      await page.locator('#keySelect').selectOption({ label: 'F1' });
+      await page.locator('#demoCanvas').click({ position: { x: 60, y: 40 } });
+      assert(await page.locator('#scriptInspector').isVisible());
+      await page.locator('#scriptText').fill('badcmd 10 20');
+      assert.match(await page.locator('#scriptStatus').innerText(), /unknown command/i);
+      await page.locator('#scriptText').fill('tap 50 50 40\nwait 60\nswipe 20 80 20 30 120');
+      assert.match(await page.locator('#scriptStatus').innerText(), /Valid macro \(3 steps\)/);
+
+      // Remove selected & Undo
+      const countWithScript = await page.locator('#canvasNodes .marker').count();
       await page.locator('#removeMarker').click();
-      assert.equal(await page.locator('.demo-canvas .marker').count(), count);
+      assert.equal(await page.locator('#canvasNodes .marker').count(), countWithScript - 1);
+      await page.locator('#undoBtn').click();
+      assert.equal(await page.locator('#canvasNodes .marker').count(), countWithScript);
+
+      // Aim, Shoot, ADS & Free-Look dialog
       await page.locator('#openAim').click();
       assert(await page.locator('#aimOverlay').isVisible());
       assert(await page.getByLabel('Camera area X').isVisible());
-      assert(await page.getByLabel('Sensitivity').isVisible());
+      assert(await page.getByLabel('Sensitivity', { exact: true }).isVisible());
+      assert(await page.getByLabel('Sensitivity Y').isVisible());
       await page.keyboard.press('Escape');
       assert(!(await page.locator('#aimOverlay').isVisible()));
       assert(await page.locator('#keysOverlay').isVisible());
       await page.keyboard.press('Escape');
       assert(!(await page.locator('#keysOverlay').isVisible()));
+
       await page.locator('#openAimDock').click();
       assert(await page.locator('#aimOverlay').isVisible());
       await page.locator('#aimOverlay [data-save]').click();
       assert.match(await page.locator('#toast').innerText(), /Preview only/);
+
       await page.close();
     }
-    console.log('Interactive preview desktop and mobile checks passed');
-  } finally { await browser.close(); }
-})().catch(e => {console.error(e); process.exit(1)});
+    console.log('Interactive Keymap Studio desktop and mobile preview checks passed');
+  } finally {
+    await browser.close();
+  }
+})().catch(e => { console.error(e); process.exit(1); });

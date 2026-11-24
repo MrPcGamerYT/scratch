@@ -2,11 +2,11 @@
 
 A Windows Android-player prototype using a source-built QEMU engine and Windows Hypervisor Platform (WHPX). The player opens a developer-prepared system image and does not offer disk creation, ISO selection or Android installation. A separately packaged developer tool prepares the image.
 
-**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it also has experimental aim/fire and optional multi-contact injection; support in Android and games is not yet verified, and it does not have a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
+**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The **Nexus Keymap Studio** implements multi-scheme v3 JSON profiles, tap/burst/turbo-repeat sequences, 8-way WASD D-pads with sprint/walk modifiers, directional swipes (including swipe-and-hold), two-finger symmetric pinch-zoom, MOBA directional skill pads with quick-cast/manual-aim/cancel, multi-step coordinate macro scripts, asymmetric X/Y mouse-aim with Left-Click Fire, Right-Click ADS and Free-Look eye camera, extended keyboard/mouse/wheel bindings, and a translucent click-through Win32 HUD overlay for key hints and live crosshairs. Support in Android and real games remains unverified, and there is no live input-recording macro recorder yet. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
 
 ## Player preview
 
-Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup**, not the emulator: controls do not save settings or operate Android. The Windows Qt player implements the corresponding layout and the existing working features described below; the keymap preview is illustrative and differs from the actual Qt editor.
+Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup** showcasing the Nexus Keymap Studio, control presets, live stage key-hint overlay, macro script validator, conflict checker, and player settings—not the emulator itself: controls do not save settings or operate Android.
 
 ## Requirements
 
@@ -81,34 +81,43 @@ Volume, RAM cleanup and FPS are disabled because they are not implemented. The a
 
 The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
 
-## Keymap and mouse
+## Nexus Keymap Studio, HUD overlay and mouse aim
 
-1. Start the VM and open the Android screen or game. Click **Keymap** in the top dock.
-2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
-3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
-4. Save, check **On** next to Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+1. Click **Keymap** in the top dock (works both while Android is running with a live guest screenshot and offline against a 16:9 alignment grid).
+2. Switch or create named **Schemes**, load starter **Templates** (*Battle Royale / FPS*, *MOBA 5v5*, *Action RPG*, or *Blank*), **Import / Export** portable v3 JSON profiles, and use **40-step Undo / Redo**, **2% Snap Grid**, and live **Key Conflict** diagnostics.
+3. Choose a tool from the palette and click/drag on the canvas, using direct **Click-to-Bind** capture for keyboard keys (`A–Z`, `0–9`, `F1–F12`, arrows, numpad, punctuation, `Shift`/`Ctrl`/`Alt`/`Tab`/`Enter`/`Space`), mouse buttons (`Right Click`, `Middle Click`, `Mouse 4/5`), and `Wheel Up` / `Wheel Down`:
+   - **Tap / Burst / Repeat**: Hold-or-sequential tap chains, **Burst N×** rapid taps on press (`2..50` taps), or **Turbo Repeat** while held (`25..5000 ms`).
+   - **WASD 8-Way D-Pad**: Smooth continuous virtual thumbstick drag without dropping contact across cardinal/diagonal transitions, plus optional **Sprint** and **Walk** modifier radius scaling.
+   - **Directional Swipe**: Smooth interpolated two-point drag (`25..5000 ms`) with optional **Hold at end** while the key remains held.
+   - **Pinch Zoom**: Symmetric two-finger expand/contract gesture (requires multi-touch mode) with optional modifier chord (e.g., `Ctrl + Wheel Up/Down`).
+   - **MOBA Skill Pad**: Directional skill-shot pad mapping live host cursor angle around a hero origin in **Quick Cast**, **Manual Aim (cast on release)**, or **Auto Cast** modes, plus an optional **Cancel Skill** key and target coordinate.
+   - **Macro Script**: Text-authored multi-step automation (`tap`, `wait`, `swipe`, `down`, `move`, `up`, `multipress`) with live syntax/coordinate validation and interactive canvas coordinate picking.
+4. Save, check **On** next to **Keymap**, and toggle **Hints** in the dock to display or hide the frameless click-through Win32 key-hint overlay (`KeymapOverlay`) over the guest viewport. Profiles are saved under `%APPDATA%\ProjectNexus\Project Nexus\keymaps\`; legacy v1/v2 profiles load automatically and upgrade cleanly to v3.
 
-In standard mode, actions use one virtual mouse pointer, and other mapped keys are ignored while a sequence runs. In experimental multi-touch mode, different mapped keys can use separate slots concurrently; multiple markers assigned to one key remain sequential. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
+In standard single-pointer mode, actions share one virtual USB tablet pointer (two-finger pinch-zoom requires multi-touch). In experimental multi-touch mode (**Settings → Preferences → Experimental multi-touch keymapping**), `KeymapEngine` dynamically allocates across QEMU's 10-slot `virtio-multitouch-pci` device while reserving slots `0..2` for `AimController` when armed. Timing is best-effort, not a latency guarantee.
 
-### Experimental aim & fire
+### Aim, Pan, Shoot, ADS & Free-Look
 
-In **Keymap → Configure aim & fire**, set the camera area and fire-button coordinates as percentages of the guest display and adjust sensitivity. Save. Click **Aim & fire** in the dock to arm it, click the Android display, then press **F8**. Move the physical mouse to send a camera drag; left mouse button sends a press at the fire position. Press **F8** again to release, or use **Disarm aim**. Losing focus, resizing the window, QMP failure, or closing the VM also releases the cursor and pointer.
+In **Keymap → Configure Aim…** (or **Aim & fire** in the dock), configure:
+- **Start / Stop key** (default `F8`) and **Hold-to-Suspend key** (default `Tab`, temporarily freeing the host cursor for inventory/looting while releasing on key-up).
+- **Camera anchor** (`10%..90%`) and independent **Horizontal (X)** and **Vertical (Y)** mouse sensitivities (`0.05..10.0`) with automatic invisible touch recentering near viewport edges.
+- **Left-Click Fire** target coordinates, **Right-Click ADS Scope** (Hold or Tap-Toggle), **Free-Look Eye** camera key (`Alt` by default), and customizable **On-Screen Crosshair** reticle (`Cross + Dot`, `Cross`, `Dot`, or `Circle`).
 
-This is experimental and built independently, not BlueStacks parity. Enable **Settings → Preferences → Experimental multi-touch keymapping**, save and restart the player to send separate QEMU virtio touchscreen contacts for aim, fire and up to eight concurrent mapped keys. QEMU accepting the commands does not prove the Bliss guest recognizes the device; Android, game input, Windows hooks and performance remain unverified. In standard mode aiming pauses during firing and mapped keyboard taps are disabled while aim is armed. Aim restarts its drag at screen edges in both modes. There are no true WASD joystick/d-pad, ADS, MOBA, joystick or full macro controls yet.
+Click **Aim & fire** in the dock to arm it, focus the Android display, and press your Start/Stop key (`F8`). Losing focus, minimizing/resizing the window, opening a modal dialog, QMP failure, or stopping the VM immediately releases mouse capture and all active touch/pointer contacts. QEMU accepting virtio multitouch and pointer events does not by itself prove Bliss/Android guest or game compatibility; real-PC testing is still required.
 
-**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it. Aim uses its own temporary capture and F8 release. The Windows hooks and clipping require real-PC testing.
+**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it.
 
 ## Scope and limitations
 
 - QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
 - ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
-- The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU virtio multitouch device and separate contact slots. Bliss guest support and real game behavior are **not verified**. There is no d-pad/joystick mapping, host-to-guest touch daemon, general-purpose macro recorder, or multi-instance UI yet.
+- The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU 10-slot virtio multitouch device (`slots 0..9`). Bliss guest support and real game behavior are **not verified**. There is no live event-recording macro recorder, host-to-guest touch daemon, or multi-instance UI yet.
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
 - On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
 
 ## Rust migration
 
-This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the small C ABI in `src/rustcore.h`. **Keymap validation and experimental aim-coordinate calculations run in Rust**; existing JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make the single-pointer input multitouch.
+This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the C ABI in `src/rustcore.h`. **Key/mouse binding validation, tap/burst/repeat invariants, 8-way D-pad vector math, swipe interpolation, symmetric pinch-zoom geometry, MOBA cursor-angle projection, macro script step validation, and asymmetric X/Y aim-coordinate calculations run in Rust**; existing v1/v2/v3 JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make single-pointer input multitouch.
 
 ## GitHub Actions tests
 

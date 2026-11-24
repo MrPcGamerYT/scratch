@@ -7,7 +7,12 @@
 Qmp::Qmp(QProcess *p, QObject *parent) : QObject(parent), process(p) {
     connect(process, &QProcess::readyReadStandardOutput, this, &Qmp::readOutput);
 }
-void Qmp::reset() { buffer.clear(); touches.clear(); if (ready) { ready = false; emit readyChanged(false); } }
+void Qmp::reset() {
+    buffer.clear();
+    touches.clear();
+    pointerPressed = false;
+    if (ready) { ready = false; emit readyChanged(false); }
+}
 void Qmp::readOutput() {
     buffer += process->readAllStandardOutput();
     if (buffer.size() > 1024 * 1024) { buffer.clear(); emit error("QEMU monitor returned too much data."); return; }
@@ -46,8 +51,8 @@ QJsonArray Qmp::pointerEvents(double x, double y, bool down) {
 }
 void Qmp::pointerMove(double x, double y) { send("input-send-event", moveEvents(x, y)); }
 void Qmp::powerDown() { send("system_powerdown"); }
-void Qmp::pointerDown(double x, double y) { send("input-send-event", pointerEvents(x, y, true)); }
-void Qmp::pointerUp() { send("input-send-event", pointerEvents(0, 0, false)); }
+void Qmp::pointerDown(double x, double y) { pointerPressed = true; send("input-send-event", pointerEvents(x, y, true)); }
+void Qmp::pointerUp() { pointerPressed = false; send("input-send-event", pointerEvents(0, 0, false)); }
 
 // Touch events target a display-bound virtio touchscreen, not the USB tablet.
 QJsonArray Qmp::touchEvents(const QString &type, int slot, double x, double y, bool firstOrLast) {
@@ -80,4 +85,9 @@ void Qmp::touchMove(int slot, double x, double y) {
 void Qmp::touchUp(int slot) {
     if (!touches.remove(slot)) return;
     sendTouch(touchEvents("end", slot, 0, 0, touches.isEmpty()));
+}
+void Qmp::releaseAllInputs() {
+    const QList<int> active = touches.values();
+    for (int slot : active) touchUp(slot);
+    if (pointerPressed) pointerUp();
 }

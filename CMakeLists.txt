@@ -28,7 +28,15 @@ add_library(nexus_rust STATIC IMPORTED GLOBAL)
 set_target_properties(nexus_rust PROPERTIES IMPORTED_LOCATION "${NEXUS_RUST_LIB}")
 add_dependencies(nexus_rust nexus_rust_build)
 
-add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h src/clicksequence.cpp src/clicksequence.h src/multisequence.cpp src/multisequence.h src/manageddisk.cpp src/manageddisk.h src/aimmodel.cpp src/aimmodel.h)
+add_library(nexus_controls STATIC
+    src/keymap.cpp src/keymap.h
+    src/qmp.cpp src/qmp.h
+    src/clicksequence.cpp src/clicksequence.h
+    src/multisequence.cpp src/multisequence.h
+    src/keymapengine.cpp src/keymapengine.h
+    src/manageddisk.cpp src/manageddisk.h
+    src/aimmodel.cpp src/aimmodel.h
+)
 add_dependencies(nexus_controls nexus_rust_build)
 target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32)
 target_include_directories(nexus_controls PUBLIC src)
@@ -55,6 +63,8 @@ qt_add_executable(ProjectNexus WIN32
     src/aimsettings.h
     src/keymapdialog.cpp
     src/keymapdialog.h
+    src/keymapoverlay.cpp
+    src/keymapoverlay.h
 )
 qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
 target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32)
@@ -72,5 +82,6 @@ if(BUILD_TESTING)
     add_test(NAME aimmodel_tests COMMAND aimmodel_tests)
     add_executable(managed_disk_tests tests/managed_disk_tests.cpp)
     target_link_libraries(managed_disk_tests PRIVATE nexus_controls)
+    add_test(NAME managed_disk_tests COMMAND managed_disk_tests)
     add_executable(qemu_stub tests/qemu_stub.cpp)
 endif()

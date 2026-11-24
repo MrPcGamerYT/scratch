@@ -3,6 +3,7 @@
 #include "emulatorview.h"
 #include "inputmapper.h"
 #include "keymapdialog.h"
+#include "keymapoverlay.h"
 #include "manageddisk.h"
 #include "mouselock.h"
 #include "qmp.h"
@@ -11,8 +12,8 @@
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDir>
-#include <QFileInfo>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -48,7 +49,10 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
-    qmp = new Qmp(process, this); mapper = new InputMapper(qmp, this); mouseLock = new MouseLock(this); aim = new AimController(qmp, this);
+    qmp = new Qmp(process, this);
+    mapper = new InputMapper(qmp, this);
+    mouseLock = new MouseLock(this);
+    aim = new AimController(qmp, this);
     setWindowTitle("Project Nexus"); resize(1400, 840); setMinimumSize(1100, 600);
     auto *central = new QWidget(this); auto *root = new QVBoxLayout(central); root->setContentsMargins(0, 0, 0, 0); root->setSpacing(0);
     auto *header = new QFrame(central); header->setObjectName("header");
@@ -56,15 +60,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *mark = new QLabel("N", header); mark->setObjectName("logoMark"); mark->setAlignment(Qt::AlignCenter); mark->setFixedSize(34, 34); headerLayout->addWidget(mark);
     auto *brand = new QLabel("NEXUS", header); brand->setObjectName("brand"); headerLayout->addWidget(brand);
     headerLayout->addStretch();
-    auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(5, 4, 5, 4); dockLayout->setSpacing(2);
+    auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(6, 4, 6, 4); dockLayout->setSpacing(4);
     auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
     auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
-    editKeymapButton = dockButton("⌨  Keymap", dock); dockLayout->addWidget(editKeymapButton);
-    keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable saved keymap"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
+    editKeymapButton = dockButton("⌨  Keymap", dock); editKeymapButton->setToolTip("Open Keymap Studio (schemes, D-pad, swipes, pinch zoom, MOBA, macros)"); dockLayout->addWidget(editKeymapButton);
+    keymapEnabled = new QCheckBox("On", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
+    overlayEnabled = new QCheckBox("Hints", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
     mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
     auto *volumeButton = dockButton("♪  Volume", dock); volumeButton->setEnabled(false); volumeButton->setToolTip("Android volume control is not available yet"); dockLayout->addWidget(volumeButton);
     fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
-    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Experimental aim and fire; multi-touch requires guest support"); dockLayout->addWidget(aimButton);
+    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Arm Aim, Shoot, ADS & Free-Look; multi-touch enables concurrent WASD & taps"); dockLayout->addWidget(aimButton);
     auto *cleanButton = dockButton("✦  RAM", dock); cleanButton->setEnabled(false); cleanButton->setToolTip("Android and Windows memory cleanup is not available yet"); dockLayout->addWidget(cleanButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
@@ -75,10 +80,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *viewport = new QFrame(central); viewport->setObjectName("viewportPanel"); auto *v = new QVBoxLayout(viewport); v->setContentsMargins(0, 0, 0, 0);
     view = new EmulatorView(viewport); v->addWidget(view, 1); root->addWidget(viewport, 1); setCentralWidget(central);
 
-    const QString profileDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/keymaps";
-    QDir().mkpath(profileDir); keymapPath = QDir(profileDir).filePath("default.json"); QString error;
-    if (!loadKeymap(keymapPath, &bindings, &error)) statusBar()->showMessage("Keymap could not be loaded: " + error);
-    else statusBar()->showMessage("Ready to play  ·  Your controls stay within the player");
+    overlay = new KeymapOverlay(view, this);
+
+    QSettings appSettings;
+    profileDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/keymaps";
+    QDir().mkpath(profileDir);
+    activeScheme = sanitizeSchemeName(appSettings.value("keymap/activeScheme", "default").toString());
+    keymapPath = schemeFilePath(profileDir, activeScheme);
+    QString error;
+    if (!loadKeymapProfile(keymapPath, &profile, &error)) {
+        statusBar()->showMessage("Keymap could not be loaded: " + error);
+    } else {
+        statusBar()->showMessage(QStringLiteral("Ready to play  ·  Active scheme: %1").arg(profile.name));
+    }
+    overlay->setProfile(profile);
+    overlayEnabled->setChecked(appSettings.value("keymap/showHints", false).toBool());
+    overlay->setHintsVisible(overlayEnabled->isChecked());
+
     setRunning(false);
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
@@ -86,17 +104,54 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.exec(); });
     connect(fullscreenButton, &QPushButton::clicked, this, [this] { if (isFullScreen()) showNormal(); else showFullScreen(); });
     connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
-    connect(aimButton, &QPushButton::clicked, this, [this] {
-        if (aim->isArmed()) { aim->disarm(); return; }
-        mouseLock->unlock(); if (!runningMultiTouch) keymapEnabled->setChecked(false);
-        QSettings s;
-        QPointF anchor(s.value("aim/anchorX", 50.0).toDouble() / 100.0, s.value("aim/anchorY", 50.0).toDouble() / 100.0);
-        QPointF fire(s.value("aim/fireX", 80.0).toDouble() / 100.0, s.value("aim/fireY", 75.0).toDouble() / 100.0);
-        if (!aim->arm(view->windowHandle(), anchor, fire, s.value("aim/sensitivity", 1.0).toDouble(), runningMultiTouch))
-            QMessageBox::warning(this, "Aim & fire", "Could not arm experimental aim mode. The embedded player and QEMU monitor must be ready.");
+    connect(overlayEnabled, &QCheckBox::toggled, this, [this](bool shown) {
+        QSettings s; s.setValue("keymap/showHints", shown);
+        overlay->setHintsVisible(shown);
     });
-    connect(aim, &AimController::statusChanged, this, [this](bool armed, bool, const QString &message) {
-        aimButton->setText(armed ? "⌖  Disarm aim" : "⌖  Aim & fire"); statusBar()->showMessage(message); updateControls();
+    connect(aimButton, &QPushButton::clicked, this, [this] {
+        if (aim->isArmed()) {
+            aim->disarm();
+            mapper->setReservedTouchSlots({});
+            return;
+        }
+        mouseLock->unlock();
+        if (!runningMultiTouch) keymapEnabled->setChecked(false);
+        else mapper->setReservedTouchSlots({0, 1, 2});
+
+        AimConfig cfg = profile.aim;
+        if (!cfg.enabled) {
+            QSettings s;
+            cfg.enabled = true;
+            cfg.toggleKey = s.value("aim/toggleKey", 0x77).toInt();
+            cfg.suspendKey = s.value("aim/suspendKey", 0x09).toInt();
+            cfg.anchorX = s.value("aim/anchorX", 56.0).toDouble() / 100.0;
+            cfg.anchorY = s.value("aim/anchorY", 48.0).toDouble() / 100.0;
+            cfg.sensitivityX = s.value("aim/sensitivity", 1.0).toDouble();
+            cfg.sensitivityY = s.value("aim/sensitivityY", cfg.sensitivityX).toDouble();
+            cfg.fireEnabled = s.value("aim/fireEnabled", true).toBool();
+            cfg.fireX = s.value("aim/fireX", 82.0).toDouble() / 100.0;
+            cfg.fireY = s.value("aim/fireY", 74.0).toDouble() / 100.0;
+            cfg.adsEnabled = s.value("aim/adsEnabled", false).toBool();
+            cfg.adsHoldMode = s.value("aim/adsHoldMode", false).toBool();
+            cfg.adsX = s.value("aim/adsX", 90.0).toDouble() / 100.0;
+            cfg.adsY = s.value("aim/adsY", 56.0).toDouble() / 100.0;
+            cfg.freeLookEnabled = s.value("aim/freeLookEnabled", false).toBool();
+            cfg.freeLookKey = s.value("aim/freeLookKey", 0x12).toInt();
+            cfg.freeLookX = s.value("aim/freeLookX", 76.0).toDouble() / 100.0;
+            cfg.freeLookY = s.value("aim/freeLookY", 26.0).toDouble() / 100.0;
+        }
+        if (!aim->arm(view->windowHandle(), cfg, runningMultiTouch)) {
+            mapper->setReservedTouchSlots({});
+            QMessageBox::warning(this, "Aim & fire", "Could not arm aim mode. The embedded player and QEMU monitor must be ready.");
+        }
+    });
+    connect(aim, &AimController::stateChanged, this, [this](bool armed, bool activeState, bool suspended, const QString &message) {
+        aimButton->setText(armed ? "⌖  Disarm aim" : "⌖  Aim & fire");
+        mapper->setAimCapturingMouse(activeState && !suspended);
+        if (!armed) mapper->setReservedTouchSlots({});
+        overlay->setAimCrosshairActive(activeState && !suspended);
+        statusBar()->showMessage(message);
+        updateControls();
     });
     connect(mouseLockButton, &QPushButton::clicked, this, [this] {
         if (mouseLock->isLocked()) { mouseLock->unlock(); return; }
@@ -105,11 +160,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     });
     connect(mouseLock, &MouseLock::unlocked, this, [this] { mouseLockButton->setText("◎  Lock"); statusBar()->showMessage("Mouse unlocked."); });
     connect(keymapEnabled, &QCheckBox::toggled, this, [this](bool enabled) {
-        if (!enabled) { mapper->stop(); statusBar()->showMessage("Keymap disabled."); return; }
-        if (!mapper->start(view->windowHandle(), bindings, runningMultiTouch)) {
+        if (!enabled) { mapper->stop(); qmp->releaseAllInputs(); statusBar()->showMessage("Keymap disabled."); return; }
+        if (aim->isArmed() && runningMultiTouch) mapper->setReservedTouchSlots({0, 1, 2});
+        else mapper->setReservedTouchSlots({});
+        if (!mapper->start(view->windowHandle(), profile, runningMultiTouch)) {
             QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false);
-            QMessageBox::warning(this, "Keymap unavailable", "The player must be running and embedded with at least one binding.");
-        } else statusBar()->showMessage("Keymap enabled. Click the Android display to use it.");
+            QMessageBox::warning(this, "Keymap unavailable", "The player must be running and embedded with at least one control binding.");
+        } else {
+            statusBar()->showMessage(QStringLiteral("Keymap '%1' enabled. Click the Android display to use it.").arg(profile.name));
+        }
     });
     connect(mapper, &InputMapper::stopped, this, [this](const QString &reason) {
         QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false); statusBar()->showMessage(reason);
@@ -121,7 +180,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); qmp->reset(); view->clear(); setRunning(false);
+        embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
         const QString output = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
         if (status == QProcess::CrashExit || code != 0) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
@@ -138,7 +197,7 @@ void MainWindow::launch() {
     const QString base = root + "/images/android-base.qcow2";
     const QString qemu = root + "/qemu/bin/qemu-system-x86_64.exe";
     const QString img = root + "/qemu/bin/qemu-img.exe";
-    if (!QFileInfo(base).isFile()) { QMessageBox::information(this, "System image unavailable", "This player has no prepared Android system image. Please contact the player developer."); return; }
+    if (!QFileInfo(base).isFile()) { QMessageBox::information(this, "System image unavailable", "This player has no prepared Android system image. You can still configure and export schemes in Keymap Studio."); return; }
     if (!QFileInfo(qemu).isFile()) { QMessageBox::critical(this, "Engine unavailable", "The bundled QEMU engine is missing. Reinstall the complete player package."); return; }
     const QString imageDir = root + "/images";
     const QString code = imageDir + "/android-uefi-code.fd";
@@ -190,8 +249,10 @@ void MainWindow::updateControls() {
     const bool running = process->state() == QProcess::Running;
     const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
     const bool armed = aim->isArmed();
-    shutdownButton->setEnabled(running && qmp->isReady()); editKeymapButton->setEnabled(embedded && !armed); mouseLockButton->setEnabled(embedded && !armed);
-    keymapEnabled->setEnabled(embedded && qmp->isReady() && !bindings.isEmpty() && (!armed || runningMultiTouch));
+    shutdownButton->setEnabled(running && qmp->isReady());
+    editKeymapButton->setEnabled(!aim->isCapturingMouse());
+    mouseLockButton->setEnabled(embedded && !armed);
+    keymapEnabled->setEnabled(embedded && qmp->isReady() && profile.hasAnyInputBindings() && (!armed || runningMultiTouch));
     aimButton->setEnabled(embedded && qmp->isReady());
 }
 void MainWindow::installApk() {
@@ -229,21 +290,40 @@ void MainWindow::installApk() {
     statusBar()->showMessage("Connecting to Android to install APK...");
 }
 void MainWindow::editKeymap() {
-    mouseLock->unlock(); keymapEnabled->setChecked(false);
-    if (!view->windowHandle()) return;
-    QScreen *screen = QGuiApplication::primaryScreen();
-    const QPixmap snapshot = screen ? screen->grabWindow(reinterpret_cast<WId>(view->windowHandle())) : QPixmap();
-    if (snapshot.isNull()) { QMessageBox::warning(this, "Screenshot unavailable", "Could not capture the Android display. Make sure the window is visible, then try again."); return; }
-    KeymapDialog dialog(snapshot, bindings, this); if (dialog.exec() != QDialog::Accepted) return;
-    QString error; const auto updated = dialog.resultBindings();
-    if (!saveKeymap(keymapPath, updated, &error)) { QMessageBox::warning(this, "Could not save keymap", error); return; }
-    bindings = updated; updateControls(); statusBar()->showMessage("Keymap saved. Enable it and click the display to use your controls.");
+    if (aim->isArmed()) aim->disarm();
+    mouseLock->unlock();
+    keymapEnabled->setChecked(false);
+    QPixmap snapshot;
+    if (view->windowHandle() && IsWindow(view->windowHandle())) {
+        if (QScreen *screen = QGuiApplication::primaryScreen())
+            snapshot = screen->grabWindow(reinterpret_cast<WId>(view->windowHandle()));
+    }
+    KeymapDialog dialog(snapshot, profile, profileDir, activeScheme, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        overlay->refreshSync();
+        return;
+    }
+    activeScheme = sanitizeSchemeName(dialog.resultSchemeName());
+    keymapPath = schemeFilePath(profileDir, activeScheme);
+    const KeymapProfile updated = dialog.resultProfile();
+    QString error;
+    if (!saveKeymapProfile(keymapPath, updated, &error)) {
+        QMessageBox::warning(this, "Could not save keymap", error);
+        return;
+    }
+    QSettings s;
+    s.setValue("keymap/activeScheme", activeScheme);
+    profile = updated;
+    overlay->setProfile(profile);
+    updateControls();
+    statusBar()->showMessage(QStringLiteral("Saved scheme '%1'. Enable On in the dock and click the display to play.").arg(profile.name));
 }
 void MainWindow::closeEvent(QCloseEvent *event) {
     if (process->state() != QProcess::NotRunning) {
         const auto choice = QMessageBox::question(this, "Player still running", "Force stop and close? This can corrupt the guest disk. Choose No and shut down Android first.", QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (choice != QMessageBox::Yes) { event->ignore(); return; }
-        aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); disconnect(process, nullptr, this, nullptr); process->kill(); process->waitForFinished(5000);
+        aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->hide(); disconnect(process, nullptr, this, nullptr); process->kill(); process->waitForFinished(5000);
     }
+    overlay->hide();
     event->accept();
 }

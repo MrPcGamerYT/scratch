@@ -13,6 +13,7 @@ class Qmp;
 class InputMapper;
 class MouseLock;
 class AimController;
+class KeymapOverlay;
 class QCheckBox;
 class QLabel;
 class QProcess;
@@ -33,7 +34,9 @@ private:
     void updateControls();
     void setRunning(bool running);
     EmulatorView *view;
+    KeymapOverlay *overlay;
     QCheckBox *keymapEnabled;
+    QCheckBox *overlayEnabled;
     QPushButton *editKeymapButton;
     QPushButton *fullscreenButton;
     QPushButton *mouseLockButton;
@@ -45,7 +48,9 @@ private:
     InputMapper *mapper;
     MouseLock *mouseLock;
     AimController *aim;
-    QList<KeyBinding> bindings;
+    KeymapProfile profile;
+    QString profileDir;
+    QString activeScheme;
     QString keymapPath;
     QProcess *process;
     QProcess *apkTask = nullptr;
