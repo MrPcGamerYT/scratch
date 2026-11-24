@@ -2,6 +2,7 @@
 #include "windowchrome.h"
 #include <QApplication>
 #include <QFile>
+#include <QLineEdit>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QVariant>
@@ -19,7 +20,11 @@ int main(int argc, char **argv) {
     bool stayedOpen = false;
     QTimer::singleShot(350, &picker, [&] {
         stayedOpen = picker.isVisible() && picker.windowFlags() == flags && !picker.property("nexusChrome").toBool();
-        picker.selectFile(iso);
+        // Simulate entering a path in the visible picker. selectFile() alone
+        // depends on asynchronous filesystem-model selection on Windows.
+        auto *name = picker.findChild<QLineEdit *>("fileNameEdit");
+        if (!name) { std::cerr << "PICKER missing filename field" << std::endl; picker.reject(); return; }
+        name->setText(iso);
         static_cast<QDialog *>(&picker)->accept();
         std::cerr << "PICKER diagnostic visible=" << picker.isVisible() << " stable=" << stayedOpen << " selected=" << picker.selectedFiles().join("|").toStdString() << std::endl;
         if (picker.isVisible()) picker.reject();
