@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
       assert.equal((await page.request.get('http://127.0.0.1:4173/.git/config')).status(), 404);
       assert.match(await page.locator('.preview-banner').innerText(), /not connected/);
 
+      await page.locator("#keymapMenuButton").click();
       // Stage hints toggle works live
       assert(await page.locator('#stageOverlay .hint-pill').count() >= 1);
       await page.locator('#toggleHints').click();
@@ -26,17 +27,23 @@ const assert = require('node:assert/strict');
       // Settings pages preserve honest status
       await page.locator('#openSettings').click();
       assert(await page.locator('#settingsOverlay').isVisible());
-      for (const name of ['display', 'graphics', 'device']) {
+      for (const name of ['graphics', 'device']) {
         await page.locator(`[data-page="${name}"]`).click();
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);
-        if (name === 'display') assert(await page.getByText('Show FPS at bottom left').locator('input').isDisabled());
+
       }
+      await page.locator('[data-page="display"]').click();
+      await page.locator('#guestResolution').selectOption({label: '1920x1080'});
+      await page.locator('#guestDensity').selectOption({label: '240 DPI'});
+      await page.locator('#applyGuestDisplay').click();
+      assert.match(await page.locator('#displayPreviewStatus').innerText(), /No Android VM/);
       await page.locator('[data-page="preferences"]').click();
       assert(await page.getByText('Experimental multi-touch keymapping').isVisible());
       await page.locator('#settingsOverlay [data-save]').click();
       assert.match(await page.locator('#toast').innerText(), /Preview only/);
 
       // Keymap Studio: templates, extended keys, repeat/burst, D-pad/Swipe/Zoom/MOBA/Script, Undo/Redo
+      await page.locator('#keymapMenuButton').click();
       await page.locator('#openKeys').click();
       assert.match(await page.locator('#keysOverlay').innerText(), /preview only/i);
       assert(await page.locator('#keySelect option').count() >= 50);
@@ -102,7 +109,10 @@ const assert = require('node:assert/strict');
       await page.keyboard.press('Escape');
       assert(!(await page.locator('#keysOverlay').isVisible()));
 
-      await page.locator('#openAimDock').click();
+      assert.equal(await page.locator('#openAimDock').count(), 0);
+      await page.locator('#keymapMenuButton').click();
+      await page.locator('#openKeys').click();
+      await page.locator('#openAim').click();
       assert(await page.locator('#aimOverlay').isVisible());
       await page.locator('#aimOverlay [data-save]').click();
       assert.match(await page.locator('#toast').innerText(), /Preview only/);

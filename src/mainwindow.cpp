@@ -25,6 +25,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMenu>
+#include <QWidgetAction>
 #include <QProcess>
 #include <QPushButton>
 #include <QScreen>
@@ -69,18 +71,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *brand = new QLabel("NEXUS", header); brand->setObjectName("brand"); headerLayout->addWidget(brand);
     headerLayout->addStretch();
     auto *dock = new QFrame(header); dock->setObjectName("topDock"); auto *dockLayout = new QHBoxLayout(dock); dockLayout->setContentsMargins(4, 0, 4, 0); dockLayout->setSpacing(4);
-    auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
-    auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
-    editKeymapButton = dockButton("⌨  Keymap", dock); editKeymapButton->setToolTip("Open Keymap Studio (schemes, D-pad, swipes, pinch zoom, MOBA, macros)"); dockLayout->addWidget(editKeymapButton);
-    keymapEnabled = new QCheckBox("", dock); keymapEnabled->setToolTip("Enable active keymap scheme"); keymapEnabled->setAccessibleName("Enable keymap"); dockLayout->addWidget(keymapEnabled);
-    overlayEnabled = new QCheckBox("", dock); overlayEnabled->setToolTip("Show translucent key-hint badges over the display"); overlayEnabled->setAccessibleName("Show keymap hints"); dockLayout->addWidget(overlayEnabled);
-    mouseLockButton = dockButton("◎  Lock", dock); dockLayout->addWidget(mouseLockButton);
-    fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
-    aimButton = dockButton("⌖  Aim & fire", dock); aimButton->setToolTip("Arm Aim, Shoot, ADS & Free-Look; multi-touch enables concurrent WASD & taps"); dockLayout->addWidget(aimButton);
     for (const auto &entry : {qMakePair(QString("◁  Back"), 4), qMakePair(QString("⌂  Home"), 3), qMakePair(QString("▢  Recent apps"), 187)}) {
         auto *button = dockButton(entry.first, dock); dockLayout->addWidget(button);
         connect(button, &QPushButton::clicked, this, [this, code = entry.second] { androidAction(code); });
     }
+    fullscreenButton = dockButton("⛶  Full screen", dock); dockLayout->addWidget(fullscreenButton);
+    editKeymapButton = dockButton("⌨  Keymap controls", dock); dockLayout->addWidget(editKeymapButton);
+    auto *keyMenu = new QMenu(editKeymapButton); editKeymapButton->setMenu(keyMenu);
+    auto *editAction = keyMenu->addAction("Open Keymap Studio");
+    connect(editAction, &QAction::triggered, this, [this] { editKeymap(); });
+    auto addCheck = [&](const QString &text) {
+        auto *check = new QCheckBox(text, keyMenu); auto *action = new QWidgetAction(keyMenu);
+        action->setDefaultWidget(check); keyMenu->addAction(action); return check;
+    };
+    keymapEnabled = addCheck("Enable keymap"); keymapEnabled->setAccessibleName("Enable keymap");
+    overlayEnabled = addCheck("Show keymap hints"); overlayEnabled->setAccessibleName("Show keymap hints");
+    mouseLockButton = dockButton("◎  Lock mouse", keyMenu);
+    auto *lockAction = new QWidgetAction(keyMenu); lockAction->setDefaultWidget(mouseLockButton); keyMenu->addAction(lockAction);
+    aimButton = dockButton("⌖  Aim & fire", header); aimButton->hide();
+    auto *volume = dockButton("♫  Volume", dock); dockLayout->addWidget(volume);
+    auto *volumeMenu = new QMenu(volume); volume->setMenu(volumeMenu);
+    for (const auto &entry : {qMakePair(QString("Volume up"), 24), qMakePair(QString("Volume down"), 25), qMakePair(QString("Toggle mute"), 164)}) {
+        auto *action = volumeMenu->addAction(entry.first);
+        connect(action, &QAction::triggered, this, [this, code = entry.second] { androidAction(code); });
+    }
+    auto *apkButton = dockButton("＋  Install APK", dock); dockLayout->addWidget(apkButton);
+    auto *settingsButton = dockButton("⚙  Settings", dock); dockLayout->addWidget(settingsButton);
     headerLayout->addWidget(dock); headerLayout->addStretch();
     vmStatus = new QLabel("●  OFFLINE", header); vmStatus->setObjectName("statusPill"); headerLayout->addWidget(vmStatus);
     launchButton = dockButton("Retry", header); launchButton->setToolTip("Retry starting the prepared Android system"); headerLayout->addWidget(launchButton);
@@ -118,7 +134,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     auto *fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);
     fullscreenShortcut->setContext(Qt::WindowShortcut);
     connect(fullscreenShortcut, &QShortcut::activated, this, toggleFullscreen);
-    connect(editKeymapButton, &QPushButton::clicked, this, [this] { editKeymap(); });
     connect(overlayEnabled, &QCheckBox::toggled, this, [this](bool shown) {
         QSettings s; s.setValue("keymap/showHints", shown);
         overlay->setHintsVisible(shown);
@@ -283,7 +298,7 @@ void MainWindow::updateControls() {
     aimButton->setEnabled(embedded && qmp->isReady());
 }
 void MainWindow::androidAction(int keycode) {
-    if (keycode != 3 && keycode != 4 && keycode != 187) return;
+    if (keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
     if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
         QMessageBox::information(this, "Android navigation", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
     }

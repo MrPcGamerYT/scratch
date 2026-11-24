@@ -121,6 +121,8 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
 .dock{padding:0 4px;gap:4px;border:0;border-radius:0;background:transparent;box-shadow:none}
 .dock button{padding:2px 3px;font-size:16px;border-radius:4px;width:30px;height:28px}.dock .dock-icon{margin:0}.dock .dock-icon{font-size:12px}
 .window-controls button{height:28px!important;min-height:0!important;padding:2px 8px!important}
+.toolbar-menu{position:absolute;top:75px;right:160px;z-index:9;background:#141923;border:1px solid #303d51;border-radius:8px;padding:6px;box-shadow:0 12px 32px #0009;min-width:210px}
+.toolbar-menu[hidden]{display:none}.toolbar-menu button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:10px;border-radius:5px}.toolbar-menu button:hover{background:#263449}
 </style>
 </head>
 <body>
@@ -131,16 +133,14 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
     <div class="brand"><strong>NEXUS</strong></div>
     <div class="dock-spacer"></div>
     <nav class="dock" aria-label="Player tools">
-      <button id="openSettings"><span class="dock-icon">⚙</span>Settings</button>
-      <button data-demo="Install APK"><span class="dock-icon">＋</span>Install APK</button>
-      <button id="openKeys"><span class="dock-icon">⌨</span>Keymap</button>
-      <button id="toggleHints" aria-pressed="true" class="active-toggle"><span class="dock-icon">👁</span>Hints</button>
-      <button data-demo="Mouse lock"><span class="dock-icon">◎</span>Lock</button>
-      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen</button>
-      <button id="openAimDock"><span class="dock-icon">⌖</span>Aim &amp; fire</button>
       <button data-demo="Android Back (ADB)" title="Back" aria-label="Back">◁</button>
       <button data-demo="Android Home (ADB)" title="Home" aria-label="Home">⌂</button>
       <button data-demo="Android Recent apps (ADB)" title="Recent apps" aria-label="Recent apps">▢</button>
+      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen</button>
+      <button id="keymapMenuButton" title="Keymap controls" aria-label="Keymap controls">⌨</button>
+      <button id="volumeMenuButton" title="Volume" aria-label="Volume">♫</button>
+      <button data-demo="Install APK"><span class="dock-icon">＋</span>Install APK</button>
+      <button id="openSettings"><span class="dock-icon">⚙</span>Settings</button>
     </nav>
     <div class="dock-spacer"></div>
     <div class="window-controls" aria-label="Window controls">
@@ -149,6 +149,16 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
       <button data-demo="Close window" aria-label="Close">×</button>
     </div>
   </header>
+  <div id="keymapToolbarMenu" class="toolbar-menu" hidden>
+    <button id="openKeys">⌨ Open Keymap Studio</button>
+    <button id="toggleHints" aria-pressed="true" class="active-toggle">👁 Show keymap hints</button>
+    <button data-demo="Mouse lock">◎ Lock mouse</button>
+  </div>
+  <div id="volumeToolbarMenu" class="toolbar-menu" hidden>
+    <button data-demo="Volume up (ADB)">＋ Volume up</button>
+    <button data-demo="Volume down (ADB)">− Volume down</button>
+    <button data-demo="Toggle mute (ADB)">♫ Toggle mute</button>
+  </div>
   <div class="work">
     <main class="player" id="playerStage">
       <div class="stage-overlay" id="stageOverlay" aria-label="On-screen keymap hints"></div>
@@ -349,7 +359,9 @@ showPage('performance');
 document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
 
 $('#openAim').onclick = () => $('#aimOverlay').classList.add('open');
-$('#openAimDock').onclick = () => $('#aimOverlay').classList.add('open');
+$('#keymapMenuButton').onclick = () => { $('#keymapToolbarMenu').hidden = !$('#keymapToolbarMenu').hidden; $('#volumeToolbarMenu').hidden = true; };
+$('#volumeMenuButton').onclick = () => { $('#volumeToolbarMenu').hidden = !$('#volumeToolbarMenu').hidden; $('#keymapToolbarMenu').hidden = true; };
+document.addEventListener('click', e => { if (!e.target.closest('.toolbar-menu') && !e.target.closest('#keymapMenuButton, #volumeMenuButton')) document.querySelectorAll('.toolbar-menu').forEach(m => m.hidden = true); });
 $('#openSettings').onclick = () => $('#settingsOverlay').classList.add('open');
 $('#openKeys').onclick = () => $('#keysOverlay').classList.add('open');
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.overlay').classList.remove('open'));

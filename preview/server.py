@@ -22,6 +22,7 @@ class Handler(BaseHTTPRequestHandler):
         body = entry[0].read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", entry[1])
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
