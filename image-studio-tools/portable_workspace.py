@@ -58,11 +58,14 @@ class PortableWorkspace:
             raise ValueError('Scratch disk must have been initialized by the boot service')
         self.root.mkdir(parents=True,exist_ok=True); self.scratch.mkdir(parents=True,exist_ok=True)
         run('mount','-o','nodev,nosuid,noexec','/dev/vdb',str(self.scratch)); self.mounts.append(self.scratch)
-        devices=run('lsblk','-nrpo','NAME,FSTYPE','/dev/vda').splitlines()
+        devices=run('lsblk','-nrpo','NAME','/dev/vda').splitlines()
         for entry in devices:
-            fields=entry.split()
-            if len(fields)==2 and fields[1]=='ext4' and re.fullmatch(r'/dev/vda(?:[1-9][0-9]*)?',fields[0]):
-                run('mount','-o','nodev,nosuid,noexec',fields[0],str(self.root)); self.mounts.append(self.root)
+            device=entry.strip()
+            if not re.fullmatch(r'/dev/vda(?:[1-9][0-9]*)?',device): continue
+            # No udev database in the initramfs: probe the device directly.
+            probe=subprocess.run(['blkid','-p','-o','value','-s','TYPE',device],capture_output=True,text=True)
+            if probe.returncode==0 and probe.stdout.strip()=='ext4':
+                run('mount','-o','nodev,nosuid,noexec',device,str(self.root)); self.mounts.append(self.root)
                 if (self.root/'android/initrd.img').is_file():
                     self.base=self.root/'android'; return
                 if (self.root/'system/etc/init').is_dir() or (self.root/'etc/init').is_dir():
