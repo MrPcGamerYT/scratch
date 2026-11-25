@@ -6,6 +6,10 @@ on:
         description: Candidate build run to inspect
         required: true
         default: '45571864477'
+      artifact_name:
+        description: Evidence artifact name
+        required: false
+        default: experimental-guest-build-evidence
   push:
     paths:
       - .github/workflows/guest-evidence.yml
@@ -19,7 +23,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: experimental-guest-build-evidence
+          name: ${{ inputs.artifact_name || 'experimental-guest-build-evidence' }}
           path: evidence
           run-id: ${{ inputs.run_id || '45571864477' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -30,7 +34,7 @@ jobs:
           from pathlib import Path
           from PIL import Image
           import base64, io
-          images = sorted(Path('evidence').rglob('screen-*.ppm'))
+          images = sorted(list(Path('evidence').rglob('screen-*.ppm')) + list(Path('evidence').rglob('screen-*.png')))
           if images:
               image = Image.open(images[-1]).convert('RGB')
               image.thumbnail((480, 320))
@@ -61,13 +65,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for name in ['result.json', 'getprop.txt', 'logcat.txt']:
+          for name in ['result.json', 'getprop.txt', 'logcat.txt', 'surfaceflinger.txt']:
               paths = list(Path('evidence').rglob(name))
               if not paths:
                   continue
               text = paths[0].read_text(errors='replace')
               if name == 'getprop.txt':
                   text = '\n'.join(line for line in text.splitlines() if any(key in line for key in ['boot_completed', 'init.svc.bootanim', 'init.svc.surfaceflinger', 'ro.hardware']))
+              if name == 'surfaceflinger.txt':
+                  text = '\n'.join(line for line in text.splitlines() if any(key in line for key in ['GLES:', 'RenderEngine', 'GL_VENDOR', 'GL_RENDERER']))[:2800]
               if name == 'logcat.txt':
                   text = '\n'.join(line for line in text.splitlines() if any(key in line.lower() for key in ['fatal signal', 'egl-main', 'surfaceflinger', 'gralloc']))[-5600:]
               for offset in range(0, min(len(text), 7000), 2800):
