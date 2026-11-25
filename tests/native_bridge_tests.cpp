@@ -3,6 +3,7 @@
 #include <QLocalServer>
 #include <QUuid>
 #include <QThread>
+#include <QTemporaryFile>
 
 static bool until(const std::function<bool()> &condition) {
     QElapsedTimer timer; timer.start();
@@ -28,6 +29,28 @@ int main(int argc,char **argv) {
     if (!until([&]{return peer->canReadLine();}) || peer->readLine()!="NEXUS 1 HOME\n") return 6;
     peer->write("NEXUS 2 READY 1\n"); peer->flush();
     if (!until([&]{return !bridge.isOnline() && disconnects>0;})) return 7;
+    bridge.stop();
+    QString package;
+    bool installed=false;
+    bridge.activeApp=[&](const QString &value) {package=value;};
+    bridge.installFinished=[&](bool ok,const QString &) {installed=ok;};
+    bridge.start(name);
+    if (!until([&]{return server.hasPendingConnections();})) return 8;
+    auto *second=server.nextPendingConnection();
+    second->write("NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK\nNEXUS 1 APP org.example.game\n"); second->flush();
+    if (!until([&]{return bridge.supportsApk() && package=="org.example.game";})) return 9;
+    QTemporaryFile fixture; if (!fixture.open()) return 10;
+    fixture.write("fake-apk-test"); fixture.flush();
+    if (!bridge.installApk(fixture.fileName())) return 11;
+    if (!until([&]{return second->canReadLine();})) return 12;
+    if (!second->readLine().startsWith("NEXUS 1 APK BEGIN 13 ")) return 13;
+    second->write("NEXUS 1 APK NEXT\n"); second->flush();
+    if (!until([&]{return second->bytesAvailable()>=33;})) return 14;
+    if (second->readLine()!="NEXUS 1 APK DATA 13\n" || second->read(13)!="fake-apk-test") return 15;
+    second->write("NEXUS 1 APK NEXT\n"); second->flush();
+    if (!until([&]{return second->canReadLine();}) || second->readLine()!="NEXUS 1 APK COMMIT\n") return 16;
+    second->write("NEXUS 1 RESULT APK_INSTALL OK\n"); second->flush();
+    if (!until([&]{return installed && !bridge.isInstalling();})) return 17;
     bridge.stop();
     return 0;
 }

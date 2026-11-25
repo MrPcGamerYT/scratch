@@ -1,5 +1,6 @@
 """Exercise the actual native parser with privileged execution stubbed out."""
 import pathlib
+import os
 import sys
 import gzip
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]/"guest-tools"))
@@ -25,6 +26,17 @@ class GuestBridgeTests(unittest.TestCase):
         self.assertEqual(data['nexus-agent'][0][1],0o100755)
         with self.assertRaises(ValueError): patch(b'not-cpio',b'agent')
 
+
+    def test_foreground_parser_and_rejected_apk_headers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary=pathlib.Path(folder)/'agent'
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-DNEXUS_AGENT_TEST',str(ROOT/'guest-tools/nexus-guest/agent.c'),'-o',str(binary)],check=True)
+            for fixture,expected in [('topResumedActivity=ActivityRecord{abc u0 org.example.game/.Main t1}',b'org.example.game'),('mResumedActivity: unknown',b'-')]:
+                env=dict(os.environ,NEXUS_TEST_ACTIVITY=fixture)
+                result=subprocess.run([str(binary)],input=b'NEXUS 1 QUERY_APP\nNEXUS 1 APK BEGIN 9999999999 bad\n',capture_output=True,env=env,timeout=5,check=True)
+                self.assertIn(b'NEXUS 1 APP '+expected+b'\n',result.stdout)
+                self.assertIn(b'NEXUS 1 APK FAILED\n',result.stdout)
+
     def test_bounded_whitelisted_protocol(self):
         with tempfile.TemporaryDirectory() as folder:
             binary = pathlib.Path(folder) / 'agent'
@@ -32,7 +44,7 @@ class GuestBridgeTests(unittest.TestCase):
             payload = b'NEXUS 1 HOME\nNEXUS 1 SHUTDOWN\nNEXUS 2 HOME\nNEXUS 1 HOME;reboot\n' + b'x'*1000 + b'\nNEXUS 1 BACK\nNEXUS 1 HO\x00ME\n'
             result = subprocess.run([str(binary)], input=payload, capture_output=True, timeout=5, check=True)
             self.assertEqual(result.stdout.splitlines(), [
-                b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK', b'NEXUS 1 RESULT HOME OK',
+                b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK', b'NEXUS 1 RESULT HOME OK',
                 b'NEXUS 1 RESULT SHUTDOWN OK', b'NEXUS 1 ERROR UNSUPPORTED',
                 b'NEXUS 1 ERROR UNSUPPORTED', b'NEXUS 1 ERROR OVERSIZE',
                 b'NEXUS 1 RESULT BACK OK', b'NEXUS 1 ERROR OVERSIZE'])

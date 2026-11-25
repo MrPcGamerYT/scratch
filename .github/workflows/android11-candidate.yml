@@ -15,7 +15,7 @@ jobs:
       - name: Install isolated guest tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio squashfs-tools
+          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio squashfs-tools aapt apksigner android-framework-res
           sudo chmod a+r /boot/vmlinuz*
       - name: Unit checks
         run: |
@@ -94,9 +94,14 @@ jobs:
           sha256sum candidate/nexus-android11.qcow2 > candidate/base-before-verification.sha256
       - name: Second boot must pass Home and shutdown over virtio with no NIC or ADB
         run: |
+          mkdir -p candidate/apk-smoke
+          printf '%s' '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.nexus.bridge.smoketest" android:versionCode="1" android:versionName="1"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="30"/><application android:hasCode="false" android:label="Nexus bridge CI fixture"/></manifest>' > candidate/apk-smoke/AndroidManifest.xml
+          aapt package -f -M candidate/apk-smoke/AndroidManifest.xml -I /usr/share/android-framework-res/framework-res.apk -F candidate/apk-smoke/unsigned.apk
+          keytool -genkeypair -noprompt -keystore candidate/apk-smoke/ci.jks -storepass ci-test-only -keypass ci-test-only -alias ci -keyalg RSA -keysize 2048 -dname CN=NexusCIFixture -validity 2
+          apksigner sign --ks candidate/apk-smoke/ci.jks --ks-pass pass:ci-test-only --key-pass pass:ci-test-only --out candidate/apk-smoke/fixture.apk candidate/apk-smoke/unsigned.apk
           qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/nexus-android11.qcow2" candidate/second-boot.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/second-vars.fd
-          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --output candidate/evidence/second-boot --timeout 900
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --apk-fixture candidate/apk-smoke/fixture.apk --output candidate/evidence/second-boot --timeout 900
           sha256sum -c candidate/base-before-verification.sha256
       - name: Package separately from every existing user image
         run: |
@@ -104,7 +109,7 @@ jobs:
           import json, pathlib, shutil, hashlib
           root=pathlib.Path('candidate'); out=pathlib.Path('guest-download'); images=out/'images'
           first=json.loads((root/'evidence/first-boot/result.json').read_text()); second=json.loads((root/'evidence/second-boot/result.json').read_text())
-          assert first.get('clean_shutdown') and second.get('clean_shutdown')
+          assert first.get('clean_shutdown') and second.get('clean_shutdown') and second.get('native_apk_install_completed') and second.get('native_foreground_package')
           assert first.get('home_without_adb') and first.get('adb_used') is False and second.get('home_without_adb') and second.get('native_home_command_completed') and second.get('adb_used') is False
           images.mkdir(parents=True)
           (images/'android-base.qcow2').hardlink_to(root/'nexus-android11.qcow2')

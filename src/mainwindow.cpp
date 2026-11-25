@@ -79,6 +79,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         if (hideGuestBoot) view->setGuestVisible(true);
         recordEvent("Native bridge reports Android boot complete; no ADB needed for readiness.");
     };
+    nativeBridge->installFinished = [this](bool success,const QString &message) {
+        recordEvent(message);
+        if (closePending) return;
+        if (success) QMessageBox::information(this,"Install APK",message);
+        else QMessageBox::warning(this,"Install APK",message);
+    };
+    nativeBridge->activeApp = [this](const QString &package) {
+        if (!closePending && process->state()==QProcess::Running && package!=currentPackage)
+            selectAppKeymap(package);
+    };
     nativeBridge->disconnected = [this] {
         if (!currentPackage.isEmpty()) selectAppKeymap(QString());
         if (aim->isArmed()) aim->disarm();
@@ -486,6 +496,15 @@ void MainWindow::installApk(const QString &path) {
     if (process->state() != QProcess::Running) {
         QMessageBox::information(this, "Install APK", "Start Android first. APK installation requires TCP ADB enabled in the Android image and local ADB forwarding enabled in Settings before startup."); return;
     }
+    if (nativeBridge->supportsApk()) {
+        if (nativeBridge->isInstalling()) { QMessageBox::information(this,"Install APK","A native APK operation is already in progress."); return; }
+        const QString apk=path.isEmpty() ? QFileDialog::getOpenFileName(this,"Choose a trusted APK",QString(),"Android packages (*.apk)") : path;
+        if (apk.isEmpty()) return;
+        if (QMessageBox::question(this,"Install APK","Install this APK through the private guest connection? Only install trusted APKs. Existing apps may be updated. Maximum size: 512 MiB.\n\n"+QFileInfo(apk).fileName(),QMessageBox::Yes|QMessageBox::No,QMessageBox::No)!=QMessageBox::Yes) return;
+        if (!nativeBridge->installApk(apk)) QMessageBox::warning(this,"Install APK","The guest is busy or the APK cannot be read/is outside the supported size. No transfer started; try again after the current command.");
+        else recordEvent("Native APK checksum/transfer started without ADB.");
+        return;
+    }
     if (apkTask) { QMessageBox::information(this, "Install APK", "An APK operation is already in progress."); return; }
     if (!runningAdbForward) {
         QMessageBox::information(this, "Install APK", "Enable local ADB forwarding in Settings and restart the player. Android must also have TCP ADB enabled and authorized."); return;
@@ -519,7 +538,7 @@ void MainWindow::installApk(const QString &path) {
 void MainWindow::editKeymap() {
     if (closePending) return;
     if (process->state() == QProcess::Running && currentPackage.isEmpty()) {
-        QMessageBox::information(this, "Waiting for active app", "Per-app keymaps need authorized local ADB forwarding and an identified foreground Android app. No global keymap will be applied to unknown apps."); return;
+        QMessageBox::information(this, "Waiting for active app", "Per-app keymaps need the native guest app connection, or legacy authorized ADB, and an identified foreground Android app. No global keymap will be applied to unknown apps."); return;
     }
     if (aim->isArmed()) aim->disarm();
     mouseLock->unlock();
@@ -701,6 +720,11 @@ void MainWindow::pollGuest() {
     fpsBadge->setVisible(fps && running && isVisible() && !isMinimized());
     if (fpsBadge->isVisible()) {
         fpsBadge->adjustSize(); static_cast<FpsBadge *>(fpsBadge)->syncPosition();
+    }
+    if (running && nativeBridge->supportsAppEvents()) {
+        nativeBridge->send("QUERY_APP");
+        fpsBadge->setText("Engine FPS: N/A · instrumentation pending");
+        return;
     }
     if (!running || !runningAdbForward) {
         fpsBadge->setText("Display FPS: N/A · ADB required");
