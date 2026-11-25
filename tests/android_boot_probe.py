@@ -1,0 +1,120 @@
+"""Evidence-producing Android live-boot probe. Never treats QEMU startup as Android success."""
+import argparse
+import json
+import pathlib
+import re
+import socket
+import subprocess
+import time
+
+
+def boot_recipe(tree):
+    candidates = sorted(tree.rglob('grub.cfg')) + sorted(tree.rglob('menu.lst'))
+    for config in candidates:
+        lines = config.read_text(errors='replace').splitlines()
+        for index, line in enumerate(lines):
+            match = re.match(r'\s*(?:linux|linuxefi|kernel)\s+(\S+)\s*(.*)', line)
+            if not match or 'install' in match[2].lower():
+                continue
+            kernel = list(tree.rglob(pathlib.PurePosixPath(match[1]).name))
+            for following in lines[index + 1:index + 12]:
+                initrd = re.match(r'\s*(?:initrd|initrdefi)\s+(\S+)', following)
+                if initrd:
+                    images = list(tree.rglob(pathlib.PurePosixPath(initrd[1]).name))
+                    if kernel and images and '$' not in match[2]:
+                        args = re.sub(r'\bquiet\b', '', match[2])
+                        return kernel[0], images[0], args, str(config)
+    raise RuntimeError('No supported literal live-boot kernel/initrd recipe found in ISO; refusing to guess')
+
+
+def run(args):
+    output = pathlib.Path(args.output).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    result = {'status': 'failed', 'graphics': args.graphics,
+              'scope': 'Linux TCG live ISO; not Windows WHPX, installed disk, or game validation'}
+    process = None
+    serial_file = None
+    try:
+        kernel, initrd, command_line, config = boot_recipe(pathlib.Path(args.tree))
+        result.update(kernel=str(kernel), initrd=str(initrd), source_config=config, iso_kernel_args=command_line)
+        # Reserve local ephemeral ports; CI runs each probe in its own isolated job.
+        def free_port():
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1', 0))
+                return sock.getsockname()[1]
+        qmp_port, adb_port = free_port(), free_port()
+        command = ['qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg,thread=multi',
+                   '-cpu', 'max', '-smp', '2', '-m', '3072', '-display', 'none',
+                   '-kernel', str(kernel), '-initrd', str(initrd),
+                   '-append', command_line + ' console=ttyS0,115200',
+                   '-cdrom', str(pathlib.Path(args.iso).resolve()), '-boot', 'order=d',
+                   '-netdev', f'user,id=net0,hostfwd=tcp:127.0.0.1:{adb_port}-:5555',
+                   '-device', 'virtio-net-pci,netdev=net0',
+                   '-qmp', f'tcp:127.0.0.1:{qmp_port},server=on,wait=off',
+                   '-serial', 'stdio', '-no-reboot']
+        command += ['-vga', 'std'] if args.graphics == 'std' else ['-vga', 'none', '-device', 'virtio-vga']
+        result['command'] = command
+        serial_file = (output / 'serial.log').open('wb')
+        process = subprocess.Popen(command, stdout=serial_file, stderr=serial_file)
+        endpoint = f'127.0.0.1:{adb_port}'
+        deadline = time.monotonic() + args.timeout
+        next_capture = 0
+        captures = 0
+        consecutive_complete = 0
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError(f'QEMU exited before verification: {process.returncode}')
+            if time.monotonic() >= next_capture:
+                captures += 1
+                try:
+                    with socket.create_connection(('127.0.0.1', qmp_port), timeout=5) as sock:
+                        stream = sock.makefile('rwb', buffering=0)
+                        def execute(payload):
+                            stream.write((json.dumps(payload) + '\n').encode())
+                            while True:
+                                response = json.loads(stream.readline())
+                                if 'return' in response or 'error' in response:
+                                    return response
+                        stream.readline()
+                        execute({'execute': 'qmp_capabilities'})
+                        execute({'execute': 'screendump', 'arguments': {'filename': str(output / f'screen-{captures:02}.ppm')}})
+                except (OSError, ValueError) as error:
+                    (output / 'probe.log').open('a').write(str(error) + '\n')
+                next_capture = time.monotonic() + 60
+            subprocess.run(['adb', 'connect', endpoint], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            probe = subprocess.run(['adb', '-s', endpoint, 'shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=10)
+            consecutive_complete = consecutive_complete + 1 if probe.returncode == 0 and probe.stdout.strip() == '1' else 0
+            if consecutive_complete >= 3:
+                result['status'] = 'boot_completed'
+                result['visual_validation'] = 'Screenshots require inspection; boot_completed does not prove correct graphics'
+                for name, command_args in [('getprop.txt', ['getprop']), ('logcat.txt', ['logcat', '-d', '-t', '2000'])]:
+                    capture = subprocess.run(['adb', '-s', endpoint, 'shell', *command_args], capture_output=True, timeout=30)
+                    (output / name).write_bytes(capture.stdout + capture.stderr)
+                break
+            time.sleep(5)
+        else:
+            raise RuntimeError('Timed out without three confirmed Android boot-complete replies; ADB may be disabled/unavailable. Inspect serial and screenshots; this is not a diagnosis.')
+    except Exception as error:
+        result['error'] = str(error)
+    finally:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        if serial_file:
+            serial_file.close()
+        (output / 'result.json').write_text(json.dumps(result, indent=2))
+    return 0 if result['status'] == 'boot_completed' else 1
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--iso', required=True)
+    parser.add_argument('--tree', required=True)
+    parser.add_argument('--output', required=True)
+    parser.add_argument('--graphics', choices=['std', 'virtio'], required=True)
+    parser.add_argument('--timeout', type=int, default=720)
+    raise SystemExit(run(parser.parse_args()))

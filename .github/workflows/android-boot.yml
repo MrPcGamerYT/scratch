@@ -1,0 +1,46 @@
+name: Real Bliss Android boot investigation
+on:
+  workflow_dispatch:
+jobs:
+  android:
+    name: Bliss 16.9.7 live / ${{ matrix.graphics }} / Linux TCG
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        graphics: [std, virtio]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 adb p7zip-full
+      - name: Download exact diagnostic fixture
+        run: |
+          mkdir -p evidence fixture
+          curl --fail --location --retry 3 --connect-timeout 30 --max-time 600 \
+            'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS16/Gapps/Generic/Bliss-v16.9.7-x86_64-OFFICIAL-gapps-20241011.iso' -o bliss.iso
+          # Fingerprint of the user's tested ISO, not an independently verified publisher signature.
+          echo '17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751  bliss.iso' | tee evidence/fixture.sha256
+          sha256sum -c evidence/fixture.sha256
+          7z l bliss.iso > evidence/iso-files.txt
+          7z x bliss.iso -ofixture > evidence/extraction.txt
+      - name: Probe actual Android boot (not firmware smoke test)
+        run: python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --output evidence --timeout 720
+      - name: Convert screenshots for inspection
+        if: always()
+        run: |
+          python3 -m pip install Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for image in Path('evidence').glob('*.ppm'):
+              Image.open(image).save(image.with_suffix('.png'))
+              image.unlink()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bliss-live-${{ matrix.graphics }}-evidence
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7
