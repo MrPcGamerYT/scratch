@@ -377,3 +377,8 @@ performance, installed-disk reliability, Windows WHPX or compatibility on the
 user's physical PC. Direct kernel boot uses the ISO's own kernel/initrd and live
 arguments but bypasses its firmware/GRUB menu. This workflow investigates guest
 startup; it does not yet automate installation or certify an image for release.
+
+The Phase 1 guest-image build and publication gates are documented in
+[`docs/nexus-guest-contract.md`](docs/nexus-guest-contract.md). Current CI compares
+CPU-feature masking and DRM/GBM guest-renderer hypotheses; these do not change
+Player defaults or establish acceleration. No certified Nexus guest is uploaded yet.
