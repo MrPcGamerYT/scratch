@@ -12,6 +12,8 @@
 #include "runtimeconfig.h"
 #include "resourceconfig.h"
 #include "guesttelemetry.h"
+#include "nativeguestbridge.h"
+#include <QUuid>
 #include "fpsbadge.h"
 #include <QApplication>
 #include <QCryptographicHash>
@@ -69,6 +71,19 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
+    nativeBridge = new NativeGuestBridge(this);
+    nativeBridge->diagnostic = [this](const QString &message) { recordEvent(message); };
+    nativeBridge->bootStatus = [this](bool ready) {
+        if (!ready || bootReady || process->state() != QProcess::Running || closePending) return;
+        bootReady = true;
+        if (hideGuestBoot) view->setGuestVisible(true);
+        recordEvent("Native bridge reports Android boot complete; no ADB needed for readiness.");
+    };
+    nativeBridge->disconnected = [this] {
+        if (!currentPackage.isEmpty()) selectAppKeymap(QString());
+        if (aim->isArmed()) aim->disarm();
+        mapper->stop(); qmp->releaseAllInputs();
+    };
     qmp = new Qmp(process, this);
     mapper = new InputMapper(qmp, this);
     mouseLock = new MouseLock(this);
@@ -233,6 +248,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); view->setStartupStatus("Engine failed to start", process->errorString()); QMessageBox::critical(this, "Player failed to start", process->errorString()); if (closePending) QTimer::singleShot(0, this, [this] { close(); }); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
+        nativeBridge->stop();
         embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
         const QString output = (engineErrorTail + QString::fromLocal8Bit(process->readAllStandardError())).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
@@ -339,8 +355,17 @@ void MainWindow::launch() {
         if (!value.isString()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch argument."); return; }
         args << value.toString();
     }
+    QString bridgePipe;
+    QFile bridgeMarker(root + "/images/nexus-bridge.txt");
+    if (bridgeMarker.open(QIODevice::ReadOnly) && bridgeMarker.read(16).trimmed() == "1") {
+        bridgePipe = "nexus-control-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        args << "-chardev" << ("pipe,id=nexus_control,path=" + bridgePipe)
+             << "-device" << "virtio-serial-pci,id=nexus_serial"
+             << "-device" << "virtserialport,chardev=nexus_control,name=org.nexus.control.0";
+    }
     view->setStartupStatus("Starting Android", "Waiting for Android. Boot hiding requires authorized guest ADB; check Diagnostics if it does not become ready.", true);
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); bootWait.start(); process->start();
+    if (!bridgePipe.isEmpty()) nativeBridge->start(bridgePipe);
     setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
     statusBar()->showMessage(softwareCpu ? "Starting with explicit software CPU emulation (slow)." : "Starting Android with WHPX...");
 }
@@ -362,6 +387,16 @@ void MainWindow::updateControls() {
 }
 void MainWindow::androidAction(int keycode) {
     if (closePending) return;
+    QString bridgeCommand;
+    switch (keycode) {
+    case 3: bridgeCommand="HOME"; break; case 4: bridgeCommand="BACK"; break;
+    case 187: bridgeCommand="RECENTS"; break; case 24: bridgeCommand="VOLUME_UP"; break;
+    case 25: bridgeCommand="VOLUME_DOWN"; break; case 164: bridgeCommand="MUTE"; break;
+    default: break;
+    }
+    if (!bridgeCommand.isEmpty() && nativeBridge->send(bridgeCommand)) {
+        recordEvent("Native guest command queued: " + bridgeCommand + " (completion reported separately)."); return;
+    }
     if (keycode != -1 && keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
     if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
         QMessageBox::information(this, "Android controls", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
@@ -546,6 +581,7 @@ void MainWindow::requestCloseShutdown() {
     // ACPI is the fallback even when guest debugging is absent. Some Android
     // builds ignore it; never treat sending the request as completed shutdown.
     if (qmp->isReady()) qmp->powerDown();
+    if (nativeBridge->send("SHUTDOWN")) { recordEvent("Native guest shutdown requested; waiting for engine exit."); return; }
     if (!runningAdbForward) return;
     QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
     if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");

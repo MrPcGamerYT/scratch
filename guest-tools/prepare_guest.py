@@ -84,6 +84,8 @@ def build(args):
             g.mount('/dev/sda2', '/')
             g.mkdir('/android')
             g.mkdir('/android/data')
+            if getattr(args, 'native_bridge', False):
+                g.write('/android/data/.nexus-provision', b'clean-ci-template-only\n')
             for name in names:
                 g.upload(str(tree / name), '/android/' + name)
             g.mkdir_p('/boot/efi')
@@ -122,4 +124,5 @@ if __name__ == '__main__':
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--profile', choices=['no-avx', 'drm-gbm', 'drm-gbm-no-avx'], required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--native-bridge', action='store_true')
     build(parser.parse_args())

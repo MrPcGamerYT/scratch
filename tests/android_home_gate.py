@@ -77,6 +77,8 @@ def install_boot_branding(endpoint, animation):
     if result.returncode:
         raise RuntimeError('Nexus boot asset upload failed: ' + result.stderr)
     adb(endpoint, 'chmod', '0644', '/data/local/bootanimation.zip')
+    adb(endpoint, 'restorecon', '/data/local/bootanimation.zip')
+    adb(endpoint, 'rm', '-f', '/data/.nexus-provision')
     adb(endpoint, 'settings', 'put', 'global', 'device_name', 'Nexus Android 11')
     expected = hashlib.sha256(Path(animation).read_bytes()).hexdigest()
     actual = adb(endpoint, 'sha256sum', '/data/local/bootanimation.zip').split()[0]

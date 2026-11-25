@@ -1,0 +1,78 @@
+"""Boot the prepared guest with no NIC/ADB and require actual virtio-agent replies."""
+import argparse
+import json
+from pathlib import Path
+import socket
+import subprocess
+import time
+from android_boot_probe import capture_screen, PathEscape
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1',0)); return sock.getsockname()[1]
+
+
+def run(args):
+    output=Path(args.output).resolve(); output.mkdir(parents=True,exist_ok=True)
+    result={'status':'failed','scope':'Linux TCG native virtio bridge; no NIC, ADB or Windows validation','adb_used':False}
+    bridge_port,qmp_port=free_port(),free_port()
+    command=['qemu-system-x86_64','-machine','q35','-accel','tcg,thread=multi','-cpu','max,avx=off,avx2=off,f16c=off,fma=off','-smp','2','-m','3072','-display','none','-nic','none','-vga','none','-device','virtio-vga','-chardev',f'socket,id=nexus_control,host=127.0.0.1,port={bridge_port},server=on,wait=off','-device','virtio-serial-pci,id=nexus_serial','-device','virtserialport,chardev=nexus_control,name=org.nexus.control.0','-qmp',f'tcp:127.0.0.1:{qmp_port},server=on,wait=off','-serial','stdio','-drive',f'file={PathEscape(args.disk)},format=qcow2','-drive',f'if=pflash,format=raw,readonly=on,file={PathEscape(args.uefi_code)}','-drive',f'if=pflash,format=raw,file={PathEscape(args.uefi_vars)}','-no-reboot']
+    process=None; channel=None; started=time.monotonic(); buffer=b''; events=[]
+    with (output/'serial.log').open('wb') as serial:
+        try:
+            process=subprocess.Popen(command,stdout=serial,stderr=serial)
+            deadline=time.monotonic()+args.timeout; hello=False; phase='ready'
+            while time.monotonic()<deadline:
+                if process.poll() is not None: raise RuntimeError('Engine exited before bridge gates')
+                if channel is None:
+                    try: channel=socket.create_connection(('127.0.0.1',bridge_port),timeout=1); channel.settimeout(1)
+                    except OSError: time.sleep(1); continue
+                try: data=channel.recv(4096)
+                except socket.timeout: continue
+                if not data: raise RuntimeError('Native channel closed before gates')
+                buffer+=data
+                if len(buffer)>4096: raise RuntimeError('Oversized bridge response')
+                while b'\n' in buffer:
+                    line,buffer=buffer.split(b'\n',1)
+                    text=line.decode('ascii'); events.append(text)
+                    if line==b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK': hello=True
+                    elif line==b'NEXUS 1 READY 1' and hello and phase=='ready':
+                        result['bridge_boot_ready_seconds']=round(time.monotonic()-started,2)
+                        channel.sendall(b'NEXUS 1 CHECK_HOME\n'); phase='check'
+                    elif line==b'NEXUS 1 RESULT CHECK_HOME OK' and phase=='check':
+                        result['home_without_adb']=True; result['no_recorded_anr']=True
+                        channel.sendall(b'NEXUS 1 HOME\n'); phase='home'
+                    elif line==b'NEXUS 1 RESULT HOME OK' and phase=='home':
+                        result['native_home_command_completed']=True
+                        capture_screen(qmp_port,output/'screen-final.ppm')
+                        channel.sendall(b'NEXUS 1 SHUTDOWN\n'); phase='shutdown'
+                    elif 'FAILED' in text or 'ERROR' in text:
+                        raise RuntimeError('Guest rejected native command: '+text)
+                if phase=='shutdown':
+                    process.wait(timeout=120)
+                    if process.returncode: raise RuntimeError('Engine shutdown was abnormal')
+                    result['clean_shutdown']=True; result['status']='native_bridge_home_shutdown_passed'; break
+            else: raise RuntimeError('Timed out waiting for native boot/Home replies; inspect kernel, init policy and screenshots')
+        except Exception as error:
+            result['error']=str(error)
+            if process and process.poll() is None:
+                try: capture_screen(qmp_port,output/'screen-final.ppm')
+                except Exception: pass
+        finally:
+            if channel: channel.close()
+            if process and process.poll() is None:
+                process.terminate()
+                try: process.wait(timeout=15)
+                except subprocess.TimeoutExpired: process.kill(); process.wait()
+            result['elapsed_seconds']=round(time.monotonic()-started,2)
+            (output/'bridge-events.txt').write_text('\n'.join(events))
+            (output/'result.json').write_text(json.dumps(result,indent=2))
+    return 0 if result['status']=='native_bridge_home_shutdown_passed' else 1
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    for name in ['disk','uefi-code','uefi-vars','output']: parser.add_argument('--'+name,required=True)
+    parser.add_argument('--timeout',type=int,default=900)
+    raise SystemExit(run(parser.parse_args()))

@@ -15,12 +15,13 @@ jobs:
       - name: Install isolated guest tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core
+          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio
           sudo chmod a+r /boot/vmlinuz*
       - name: Unit checks
         run: |
           /usr/bin/python3 tests/guest_builder_tests.py
           /usr/bin/python3 tests/android_probe_tests.py
+          /usr/bin/python3 tests/guest_bridge_tests.py
       - uses: actions/cache@v4
         with:
           path: android11.iso
@@ -62,7 +63,14 @@ jobs:
       - name: Build new standalone disk and original boot asset
         run: |
           set -o pipefail
-          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
+          cp /usr/share/doc/musl/copyright source-evidence/MUSL-COPYRIGHT.txt
+          dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
+          musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
+          file fixture/ramdisk.img | tee source-evidence/ramdisk-format.txt
+          /usr/bin/python3 guest-tools/install_bridge_ramdisk.py --ramdisk fixture/ramdisk.img --agent candidate/nexus-agent --output candidate/ramdisk-nexus.img | tee source-evidence/bridge-ramdisk.json
+          mv fixture/ramdisk.img source-evidence/upstream-ramdisk.img
+          cp candidate/ramdisk-nexus.img fixture/ramdisk.img
+          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
           /usr/bin/python3 guest-tools/make_boot_animation.py candidate/nexus-bootanimation.zip
       - name: First boot, explicitly provision clean offline template and require Home without ANRs
         run: |
@@ -79,11 +87,11 @@ jobs:
           qemu-img convert -c -f qcow2 -O qcow2 candidate/provision.qcow2 candidate/nexus-android11.qcow2
           qemu-img check candidate/nexus-android11.qcow2
           sha256sum candidate/nexus-android11.qcow2 > candidate/base-before-verification.sha256
-      - name: Second boot on fresh overlay must retain setup and reach Home without provisioning
+      - name: Second boot must pass Home and shutdown over virtio with no NIC or ADB
         run: |
           qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/nexus-android11.qcow2" candidate/second-boot.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/second-vars.fd
-          /usr/bin/python3 tests/android_boot_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --graphics virtio --profile drm-gbm-no-avx --require-home --measure-ui --output candidate/evidence/second-boot --timeout 900
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --output candidate/evidence/second-boot --timeout 900
           sha256sum -c candidate/base-before-verification.sha256
       - name: Package separately from every existing user image
         run: |
@@ -92,15 +100,17 @@ jobs:
           root=pathlib.Path('candidate'); out=pathlib.Path('guest-download'); images=out/'images'
           first=json.loads((root/'evidence/first-boot/result.json').read_text()); second=json.loads((root/'evidence/second-boot/result.json').read_text())
           assert first.get('clean_shutdown') and second.get('clean_shutdown')
-          assert first['home_gate']['sdk']=='30' and second['home_gate']['resumed_home'] and not second['home_gate']['provisioned_this_boot']
+          assert first['home_gate']['sdk']=='30' and second.get('home_without_adb') and second.get('native_home_command_completed') and second.get('adb_used') is False
           images.mkdir(parents=True)
           (images/'android-base.qcow2').hardlink_to(root/'nexus-android11.qcow2')
           for source,name in [('/usr/share/OVMF/OVMF_CODE_4M.fd','android-uefi-code.fd'),('/usr/share/OVMF/OVMF_VARS_4M.fd','android-uefi-vars.fd')]: shutil.copyfile(source,images/name)
-          for name,value in [('acceleration','tcg'),('graphics','virtio'),('cpu-profile','reduced-avx')]: (images/(name+'.txt')).write_text(value+'\n')
+          for name,value in [('acceleration','tcg'),('graphics','virtio'),('cpu-profile','reduced-avx'),('nexus-bridge','1')]: (images/(name+'.txt')).write_text(value+'\n')
           shutil.copytree('source-evidence',out/'source-evidence')
+          shutil.copytree('guest-tools/nexus-guest',out/'native-bridge-source')
+          shutil.copyfile('guest-tools/install_bridge_ramdisk.py',out/'native-bridge-source/install_bridge_ramdisk.py')
           shutil.copytree(root/'evidence',out/'verification')
           shutil.copyfile('/usr/share/doc/ovmf/copyright',out/'OVMF-NOTICES.txt')
-          (out/'README.txt').write_text('NEXUS ANDROID 11 FOSS CANDIDATE - EXPERIMENTAL\nUpstream Bliss OS 14.10.3 FOSS Generic (2024-10-12). Android SDK 30 required by gates. Not an Android source build or fastest-engine certification. Original system payload/notices retained; user-data Nexus boot override needs visual review.\nNo GApps edition was selected; individual upstream component terms still apply. Source: https://sourceforge.net/projects/blissos-x86/files/Official/BlissOS14/FOSS/Generic/ and https://github.com/BlissOS .\nSetup was explicitly provisioned on a clean account-free CI template, not by bypassing Google login/FRP. New image, new instance only. Never overwrite an existing backing base. Back up your old Player/images AND user instance together. Extract this images folder beside the updated Player executable in a separate permanent folder. A different Player folder still shares per-user instance state: deliberate migration/new-instance isolation is required.\nLinux TCG 2 CPU / 3072 MiB two-boot tests only. Windows, WHPX, physical GPU, games, sound/network and cursor alignment remain unverified. Older Android/security patch levels need review; do not use sensitive accounts. Home and clean shutdown gates are not full stability certification.\n')
+          (out/'README.txt').write_text('NEXUS ANDROID 11 FOSS CANDIDATE - EXPERIMENTAL\nUpstream Bliss OS 14.10.3 FOSS Generic (2024-10-12). Android SDK 30 required by gates. Not an Android source build or fastest-engine certification. Original system payload/notices retained; user-data Nexus boot override needs visual review.\nNo GApps edition was selected; individual upstream component terms still apply. Source: https://sourceforge.net/projects/blissos-x86/files/Official/BlissOS14/FOSS/Generic/ and https://github.com/BlissOS .\nSetup was explicitly provisioned on a clean account-free CI template, not by bypassing Google login/FRP. New image, new instance only. Never overwrite an existing backing base. Back up your old Player/images AND user instance together. Extract this images folder beside the updated Player executable in a separate permanent folder. A different Player folder still shares per-user instance state: deliberate migration/new-instance isolation is required.\nNative v1 bridge gates require boot status, Home check, navigation command and clean shutdown without NIC or ADB on second boot. APK, active-app events, display geometry and engine FPS are NOT provided by this version. Linux TCG 2 CPU / 3072 MiB tests only. Windows, WHPX, physical GPU, games, sound/network and cursor alignment remain unverified. Older Android/security patch levels need review; do not use sensitive accounts. Home and clean shutdown gates are not full stability certification.\n')
           files=sorted(path for path in out.rglob('*') if path.is_file())
           lines=[]
           for path in files:

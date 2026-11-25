@@ -9,6 +9,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+class NativeGuestBridge;
 class EmulatorView;
 class Qmp;
 class InputMapper;
@@ -75,6 +76,7 @@ private:
     QPushButton *launchButton;
     QPushButton *shutdownButton;
     QLabel *vmStatus;
+    NativeGuestBridge *nativeBridge;
     Qmp *qmp;
     InputMapper *mapper;
     MouseLock *mouseLock;

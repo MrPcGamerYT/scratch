@@ -71,7 +71,7 @@ qt_add_executable(ProjectNexus WIN32
     src/keymapoverlay.h
 )
 qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png assets/nexus-engine.png)
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32 shell32 dxgi)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets Qt6::Network nexus_controls user32 shell32 dxgi)
 
 qt_add_executable(NexusImageStudio WIN32 src/imagestudio.cpp src/windowchrome.cpp src/windowchrome.h)
 target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
@@ -83,6 +83,10 @@ qt_add_resources(NexusImageStudio "studio_assets" PREFIX "/" FILES assets/nexus-
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(native_bridge_tests tests/native_bridge_tests.cpp)
+    target_include_directories(native_bridge_tests PRIVATE src)
+    target_link_libraries(native_bridge_tests PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME native_bridge_tests COMMAND native_bridge_tests)
     add_executable(vmplan_tests tests/vmplan_tests.cpp)
     target_link_libraries(vmplan_tests PRIVATE nexus_controls)
     add_test(NAME vmplan_tests COMMAND vmplan_tests)
