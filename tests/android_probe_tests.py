@@ -2,6 +2,8 @@ import importlib.util
 import pathlib
 import tempfile
 import unittest
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 spec = importlib.util.spec_from_file_location('probe', pathlib.Path(__file__).with_name('android_boot_probe.py'))
 probe = importlib.util.module_from_spec(spec)
@@ -49,6 +51,15 @@ class RecipeTests(unittest.TestCase):
         self.assertTrue(probe.virgl_renderer_line('GLES: Mesa/X.org, virgl, OpenGL ES 3.1'))
         self.assertFalse(probe.virgl_renderer_line('GLES: Mesa/X.org, llvmpipe\nInstalled driver: virgl'))
         self.assertFalse(probe.virgl_renderer_line('Vulkan: virtio'))
+
+    def test_frame_metrics_reject_invalid_and_do_not_claim_fps(self):
+        text = 'Flags,IntendedVsync,FrameCompleted\n0,1000000,21000000\n1,1000000,91000000\n0,0,100000000\n0,1000000,9223372036854775807\n'
+        metrics = probe.summarize(text)
+        self.assertEqual(metrics['frames'], 1)
+        self.assertEqual(metrics['median_ms'], 20)
+        self.assertEqual(metrics['status'], 'insufficient_samples')
+        self.assertNotIn('fps', metrics)
+        self.assertEqual(probe.summarize('no frame data')['frames'], 0)
 
     def test_unknown_recipe_fails_instead_of_guessing(self):
         with tempfile.TemporaryDirectory() as folder:

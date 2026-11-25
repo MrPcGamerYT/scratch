@@ -6,6 +6,7 @@ import re
 import socket
 import subprocess
 import time
+from android_frame_metrics import summarize
 
 
 def boot_recipe(tree):
@@ -97,6 +98,31 @@ def capture_adb_screen(endpoint, filename):
     filename.write_bytes(capture.stdout)
 
 
+def measure_settings(endpoint, output):
+    def shell(*command):
+        result = subprocess.run(['adb', '-s', endpoint, 'shell', *command], capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr or 'ADB workload command failed')
+        return result.stdout
+    launch = shell('am', 'start', '-W', '-a', 'android.settings.SETTINGS')
+    (output / 'settings-launch.txt').write_text(launch)
+    if 'Status: ok' not in launch or 'Error:' in launch:
+        raise RuntimeError('Settings did not confirm launch; no frame-time claim made')
+    time.sleep(3)
+    shell('dumpsys', 'gfxinfo', 'com.android.settings', 'reset')
+    started = time.monotonic()
+    for _ in range(3):
+        shell('input', 'swipe', '500', '650', '500', '220', '600')
+        shell('input', 'swipe', '500', '220', '500', '650', '600')
+    stats = shell('dumpsys', 'gfxinfo', 'com.android.settings', 'framestats')
+    (output / 'settings-framestats.txt').write_text(stats)
+    metrics = summarize(stats)
+    metrics['workload'] = 'Android Settings, six alternating 600 ms vertical swipes'
+    metrics['workload_wall_seconds'] = round(time.monotonic() - started, 2)
+    (output / 'frame-metrics.json').write_text(json.dumps(metrics, indent=2))
+    return metrics
+
+
 def PathEscape(path):
     return str(pathlib.Path(path).resolve()).replace(',', ',,')
 
@@ -112,7 +138,12 @@ def run(args):
     qmp_port = None
     started = time.monotonic()
     try:
-        kernel, initrd, command_line, config = boot_recipe(pathlib.Path(args.tree))
+        if args.disk:
+            kernel, initrd, command_line, config = None, None, 'root=/dev/ram0 SRC=/android', 'disk EFI bootloader (no injected kernel arguments)'
+        else:
+            if not args.tree or not args.iso:
+                raise ValueError('Live boot requires --iso and --tree')
+            kernel, initrd, command_line, config = boot_recipe(pathlib.Path(args.tree))
         cpu, command_line = profile_recipe(args.profile, command_line)
         result['profile'] = args.profile
         result['guest_gpu_acceleration'] = False
@@ -197,6 +228,11 @@ def run(args):
                     result['ui_assessment'] = 'Guest compositor did not report VirGL; refusing to call software fallback a renderer pass'
                 if ready:
                     result['status'] = 'framework_ready_visual_unverified'
+                    if args.measure_ui:
+                        try:
+                            result['ui_frame_metrics'] = measure_settings(endpoint, output)
+                        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                            result['ui_frame_metrics'] = {'status': 'measurement_failed', 'error': str(error)}
                 if args.profile == 'virgl':
                     capture_adb_screen(endpoint, output / 'screen-final.png')
                 else:
@@ -240,10 +276,11 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--iso', required=True)
-    parser.add_argument('--tree', required=True)
+    parser.add_argument('--iso', default='')
+    parser.add_argument('--tree', default='')
     parser.add_argument('--output', required=True)
     parser.add_argument('--graphics', choices=['std', 'virtio'], required=True)
+    parser.add_argument('--measure-ui', action='store_true')
     parser.add_argument('--disk', default='')
     parser.add_argument('--uefi-code', default='')
     parser.add_argument('--uefi-vars', default='')

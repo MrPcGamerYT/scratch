@@ -1,0 +1,79 @@
+name: Compare renderers on prepared Android disk
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/renderer-compare.yml
+jobs:
+  compare:
+    name: Prepared guest / ${{ matrix.renderer }} / Linux software-host reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {renderer: standard-vga, graphics: std, profile: drm-gbm-no-avx}
+          - {renderer: virtio-2d, graphics: virtio, profile: drm-gbm-no-avx}
+          - {renderer: opengl-virgl, graphics: virtio, profile: virgl}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install reference tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-system-gui qemu-utils adb xvfb xauth
+      - name: Test timing parser and boot policies
+        run: python3 tests/android_probe_tests.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: Nexus-Experimental-Android-Guest
+          path: guest
+          run-id: '45575332515'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify exact downloadable guest and prepare isolated instance
+        run: |
+          mkdir -p evidence instance
+          cd guest
+          sha256sum -c SHA256SUMS.txt
+          echo '6d51ab7beb663735a625cc6626d12c094952b0668228dfaa7f8c39efcff689b1  android-candidate.qcow2' | sha256sum -c -
+          cd ..
+          qemu-img check guest/android-candidate.qcow2
+          qemu-img create -f qcow2 -F qcow2 -b "$PWD/guest/android-candidate.qcow2" instance/test.qcow2
+          cp guest/uefi-vars-template.fd instance/uefi-vars.fd
+          qemu-system-x86_64 --version > evidence/engine-version.txt
+          echo 'Linux distro QEMU; NOT bundled Windows Player. TCG and forced host software GL. No game FPS or hardware GPU validation.' > evidence/SCOPE.txt
+      - name: Boot requested renderer and measure identical Settings workload
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          xvfb-run -a python3 tests/android_boot_probe.py --disk instance/test.qcow2 --uefi-code guest/uefi-code.fd --uefi-vars instance/uefi-vars.fd --graphics '${{ matrix.graphics }}' --profile '${{ matrix.profile }}' --measure-ui --output evidence --timeout 720
+      - name: Publish renderer outcome without disguising failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['result.json', 'frame-metrics.json']:
+              path = Path('evidence') / name
+              if path.exists():
+                  text = path.read_text()
+                  print('::notice title=' + name + '::' + text[:3800].replace('%','%25').replace('\n','%0A'))
+          PY
+      - name: Convert software screenshots for inspection
+        if: always()
+        run: |
+          python3 -m pip install Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for path in Path('evidence').glob('*.ppm'):
+              Image.open(path).save(path.with_suffix('.png'))
+              path.unlink()
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-guest-${{ matrix.renderer }}-evidence
+          path: evidence/
+          retention-days: 7
+          if-no-files-found: warn
