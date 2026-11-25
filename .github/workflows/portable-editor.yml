@@ -67,6 +67,7 @@ jobs:
           $engine = Get-ChildItem engine -Recurse -Filter NexusEngine.exe | Select-Object -First 1
           $qemu = Split-Path (Split-Path $engine.FullName)
           Copy-Item -Recurse $qemu portable/qemu
+          Invoke-WebRequest https://raw.githubusercontent.com/qemu/qemu/698104725efad4b29079d857dfdebbd804e34c99/pc-bios/kvmvapic.bin -OutFile portable/qemu/share/qemu/kvmvapic.bin
           Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip -OutFile python.zip
           Expand-Archive python.zip portable/python
           Copy-Item image-studio-tools/portable/editor_host.py,image-studio-tools/portable/editor.html portable/
@@ -78,7 +79,17 @@ jobs:
           & portable/qemu/bin/NexusEngine.exe --version
       - name: Test exact bundled Windows engine boot and API
         shell: pwsh
-        run: portable/python/python.exe tests/portable_windows_test.py
+        run: |
+          $output = & portable/python/python.exe tests/portable_windows_test.py 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($code -ne 0) {
+            $output | Select-Object -Last 8 | ForEach-Object { Write-Output "::error::$_" }
+            if (Test-Path windows-appliance-test.log) {
+              Get-Content windows-appliance-test.log -Tail 8 | ForEach-Object { Write-Output "::error::$_" }
+            }
+            exit $code
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
