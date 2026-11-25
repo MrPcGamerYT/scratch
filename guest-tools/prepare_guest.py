@@ -94,10 +94,18 @@ def build(args):
                 g.mkdir_p(directory)
                 for target in ['/android/data/system','/android/data/system/users',directory]:
                     g.chown(1000,1000,target); g.chmod(0o700,target)
-                target=directory+'/settings_secure.xml'
-                xml=b'<?xml version="1.0" encoding="utf-8" standalone="yes"?><settings version="191"><setting id="0" name="immersive_mode_confirmations" value="confirmed" package="android" defaultSysSet="false" /></settings>'
-                g.write(target,xml); g.chown(1000,1000,target); g.chmod(0o600,target)
-
+                settings={
+                    'global': [('device_provisioned','1'),('device_name','Nexus Android 11')],
+                    'secure': [('immersive_mode_confirmations','confirmed'),('user_setup_complete','1')],
+                    'system': [],
+                }
+                # Seed all three states together: SettingsProvider discards a
+                # lone secure file when its global-file migration gate is absent.
+                for namespace, values in settings.items():
+                    entries=''.join(f'<setting id="{index}" name="{name}" value="{value}" package="android" defaultSysSet="false" />' for index,(name,value) in enumerate(values))
+                    xml=('<?xml version="1.0" encoding="utf-8" standalone="yes"?><settings version="191">'+entries+'</settings>').encode()
+                    target=directory+'/settings_'+namespace+'.xml'
+                    g.write(target,xml); g.chown(1000,1000,target); g.chmod(0o600,target)
             for name in names:
                 g.upload(str(tree / name), '/android/' + name)
             g.mkdir_p('/boot/efi')
