@@ -29,6 +29,9 @@ const assert = require('node:assert/strict');
       // Settings pages preserve honest status
       await page.locator('#openSettings').click();
       assert(await page.locator('#settingsOverlay').isVisible());
+      await page.locator('#autoResourcesPreview').check();
+      assert(await page.locator('#settingsPage .field input').isDisabled());
+      await page.locator('#autoResourcesPreview').uncheck();
       for (const name of ['graphics', 'device']) {
         await page.locator(`[data-page="${name}"]`).click();
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);

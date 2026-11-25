@@ -5,6 +5,7 @@
 #include "runtimeconfig.h"
 #include "diagnostics.h"
 #include "apkdrop.h"
+#include "resourceconfig.h"
 #include <QCheckBox>
 #include <QPlainTextEdit>
 #include <QFile>
@@ -22,6 +23,7 @@ int main(int argc, char **argv) {
     QCoreApplication::setApplicationName("Isolated");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, tmp.path());
+    QSettings().setValue("cpus", 4); QSettings().setValue("memory", 4096); // existing manual user
     WindowChrome chrome;
     app.installEventFilter(&chrome);
     SettingsDialog dialog(false);
@@ -101,6 +103,17 @@ int main(int argc, char **argv) {
     QFile emptyApk(tmp.path() + "/empty.apk"); emptyApk.open(QIODevice::WriteOnly); emptyApk.close();
     mime.setUrls({QUrl::fromLocalFile(emptyApk.fileName())});
     if (!droppedApk(&mime).isEmpty()) return 27;
+    auto *automatic = dialog.findChild<QCheckBox *>("automaticResources");
+    if (!automatic || automatic->isChecked() || !cpu->isEnabled()) return 34;
+    automatic->setChecked(true);
+    if (cpu->isEnabled() || !save->isEnabled()) return 35;
+    discard->click(); if (automatic->isChecked() || !cpu->isEnabled()) return 36;
+    automatic->setChecked(true); save->click();
+    if (!automaticResources(QSettings())) return 37;
+    const auto expected = nexus_resource_budget(qMax(1, QThread::idealThreadCount()), nexus_host_memory_mb());
+    if (selectedResources(QSettings()).cpus != expected.cpus || selectedResources(QSettings()).memory_mb != expected.memory_mb) return 38;
+    auto *gpuReport = dialog.findChild<QPlainTextEdit *>("hostGpuReport");
+    if (!gpuReport || !gpuReport->isReadOnly() || !gpuReport->toPlainText().contains("DXGI")) return 39;
     for (int i = 0; i < tabs->count(); ++i) tabs->setCurrentIndex(i);
     std::cout << "Settings categories, dirty state, discard and persistence passed.\n";
     return 0;

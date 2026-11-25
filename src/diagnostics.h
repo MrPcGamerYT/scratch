@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QSysInfo>
 #include "runtimeconfig.h"
+#include "resourceconfig.h"
 
 // Read-only package checks. Presence is not a boot/guest capability test.
 inline QString playerDiagnostics(const QString &root) {
@@ -23,8 +24,9 @@ inline QString playerDiagnostics(const QString &root) {
     const auto adb = root + "/platform-tools/adb.exe";
     report << ((QFileInfo(adb).isFile() && QFileInfo(adb).size() > 0) || !QStandardPaths::findExecutable("adb.exe").isEmpty() ? "ADB executable found (guest connection not tested)" : "ADB missing: navigation, volume, APK and display changes require platform-tools");
     QSettings settings;
+    const auto resources = selectedResources(settings);
     report << "" << "Configured CPU engine: " + selectedVmAcceleration(settings)
-        << QString("Configured resources: %1 CPU(s), %2 MB RAM").arg(qBound(1, settings.value("cpus", 4).toInt(), 64)).arg(qBound(512, settings.value("memory", 4096).toInt(), 131072))
+        << QString("Next-launch resources: %1 CPU(s), %2 MB RAM (%3)").arg(resources.cpus).arg(resources.memory_mb).arg(automaticResources(settings) ? "automatic" : "manual")
         << QString("Configured local ADB forwarding: %1 (restart required after changes)").arg(settings.value("adbForward", false).toBool() ? "enabled" : "disabled")
         << QString("Audio output: automatic Intel HDA / Windows DirectSound (guest driver required)")
         << "Network: QEMU user-mode NAT with virtio-net (guest driver/DHCP required; not a connectivity test)"

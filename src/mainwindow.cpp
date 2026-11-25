@@ -10,6 +10,7 @@
 #include "settingsdialog.h"
 #include "rustcore.h"
 #include "runtimeconfig.h"
+#include "resourceconfig.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QCheckBox>
@@ -277,8 +278,9 @@ void MainWindow::launch() {
         QMessageBox::critical(this, "UEFI firmware", error.isEmpty() ? "UEFI code is not a file." : error); return;
     }
     const QSettings s;
-    const int ram = qBound(512, s.value("memory", 4096).toInt(), 131072);
-    const int cpus = qBound(1, s.value("cpus", 4).toInt(), 64);
+    const auto resources = selectedResources(s);
+    const int ram = static_cast<int>(resources.memory_mb), cpus = static_cast<int>(resources.cpus);
+    recordEvent(QString("Resource allocation: %1 CPUs, %2 MB (%3)").arg(cpus).arg(ram).arg(automaticResources(s) ? "automatic" : "manual"));
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
     runningMultiTouch = s.value("multiTouch", false).toBool();
     runningAdbForward = s.value("adbForward", false).toBool(); runningAdbPort = port;

@@ -1,5 +1,7 @@
 #include "settingsdialog.h"
 #include "diagnostics.h"
+#include "resourceconfig.h"
+#include "hostgraphics.h"
 #include <QCoreApplication>
 #include <QPlainTextEdit>
 #include <QClipboard>
@@ -89,6 +91,8 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *performance = addPage("Performance", "Allocate host resources to this instance. Changes apply on next launch.", &form);
     cpus = new QSpinBox(performance); cpus->setRange(1, 64); cpus->setObjectName("cpuAllocation");
     memory = new QSpinBox(performance); memory->setRange(512, 131072); memory->setSingleStep(512); memory->setSuffix(" MB"); memory->setObjectName("memoryAllocation");
+    autoResources = new QCheckBox("Automatic CPU and memory allocation", performance); autoResources->setObjectName("automaticResources"); form->addRow(autoResources);
+    note(form, "Automatic uses half the logical CPU threads (up to 8) and approximately one quarter of physical RAM (512–8192 MB). This is a conservative starting point, not a fastest-game preset. Low-memory hosts may not meet the guest OS minimum. Manual values remain available. Applies on next launch.");
     form->addRow("CPU allocation", cpus); form->addRow("Memory allocation", memory);
     note(form, QString("Detected host: %1 logical CPU threads. Leave resources available for Windows; over-allocation can reduce performance.").arg(qMax(1, QThread::idealThreadCount())));
     acceleration = new QComboBox; acceleration->setObjectName("vmAcceleration");
@@ -114,6 +118,9 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     addPage("Graphics", "Current backend capabilities — not simulated graphics options.", &form);
     graphics = new QComboBox; graphics->setObjectName("vmGraphics");
     graphics->addItem("Use prepared image's selection", "prepared"); graphics->addItem("Standard VGA · compatibility", "std"); graphics->addItem("VirtIO VGA · experimental", "virtio");
+    form->addRow("Host GPU preference", new QLabel("Automatic / Windows-managed window"));
+    note(form, "Integrated/dedicated GPU inventory is shown below. No accelerated Android host renderer is implemented yet, so this is not guest GPU selection.");
+    auto *gpuReport = new QPlainTextEdit(hostGraphicsReport()); gpuReport->setReadOnly(true); gpuReport->setMaximumHeight(150); gpuReport->setObjectName("hostGpuReport"); form->addRow(gpuReport);
     form->addRow("Display device", graphics);
     note(form, "Restart required. VirtIO VGA provides an alternative scanout device, not host GPU acceleration. Guest virtio-gpu/DRM drivers are required. Test in Image Studio Resume first. A black/striped display does not prove a device change will fix it. Temporary nomodeset settings can disable the required driver; restart without those experimental boot edits when testing VirtIO."); form->addRow("ASTC textures", unavailable("Not supported"));
     note(form, "Vulkan, DirectX, GPU passthrough and dedicated-GPU selection are not implemented in this player.");
@@ -146,7 +153,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     report->setPlainText(playerDiagnostics(QCoreApplication::applicationDirPath())); form->addRow(report);
     auto *refreshReport = new QPushButton("Refresh diagnostics", diagnosticsPage); refreshReport->setObjectName("refreshDiagnostics"); form->addRow(refreshReport);
     auto *copyReport = new QPushButton("Copy report and session log", diagnosticsPage); copyReport->setObjectName("copyDiagnostics"); form->addRow(copyReport);
-    auto refresh = [=] { report->setPlainText(playerDiagnostics(QCoreApplication::applicationDirPath()) + (sessionDiagnostics ? "\n\nCurrent session:\n" + sessionDiagnostics() : "\n\nNo player session attached.")); };
+    auto refresh = [=] { report->setPlainText(playerDiagnostics(QCoreApplication::applicationDirPath()) + "\n\n" + hostGraphicsReport() + (sessionDiagnostics ? "\n\nCurrent session:\n" + sessionDiagnostics() : "\n\nNo player session attached.")); };
     connect(refreshReport, &QPushButton::clicked, this, refresh);
     connect(copyReport, &QPushButton::clicked, this, [=] { refresh(); QApplication::clipboard()->setText(report->toPlainText()); });
     addPage("About", "Project Nexus · native Qt player and Rust gesture core", &form);
@@ -155,12 +162,14 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9/%10").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()).arg(graphics->currentIndex()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9/%10/%11").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()).arg(graphics->currentIndex()).arg(autoResources->isChecked()); };
     auto baseline = std::make_shared<QString>();
-    auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); };
+    auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); cpus->setEnabled(!autoResources->isChecked()); memory->setEnabled(!autoResources->isChecked()); };
     auto restore = [=] {
         QSettings s;
-        cpus->setValue(s.value("cpus", 4).toInt()); memory->setValue(s.value("memory", 4096).toInt());
+        autoResources->setChecked(automaticResources(s));
+        const auto resources = selectedResources(s);
+        cpus->setValue(static_cast<int>(resources.cpus)); memory->setValue(static_cast<int>(resources.memory_mb));
         showCursor->setChecked(s.value("showCursor", true).toBool()); multitouch->setChecked(s.value("multiTouch", false).toBool());
         adbForward->setChecked(s.value("adbForward", false).toBool()); adbPort->setValue(s.value("adbPort", 5555).toInt());
         acceleration->setCurrentIndex(qMax(0, acceleration->findData(s.value("acceleration", "prepared").toString())));
@@ -169,8 +178,13 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         aimInterval->setCurrentIndex(qMax(0, aimInterval->findData(s.value("input/aimInterval", 16).toInt())));
         *baseline = snapshot(); update();
     };
+    connect(autoResources, &QCheckBox::toggled, this, [=](bool enabled) {
+        if (!enabled) return;
+        const auto resources = nexus_resource_budget(qMax(1, QThread::idealThreadCount()), nexus_host_memory_mb());
+        cpus->setValue(static_cast<int>(resources.cpus)); memory->setValue(static_cast<int>(resources.memory_mb));
+    });
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
-    for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
+    for (auto *check : {showCursor, multitouch, adbForward, autoResources}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
     for (auto *combo : {acceleration, mouseInput, aimInterval, graphics}) connect(combo, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
@@ -183,7 +197,7 @@ void SettingsDialog::reject() {
     QDialog::reject();
 }
 bool SettingsDialog::save() {
-    QSettings s; s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
+    QSettings s; s.setValue("automaticResources", autoResources->isChecked()); s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
     s.setValue("acceleration", acceleration->currentData());

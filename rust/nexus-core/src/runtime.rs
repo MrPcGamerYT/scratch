@@ -227,3 +227,49 @@ mod memory_tests {
         assert_eq!(nexus_trim_working_set(std::process::id()), -1);
     }
 }
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct ResourceBudget { pub cpus: u32, pub memory_mb: u32 }
+
+/// Conservative initial allocation, not a benchmark-derived optimum.
+#[no_mangle]
+pub extern "C" fn nexus_resource_budget(host_threads: u32, host_memory_mb: u64) -> ResourceBudget {
+    let cpus = (host_threads / 2).clamp(1, 8);
+    // Leave at least half of known physical RAM to the host. No oversized VM
+    // on low-memory PCs. Unknown memory uses a small conservative fallback.
+    let memory_mb = if host_memory_mb == 0 { 2048 } else {
+        (host_memory_mb / 4).clamp(512, 8192).min((host_memory_mb / 2).max(512)) as u32
+    };
+    ResourceBudget { cpus, memory_mb }
+}
+
+#[no_mangle]
+pub extern "C" fn nexus_host_memory_mb() -> u64 {
+    #[cfg(windows)]
+    unsafe {
+        #[repr(C)]
+        struct MemoryStatus { length: u32, load: u32, total_phys: u64, avail_phys: u64, total_page: u64, avail_page: u64, total_virtual: u64, avail_virtual: u64, avail_extended: u64 }
+        #[link(name = "kernel32")]
+        extern "system" { fn GlobalMemoryStatusEx(status: *mut MemoryStatus) -> i32; }
+        let mut status: MemoryStatus = std::mem::zeroed();
+        status.length = std::mem::size_of::<MemoryStatus>() as u32;
+        if GlobalMemoryStatusEx(&mut status) != 0 { status.total_phys / (1024 * 1024) } else { 0 }
+    }
+    #[cfg(not(windows))]
+    { 0 }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    #[test] fn conservative_known_hosts() {
+        assert_eq!(nexus_resource_budget(8, 16384), ResourceBudget { cpus: 4, memory_mb: 4096 });
+        assert_eq!(nexus_resource_budget(4, 4096), ResourceBudget { cpus: 2, memory_mb: 1024 });
+        assert_eq!(nexus_resource_budget(128, 262144), ResourceBudget { cpus: 8, memory_mb: 8192 });
+    }
+    #[test] fn bounded_even_for_unknown_hosts() {
+        assert_eq!(nexus_resource_budget(0, 0), ResourceBudget { cpus: 1, memory_mb: 2048 });
+        assert_eq!(nexus_resource_budget(1, 1024), ResourceBudget { cpus: 1, memory_mb: 512 });
+    }
+}

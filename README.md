@@ -323,3 +323,22 @@ for striped RGB output, frame-buffer stride/format problems or every Bliss build
 CI tests device presence and a visible UEFI firmware screendump on both devices,
 not Android colors, compositor correctness or game FPS. Test results from the
 actual guest are still needed before changing defaults.
+
+### Automatic resource budget and host GPU inventory
+
+New player configurations without saved CPU/RAM allocations use a conservative
+Rust-owned automatic budget: half the logical threads (1–8 CPUs), approximately
+one quarter of physical RAM (512–8192 MB). This reserves host headroom, not a
+benchmark-derived optimum. Unknown host RAM uses a 2048 MB fallback. A low-memory
+host can remain below the Android image's requirements; automatic allocation
+cannot make an underpowered host suitable for gaming. Existing explicit values
+remain manual. Settings → Performance can switch between modes; restart applies
+resource changes. Saved TCG/WHPX and prepared-image choices are not overwritten.
+
+Settings → Graphics and refreshed Diagnostics enumerate DXGI adapters with names,
+dedicated VRAM and shared-memory capacities. These are not live usage figures.
+Window GPU preference remains Windows-managed/automatic. There is **no accelerated
+Android GPU renderer or integrated/dedicated guest GPU selection** yet. Detection
+is not activation; VirtIO VGA is scanout, not GPU passthrough/virgl/gfxstream.
+A backend must be integrated and validated with compatible guest drivers before
+auto adapter selection can become an Android rendering feature.

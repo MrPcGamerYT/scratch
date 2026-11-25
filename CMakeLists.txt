@@ -50,6 +50,7 @@ qt_add_executable(ProjectNexus WIN32
     src/windowchrome.cpp src/windowchrome.h
     src/mainwindow.cpp
     src/mainwindow.h
+    src/hostgraphics.cpp src/hostgraphics.h
     src/settingsdialog.cpp
     src/settingsdialog.h
     src/emulatorview.cpp
@@ -70,7 +71,7 @@ qt_add_executable(ProjectNexus WIN32
     src/keymapoverlay.h
 )
 qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32 dxgi)
 
 qt_add_executable(NexusImageStudio WIN32 src/imagestudio.cpp src/windowchrome.cpp src/windowchrome.h)
 target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
@@ -105,9 +106,9 @@ if(BUILD_TESTING)
     target_link_libraries(studiobrowse_tests PRIVATE Qt6::Widgets)
     add_test(NAME studiobrowse_tests COMMAND studiobrowse_tests)
     set_tests_properties(studiobrowse_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
-    add_executable(settings_tests tests/settings_tests.cpp src/settingsdialog.cpp src/settingsdialog.h src/windowchrome.cpp src/windowchrome.h)
+    add_executable(settings_tests tests/settings_tests.cpp src/hostgraphics.cpp src/hostgraphics.h src/settingsdialog.cpp src/settingsdialog.h src/windowchrome.cpp src/windowchrome.h)
     target_include_directories(settings_tests PRIVATE src)
-    target_link_libraries(settings_tests PRIVATE Qt6::Widgets)
+    target_link_libraries(settings_tests PRIVATE Qt6::Widgets nexus_controls dxgi)
     add_test(NAME settings_tests COMMAND settings_tests)
     set_tests_properties(settings_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME image_studio_ui_tests COMMAND NexusImageStudio --smoke-test)

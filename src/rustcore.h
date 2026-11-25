@@ -66,6 +66,9 @@ struct NexusVmRequest {
     std::uint32_t memory_mb, cpus, adb_port, flags;
 };
 std::size_t nexus_vm_plan(const NexusVmRequest *request, std::uint8_t *output, std::size_t capacity);
+struct NexusResourceBudget { std::uint32_t cpus, memory_mb; };
+NexusResourceBudget nexus_resource_budget(std::uint32_t host_threads, std::uint64_t host_memory_mb);
+std::uint64_t nexus_host_memory_mb();
 struct NexusInputDelta { std::int32_t x, y; };
 NexusInputDelta nexus_input_accumulate(std::int32_t x, std::int32_t y, std::int32_t dx, std::int32_t dy);
 std::uint32_t nexus_input_interval(std::uint32_t requested);
