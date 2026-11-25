@@ -40,10 +40,17 @@ try {
     foreach ($item in @('create', 'qcow2', $disk, '32G', 'whpx,kernel-irqchip=off', '2048', '2', 'order=d', $env:NEXUS_TEST_ISO, 'user,id=net0,hostfwd=tcp:127.0.0.1:5556-:5555')) {
         if ($argsLog -cnotcontains $item) { throw "Missing argument: $item" }
     }
+    $reportFiles = @(Get-ChildItem (Join-Path $root 'diagnostics') -Filter '*.json')
+    if ($reportFiles.Count -ne 1) { throw 'Expected one per-launch diagnostic report.' }
+    $report = Get-Content $reportFiles[0].FullName -Raw | ConvertFrom-Json
+    if ($report.cpus -ne 2 -or $report.memoryMB -ne 2048 -or $report.automaticCpus -or $report.automaticMemory -or $report.acceleratedGuestGpu -or $report.exitCode -ne 0) { throw 'Manual allocation or honest graphics reporting regressed.' }
     Remove-Item $env:NEXUS_TEST_LOG
     & $launcher -QemuDir $root -DiskPath $disk -Boot disk
+    $reports = @(Get-ChildItem (Join-Path $root 'diagnostics') -Filter '*.json' | ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json })
+    $automaticReport = @($reports | Where-Object automaticCpus)
+    if ($reports.Count -ne 2 -or $automaticReport.Count -ne 1 -or -not $automaticReport[0].automaticMemory -or $automaticReport[0].cpus -lt 1 -or $automaticReport[0].cpus -gt 8 -or $automaticReport[0].memoryMB -lt 512 -or $automaticReport[0].memoryMB -gt 8192) { throw 'Automatic allocations or unique diagnostic reports regressed.' }
     $argsLog = Get-Content $env:NEXUS_TEST_LOG
-    if ($argsLog -cnotcontains 'order=c' -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
+    if ($argsLog -cnotcontains 'order=c'  -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
     Remove-Item $env:NEXUS_TEST_LOG
     $env:NEXUS_NO_WHPX = '1'
     & $launcher -QemuDir $root -DiskPath $disk -Boot disk -Acceleration tcg

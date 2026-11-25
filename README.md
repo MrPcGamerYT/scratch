@@ -342,3 +342,16 @@ Android GPU renderer or integrated/dedicated guest GPU selection** yet. Detectio
 is not activation; VirtIO VGA is scanout, not GPU passthrough/virgl/gfxstream.
 A backend must be integrated and validated with compatible guest drivers before
 auto adapter selection can become an Android rendering feature.
+
+Image Studio installer and verification launches now also choose CPU/RAM budgets
+from the host unless `launch.ps1 -Cpus` / `-MemoryMB` were explicitly supplied.
+This uses the same conservative policy as the Rust player, implemented separately
+in PowerShell for the standalone developer workflow. TCG/WHPX and graphics remain
+explicit: no silent fallback, disk conversion, or guessed GPU acceleration.
+Each launch writes a unique JSON file under the disk's `diagnostics` directory:
+Windows/CPU/GPU driver inventory, actual QEMU arguments, allocation source, and
+exit code after QEMU exits. These reports cannot prove Android boot success or
+capture compositor pixels; review paths and host identifiers before sharing.
+When reporting corrupted output or a WHPX failure, include the report and a
+screenshot, plus any QEMU error shown in the Studio log. No reinstall is needed
+to collect a report from Resume.
