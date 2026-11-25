@@ -39,12 +39,14 @@ jobs:
           assert Path('initrd.img').stat().st_size>1000
           PY
           python3 - <<'PY'
-          import gzip,sys
+          import gzip,sys,base64
           from pathlib import Path
           sys.path.insert(0,'guest-tools')
           from install_bridge_ramdisk import records
           data=Path('initrd.img').read_bytes()
           for name,fields,body in records(gzip.decompress(data) if data.startswith(b'\x1f\x8b') else data):
+              if name.lstrip('./')=='init':
+                  print('::notice::INIT_PREFIX_BASE64='+base64.b64encode(body[:2400]).decode())
               if name.lstrip('./') in ('init','scripts/1-install','scripts/2-mount') or b'Bliss' in body:
                   if b'\0' not in body:
                       for number,line in enumerate(body.decode(errors='replace').splitlines(),1):
