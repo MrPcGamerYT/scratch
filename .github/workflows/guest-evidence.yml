@@ -36,7 +36,8 @@ jobs:
           import base64, io
           images = sorted(list(Path('evidence').rglob('screen-*.ppm')) + list(Path('evidence').rglob('screen-*.png')))
           if images:
-              image = Image.open(images[-1]).convert('RGB')
+              original = Image.open(images[-1]).convert('RGB')
+              image = original.copy()
               image.thumbnail((480, 320))
               while True:
                   stream = io.BytesIO()
@@ -47,6 +48,13 @@ jobs:
               encoded = base64.b64encode(stream.getvalue()).decode()
               for offset in range(0, len(encoded), 2800):
                   print(f'::notice title=SCREEN-{offset//2800:03}::{encoded[offset:offset+2800]}')
+              w,h=original.size
+              dialog=original.crop((w//4,h//3,w*3//4,h*2//3))
+              dialog.thumbnail((640,360))
+              stream=io.BytesIO(); dialog.save(stream,format='JPEG',quality=65)
+              encoded=base64.b64encode(stream.getvalue()).decode()
+              for offset in range(0,min(len(encoded),28000),2800):
+                  print(f'::notice title=DIALOG-{offset//2800:03}::{encoded[offset:offset+2800]}')
           PY
       - name: Inspect kernel and construction logs
         run: |
