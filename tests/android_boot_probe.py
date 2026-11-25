@@ -44,6 +44,22 @@ def boot_recipe(tree):
     raise RuntimeError('No supported literal live-boot kernel/initrd recipe found in ISO; refusing to guess')
 
 
+# Diagnostic hypotheses, NOT production presets or measured optimizations.
+PROFILES = {
+    'baseline': ('max', ''),
+    'no-avx': ('max,avx=off,avx2=off,f16c=off,fma=off', ''),
+    'drm-gbm': ('max', 'HWC=drm GRALLOC=gbm'),
+    'drm-gbm-no-avx': ('max,avx=off,avx2=off,f16c=off,fma=off', 'HWC=drm GRALLOC=gbm'),
+}
+
+
+def profile_recipe(profile, command_line):
+    cpu, overrides = PROFILES[profile]
+    keys = {option.split('=', 1)[0] for option in overrides.split()}
+    preserved = [option for option in command_line.split() if option.split('=', 1)[0] not in keys]
+    return cpu, ' '.join(preserved + overrides.split())
+
+
 def assess_ui(properties, logcat):
     if re.search(r'Fatal signal[^\n]*(?:llvmpipe|surfaceflinger|setupwizard)', logcat, re.I):
         return False, 'Renderer/compositor/setup-wizard fatal signal captured; framework boot completion is not a usable desktop'
@@ -76,8 +92,14 @@ def run(args):
               'scope': 'Linux TCG live ISO; not Windows WHPX, installed disk, or game validation'}
     process = None
     serial_file = None
+    endpoint = None
+    qmp_port = None
+    started = time.monotonic()
     try:
         kernel, initrd, command_line, config = boot_recipe(pathlib.Path(args.tree))
+        cpu, command_line = profile_recipe(args.profile, command_line)
+        result['profile'] = args.profile
+        result['guest_gpu_acceleration'] = False
         result.update(kernel=str(kernel), initrd=str(initrd), source_config=config, iso_kernel_args=command_line)
         # Reserve local ephemeral ports; CI runs each probe in its own isolated job.
         def free_port():
@@ -86,7 +108,7 @@ def run(args):
                 return sock.getsockname()[1]
         qmp_port, adb_port = free_port(), free_port()
         command = ['qemu-system-x86_64', '-machine', 'q35', '-accel', 'tcg,thread=multi',
-                   '-cpu', 'max', '-smp', '2', '-m', '3072', '-display', 'none',
+                   '-cpu', cpu, '-smp', '2', '-m', '3072', '-display', 'none',
                    '-kernel', str(kernel), '-initrd', str(initrd),
                    '-append', command_line + ' console=ttyS0,115200',
                    '-cdrom', str(pathlib.Path(args.iso).resolve()), '-boot', 'order=d',
@@ -146,6 +168,22 @@ def run(args):
         result['status'] = 'failed'
         result['error'] = str(error)
     finally:
+        # Capture late UI state and evidence on failure too, before stopping QEMU.
+        if process is not None and process.poll() is None:
+            if endpoint:
+                for name, command_args in [('getprop.txt', ['getprop']), ('logcat.txt', ['logcat', '-d', '-t', '4000'])]:
+                    try:
+                        capture = subprocess.run(['adb', '-s', endpoint, 'shell', *command_args], capture_output=True, timeout=20)
+                        if capture.returncode == 0:
+                            (output / name).write_bytes(capture.stdout)
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+            if qmp_port:
+                try:
+                    capture_screen(qmp_port, output / 'screen-final.ppm')
+                except (OSError, ValueError, RuntimeError):
+                    pass
+        result['elapsed_seconds'] = round(time.monotonic() - started, 1)
         if process is not None and process.poll() is None:
             process.terminate()
             try:
@@ -165,5 +203,6 @@ if __name__ == '__main__':
     parser.add_argument('--tree', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--graphics', choices=['std', 'virtio'], required=True)
+    parser.add_argument('--profile', choices=list(PROFILES), default='baseline')
     parser.add_argument('--timeout', type=int, default=720)
     raise SystemExit(run(parser.parse_args()))

@@ -7,31 +7,47 @@ on:
       - .github/workflows/android-boot.yml
 jobs:
   android:
-    name: Bliss 16.9.7 live / ${{ matrix.graphics }} / Linux TCG
+    name: Bliss 16.9.7 / ${{ matrix.profile }} / Linux TCG
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        graphics: [std, virtio]
+        include:
+          - {graphics: virtio, profile: no-avx}
+          - {graphics: virtio, profile: drm-gbm}
+          - {graphics: virtio, profile: drm-gbm-no-avx}
     steps:
       - uses: actions/checkout@v4
       - name: Install test tools
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 adb p7zip-full
       - name: Probe parser unit tests
         run: python3 tests/android_probe_tests.py
+      - uses: actions/cache/restore@v4
+        id: iso-cache
+        with:
+          path: bliss.iso
+          key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
       - name: Download exact diagnostic fixture
+        id: fixture
         run: |
           mkdir -p evidence fixture
-          curl --fail --location --retry 3 --connect-timeout 30 --max-time 600 \
+          if [ ! -f bliss.iso ]; then
+            curl --fail --location --retry 2 --retry-max-time 600 --connect-timeout 30 --max-time 600 \
             'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS16/Gapps/Generic/Bliss-v16.9.7-x86_64-OFFICIAL-gapps-20241011.iso' -o bliss.iso
+          fi
           # Fingerprint of the user's tested ISO, not an independently verified publisher signature.
           echo '17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751  bliss.iso' | tee evidence/fixture.sha256
           sha256sum -c evidence/fixture.sha256
           7z l bliss.iso > evidence/iso-files.txt
           7z x bliss.iso -ofixture > evidence/extraction.txt
+      - uses: actions/cache/save@v4
+        if: ${{ always() && steps.fixture.outcome == 'success' && steps.iso-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: bliss.iso
+          key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
       - name: Probe actual Android boot (not firmware smoke test)
-        run: python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --output evidence --timeout 720
+        run: python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --profile '${{ matrix.profile }}' --output evidence --timeout 720
       - name: Expose diagnostic summary through GitHub checks
         if: always()
         run: |
@@ -71,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bliss-live-${{ matrix.graphics }}-evidence
+          name: bliss-${{ matrix.profile }}-evidence
           path: evidence/
           if-no-files-found: warn
           retention-days: 7

@@ -37,6 +37,14 @@ class RecipeTests(unittest.TestCase):
         self.assertTrue(probe.assess_ui(props, '')[0])
         self.assertFalse(probe.assess_ui(props.replace('[stopped]', '[running]'), '')[0])
 
+    def test_diagnostic_profiles_are_explicit_and_preserve_boot_args(self):
+        cpu, args = probe.profile_recipe('drm-gbm-no-avx', 'root=/dev/ram0 SRC= DATA= HWC=old GRALLOC=old')
+        self.assertIn('avx=off', cpu)
+        self.assertEqual(args, 'root=/dev/ram0 SRC= DATA= HWC=drm GRALLOC=gbm')
+        self.assertEqual(probe.profile_recipe('baseline', 'root=/dev/ram0 SRC=')[1], 'root=/dev/ram0 SRC=')
+        with self.assertRaises(KeyError):
+            probe.profile_recipe('unvalidated', '')
+
     def test_unknown_recipe_fails_instead_of_guessing(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(RuntimeError):
