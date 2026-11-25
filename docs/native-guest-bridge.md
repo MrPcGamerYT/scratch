@@ -46,7 +46,11 @@ Fresh settings initialization preconfirms the standard immersive tutorial to
 avoid its measured focus-event ANR; no ANR records or dialogs are suppressed.
 
 Guest artifact: `15040221057` (Nexus-Android11-FOSS-Candidate).
-Matching Windows host test/build run: `45617255804`, Player artifact `15023935349`.
+Matching full Windows host build/test run: `45648311057`, Player artifact `15039324974`.
+Downloaded ZIP independently passed every CRC and packaged SHA256 in run
+`45650879381`. ZIP SHA256:
+`e3970f8efbe21c4dfaf743033228a8a154f3a30ce5a899e9c7f099d60aef5a7c`.
+ZIP size: 2,105,727,720 bytes. QCOW2 size: 2,064,516,608 bytes.
 Use a separate new instance; never replace an existing backing base in place.
 Drive transfer has not completed: workspace uploads are capped at 100 MB, the
 artifact is about 2.1 GB, and GitHub integration cannot write the temporary upload
