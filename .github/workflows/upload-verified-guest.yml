@@ -1,0 +1,76 @@
+name: Upload verified guest to connected Drive session
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  upload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Fetch exactly the verified artifact and verify ZIP CRCs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${{ github.repository }}/actions/runs/45648355363 --jq .conclusion | grep -x success
+          gh api repos/${{ github.repository }}/actions/artifacts/15040221057/zip > Nexus-Android11-FOSS-Candidate-c032908.zip
+          python3 - <<'PY'
+          import zipfile, pathlib, hashlib
+          path=pathlib.Path('Nexus-Android11-FOSS-Candidate-c032908.zip')
+          assert path.stat().st_size==2105727720, path.stat().st_size
+          with zipfile.ZipFile(path) as archive:
+              assert archive.testzip() is None
+              names=archive.namelist()
+              assert 'images/android-base.qcow2' in names and 'SHA256SUMS.txt' in names
+              for line in archive.read('SHA256SUMS.txt').decode().splitlines():
+                  expected,name=line.split('  ',1)
+                  h=hashlib.sha256()
+                  with archive.open(name) as content:
+                      for block in iter(lambda:content.read(4194304),b''): h.update(block)
+                  assert h.hexdigest()==expected,name
+          h=hashlib.sha256()
+          with path.open('rb') as content:
+              for block in iter(lambda:content.read(4194304),b''): h.update(block)
+          print('::notice title=Verified ZIP SHA256::'+h.hexdigest())
+          PY
+      - name: Stream verified ZIP using temporary scoped upload session
+        env:
+          DRIVE_SESSION: ${{ secrets.NEXUS_DRIVE_UPLOAD_SESSION }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, urllib.request, urllib.error, json, time
+          path=pathlib.Path('Nexus-Android11-FOSS-Candidate-c032908.zip')
+          total=path.stat().st_size
+          uri=os.environ['DRIVE_SESSION']
+          assert uri.startswith('https://www.googleapis.com/upload/drive/v3/files?')
+          offset=0
+          with path.open('rb') as source:
+              while offset<total:
+                  source.seek(offset); chunk=source.read(8388608)
+                  end=offset+len(chunk)
+                  request=urllib.request.Request(uri,data=chunk,method='PUT',headers={
+                      'Content-Type':'application/zip',
+                      'Content-Range':f'bytes {offset}-{end-1}/{total}',
+                      'X-Goog-Upload-Offset':str(offset),
+                      'X-Goog-Upload-Command':'upload, finalize' if end==total else 'upload',
+                      'X-Goog-Upload-Total-Size':str(total)})
+                  try: response=urllib.request.urlopen(request,timeout=180)
+                  except urllib.error.HTTPError as error:
+                      if error.code!=308: raise RuntimeError(f'Drive upload failed with HTTP {error.code}; do not blindly restart session') from None
+                      response=error
+                  status=response.headers.get('X-Goog-Upload-Status','')
+                  body=response.read()
+                  if status=='final' or (end==total and response.code in (200,201)):
+                      result=json.loads(body)
+                      assert result.get('id'), 'Missing final Drive file ID'
+                      print('::notice title=Drive uploaded file::'+json.dumps(result))
+                      assert end==total
+                      offset=end; break
+                  assert status=='active' or response.code==308, 'Unrecognized resumable response'
+                  acknowledged=response.headers.get('Range','')
+                  offset=int(acknowledged.rsplit('-',1)[1])+1 if acknowledged else end
+                  print(f'Uploaded {offset}/{total} bytes')
+          assert offset==total
+          PY
