@@ -10,8 +10,6 @@ jobs:
   candidate:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      ADB_VENDOR_KEYS: ${{ github.workspace }}/candidate/ci-adbkey
     steps:
       - uses: actions/checkout@v4
       - name: Install isolated guest tools
@@ -76,21 +74,20 @@ jobs:
           cp /usr/share/doc/musl/copyright source-evidence/MUSL-COPYRIGHT.txt
           dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
           musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
-          /usr/bin/python3 guest-tools/install_bridge_tree.py --tree fixture --agent candidate/nexus-agent --evidence source-evidence 2>&1 | tee source-evidence/bridge-build.log
-          adb keygen candidate/ci-adbkey
-          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --provision-adb-key candidate/ci-adbkey.pub --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
           /usr/bin/python3 guest-tools/make_boot_animation.py candidate/nexus-bootanimation.zip
+          /usr/bin/python3 guest-tools/install_bridge_tree.py --tree fixture --agent candidate/nexus-agent --evidence source-evidence --boot-animation candidate/nexus-bootanimation.zip 2>&1 | tee source-evidence/bridge-build.log
+          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
       - name: First boot, explicitly provision clean offline template and require Home without ANRs
         run: |
           qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/android-candidate.qcow2" candidate/provision.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/provision-vars.fd
-          /usr/bin/python3 tests/android_boot_probe.py --disk candidate/provision.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/provision-vars.fd --graphics virtio --profile drm-gbm-no-avx --require-home --prepare-home --boot-animation candidate/nexus-bootanimation.zip --output candidate/evidence/first-boot --timeout 900
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/provision.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/provision-vars.fd --provision --output candidate/evidence/first-boot --timeout 900
       - name: Flatten only after confirmed clean shutdown
         run: |
           python3 - <<'PY'
           import json
           result=json.load(open('candidate/evidence/first-boot/result.json'))
-          assert result.get('clean_shutdown') and result.get('home_gate',{}).get('resumed_home') and result.get('boot_branding',{}).get('sha256'), result
+          assert result.get('clean_shutdown') and result.get('home_without_adb') and result.get('provisioned_this_boot'), result
           PY
           qemu-img convert -c -f qcow2 -O qcow2 candidate/provision.qcow2 candidate/nexus-android11.qcow2
           qemu-img check candidate/nexus-android11.qcow2
@@ -108,7 +105,7 @@ jobs:
           root=pathlib.Path('candidate'); out=pathlib.Path('guest-download'); images=out/'images'
           first=json.loads((root/'evidence/first-boot/result.json').read_text()); second=json.loads((root/'evidence/second-boot/result.json').read_text())
           assert first.get('clean_shutdown') and second.get('clean_shutdown')
-          assert first['home_gate']['sdk']=='30' and second.get('home_without_adb') and second.get('native_home_command_completed') and second.get('adb_used') is False
+          assert first.get('home_without_adb') and first.get('adb_used') is False and second.get('home_without_adb') and second.get('native_home_command_completed') and second.get('adb_used') is False
           images.mkdir(parents=True)
           (images/'android-base.qcow2').hardlink_to(root/'nexus-android11.qcow2')
           for source,name in [('/usr/share/OVMF/OVMF_CODE_4M.fd','android-uefi-code.fd'),('/usr/share/OVMF/OVMF_VARS_4M.fd','android-uefi-vars.fd')]: shutil.copyfile(source,images/name)

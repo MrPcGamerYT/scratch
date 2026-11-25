@@ -20,7 +20,8 @@ class GuestBridgeTests(unittest.TestCase):
         self.assertEqual(data['keep'][1],b'unchanged')
         self.assertEqual(data['keep'][0][5],1234)
         self.assertIn(b'import /init.nexus.rc',data['init.rc'][1])
-        self.assertIn(b'/data/.nexus-provision',data['nexus-provision.sh'][1])
+        self.assertIn(b'/data/.nexus-provision',data['nexus-provision-home.sh'][1])
+        self.assertNotIn('nexus-provision.sh',data)
         self.assertEqual(data['nexus-agent'][0][1],0o100755)
         with self.assertRaises(ValueError): patch(b'not-cpio',b'agent')
 

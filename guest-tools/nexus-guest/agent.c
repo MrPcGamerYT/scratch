@@ -23,6 +23,7 @@ static int command(const char *line, const char **name, const char **key) {
         {"NEXUS 1 BACK", "BACK", "4"}, {"NEXUS 1 HOME", "HOME", "3"},
         {"NEXUS 1 RECENTS", "RECENTS", "187"}, {"NEXUS 1 VOLUME_UP", "VOLUME_UP", "24"},
         {"NEXUS 1 VOLUME_DOWN", "VOLUME_DOWN", "25"}, {"NEXUS 1 MUTE", "MUTE", "164"},
+        {"NEXUS 1 PROVISION_HOME", "PROVISION_HOME", "PROVISION_HOME"},
         {"NEXUS 1 CHECK_HOME", "CHECK_HOME", "CHECK_HOME"},
         {"NEXUS 1 SHUTDOWN", "SHUTDOWN", NULL}
     };
@@ -39,21 +40,24 @@ static int execute(const char *key) {
     pid_t child = fork();
     if (child < 0) return -1;
     if (!child) {
+        setpgid(0,0);
         int nullfd = open("/dev/null", O_RDWR);
         if (nullfd >= 0) { dup2(nullfd,0); dup2(nullfd,1); dup2(nullfd,2); if (nullfd > 2) close(nullfd); }
-        if (key && !strcmp(key,"CHECK_HOME")) execl("/system/bin/sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
+        if (key && !strcmp(key,"PROVISION_HOME")) execl("/system/bin/sh", "sh", access("/nexus-provision-home.sh",R_OK)==0 ? "/nexus-provision-home.sh" : "/system/bin/nexus-provision-home.sh", (char *)NULL);
+        else if (key && !strcmp(key,"CHECK_HOME")) execl("/system/bin/sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
         else if (key) execl("/system/bin/input", "input", "keyevent", key, (char *)NULL);
         else execl("/system/bin/svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
     }
-    for (int i = 0; i < 150; ++i) {
+    int budget = key && !strcmp(key,"PROVISION_HOME") ? 1200 : (key && !strcmp(key,"CHECK_HOME") ? 600 : 150);
+    for (int i = 0; i < budget; ++i) {
         int status = 0;
         pid_t result = waitpid(child, &status, WNOHANG);
         if (result == child) return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
         if (result < 0 && errno != EINTR) return -1;
         struct timespec pause = {0,100000000}; nanosleep(&pause,NULL);
     }
-    kill(child, SIGKILL); waitpid(child,NULL,0); return -1;
+    kill(-child, SIGKILL); kill(child, SIGKILL); waitpid(child,NULL,0); return -1;
 #endif
 }
 

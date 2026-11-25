@@ -22,8 +22,13 @@ def run(args):
     with (output/'serial.log').open('wb') as serial:
         try:
             process=subprocess.Popen(command,stdout=serial,stderr=serial)
-            deadline=time.monotonic()+args.timeout; hello=False; phase='ready'
+            deadline=time.monotonic()+args.timeout; hello=False; phase='ready'; next_capture=0; captures=0; complete_replies=0
             while time.monotonic()<deadline:
+                if time.monotonic()>=next_capture:
+                    captures+=1
+                    try: capture_screen(qmp_port,output/f'screen-{captures:02}.ppm')
+                    except (OSError,RuntimeError,ValueError): pass
+                    next_capture=time.monotonic()+60
                 if process.poll() is not None: raise RuntimeError('Engine exited before bridge gates')
                 if channel is None:
                     try: channel=socket.create_connection(('127.0.0.1',bridge_port),timeout=1); channel.settimeout(1)
@@ -38,7 +43,16 @@ def run(args):
                     text=line.decode('ascii'); events.append(text)
                     if line==b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK': hello=True
                     elif line==b'NEXUS 1 READY 1' and hello and phase=='ready':
-                        result['bridge_boot_ready_seconds']=round(time.monotonic()-started,2)
+                        complete_replies+=1
+                        if complete_replies>=3:
+                            result['bridge_boot_ready_seconds']=round(time.monotonic()-started,2)
+                            if args.provision:
+                                channel.sendall(b'NEXUS 1 PROVISION_HOME\n'); phase='provision'
+                            else:
+                                channel.sendall(b'NEXUS 1 CHECK_HOME\n'); phase='check'
+                    elif line==b'NEXUS 1 READY 0' and phase=='ready': complete_replies=0
+                    elif line==b'NEXUS 1 RESULT PROVISION_HOME OK' and phase=='provision':
+                        result['provisioned_this_boot']=True
                         channel.sendall(b'NEXUS 1 CHECK_HOME\n'); phase='check'
                     elif line==b'NEXUS 1 RESULT CHECK_HOME OK' and phase=='check':
                         result['home_without_adb']=True; result['no_recorded_anr']=True
@@ -75,4 +89,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     for name in ['disk','uefi-code','uefi-vars','output']: parser.add_argument('--'+name,required=True)
     parser.add_argument('--timeout',type=int,default=900)
+    parser.add_argument('--provision',action='store_true')
     raise SystemExit(run(parser.parse_args()))

@@ -13,7 +13,7 @@ from install_bridge_ramdisk import patch, record, records
 import stat
 
 
-def install(tree, agent, evidence):
+def install(tree, agent, evidence, boot_animation=None):
     tree,agent,evidence=Path(tree),Path(agent),Path(evidence)
     evidence.mkdir(parents=True,exist_ok=True)
     if (tree/'ramdisk.img').is_file():
@@ -61,6 +61,15 @@ def install(tree, agent, evidence):
                     g.write(target,body); g.chown(0,0,target); g.chmod(fields[1]&0o7777,target)
                     label='u:object_r:system_file:s0'
                     g.setxattr('security.selinux',label,len(label),target)
+                if boot_animation:
+                    animation=Path(boot_animation).read_bytes()
+                    targets=[path for path in ['/system/media/bootanimation.zip','/system/product/media/bootanimation.zip','/product/media/bootanimation.zip'] if g.is_file(path)]
+                    if not targets and g.is_dir(prefix+'/media'): targets=[prefix+'/media/bootanimation.zip']
+                    if not targets: raise ValueError('No recognized boot animation path; refusing guessed branding')
+                    for target in targets:
+                        g.write(target,animation); g.chown(0,0,target); g.chmod(0o644,target)
+                        label='u:object_r:system_file:s0'; g.setxattr('security.selinux',label,len(label),target)
+                    (evidence/'boot-asset-paths.json').write_text(json.dumps(targets))
                 (evidence/'integration-method.txt').write_text('Recognized Android 11 system init directory; SELinux system_file labels retained for new files.\n')
             else:
                 candidates=[path for path in ['/ramdisk.img','/system/ramdisk.img'] if g.is_file(path)]
@@ -84,7 +93,8 @@ def install(tree, agent, evidence):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     for key in ['tree','agent','evidence']: parser.add_argument('--'+key,required=True)
+    parser.add_argument('--boot-animation')
     args=parser.parse_args()
-    try: install(args.tree,args.agent,args.evidence)
+    try: install(args.tree,args.agent,args.evidence,args.boot_animation)
     except Exception as error:
         print('::error::Native guest integration failed: '+str(error)); raise

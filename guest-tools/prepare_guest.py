@@ -21,8 +21,9 @@ def payloads(tree):
     return names
 
 
-def grub_config(profile):
+def grub_config(profile, serial_console=False):
     options = {'no-avx': '', 'drm-gbm': 'HWC=drm GRALLOC=gbm', 'drm-gbm-no-avx': 'HWC=drm GRALLOC=gbm'}[profile]
+    if serial_console: options += ' console=ttyS0,115200'
     return '''set timeout=0
 menuentry 'Nexus experimental Android candidate' {
  search --no-floppy --label NEXUS_SYS --set=root
@@ -64,7 +65,7 @@ def build(args):
     with tempfile.TemporaryDirectory(prefix='nexus-guest-', dir=output.parent) as folder:
         work = Path(folder)
         config = work / 'grub.cfg'
-        config.write_text(grub_config(args.profile))
+        config.write_text(grub_config(args.profile, getattr(args, 'native_bridge', False)))
         efi = work / 'BOOTX64.EFI'
         subprocess.run(['grub-mkstandalone', '-O', 'x86_64-efi', '--modules=part_gpt fat ext2 normal linux search search_label', '-o', str(efi), 'boot/grub/grub.cfg=' + str(config)], check=True)
         disk = work / 'candidate.qcow2'
@@ -86,10 +87,6 @@ def build(args):
             g.mkdir('/android/data')
             if getattr(args, 'native_bridge', False):
                 g.write('/android/data/.nexus-provision', b'clean-ci-template-only\n')
-                key = getattr(args, 'provision_adb_key', '')
-                if not key:
-                    raise ValueError('Native CI provisioning requires an ephemeral authorized public key')
-                g.write('/android/data/.nexus-provision-adb.pub', Path(key).read_bytes())
             for name in names:
                 g.upload(str(tree / name), '/android/' + name)
             g.mkdir_p('/boot/efi')
@@ -129,5 +126,4 @@ if __name__ == '__main__':
     parser.add_argument('--profile', choices=['no-avx', 'drm-gbm', 'drm-gbm-no-avx'], required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--native-bridge', action='store_true')
-    parser.add_argument('--provision-adb-key', default='')
     build(parser.parse_args())
