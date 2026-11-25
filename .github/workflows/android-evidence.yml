@@ -14,12 +14,16 @@ permissions:
   contents: read
 jobs:
   inspect:
+    strategy:
+      fail-fast: false
+      matrix:
+        graphics: [std, virtio]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: bliss-live-virtio-evidence
+          name: bliss-live-${{ matrix.graphics }}-evidence
           path: evidence
           run-id: ${{ inputs.run_id || '45558822347' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
