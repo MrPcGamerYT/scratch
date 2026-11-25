@@ -1,0 +1,81 @@
+name: Portable Windows 10 guest editor
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  appliance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y debootstrap qemu-system-x86 qemu-utils squashfs-tools e2fsprogs
+      - run: python3 tests/portable_workspace_test.py
+      - name: Build bundled Linux maintenance appliance
+        run: bash image-studio-tools/portable/build_appliance.sh
+      - name: Real isolated VM nested-image editing test
+        run: python3 -u tests/portable_appliance_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-editor-linux-evidence
+          path: appliance-test.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-editor-appliance
+          path: appliance/
+  windows:
+    needs: appliance
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-editor-appliance
+          path: portable/appliance
+      - uses: actions/download-artifact@v4
+        with:
+          name: QEMU-source-build
+          run-id: 45652854267
+          github-token: ${{ github.token }}
+          path: engine
+      - name: Assemble fully bundled Windows runtime
+        shell: pwsh
+        run: |
+          Get-ChildItem engine -Recurse -Filter NexusEngine.exe | Select-Object -ExpandProperty FullName
+          $engine = Get-ChildItem engine -Recurse -Filter NexusEngine.exe | Select-Object -First 1
+          $qemu = Split-Path (Split-Path $engine.FullName)
+          Copy-Item -Recurse $qemu portable/qemu
+          Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip -OutFile python.zip
+          Expand-Archive python.zip portable/python
+          Copy-Item image-studio-tools/portable/editor_host.py,image-studio-tools/portable/editor.html portable/
+          Copy-Item image-studio-tools/portable/Start-Nexus-Editor.cmd portable/
+          Copy-Item image-studio-tools/portable/README.txt portable/
+          Copy-Item packaging/THIRD-PARTY.md portable/
+          & portable/python/python.exe -c "import pathlib; compile(pathlib.Path('portable/editor_host.py').read_text(), 'editor_host.py', 'exec'); print('Bundled Python imports OK')"
+          & portable/qemu/bin/qemu-img.exe --version
+          & portable/qemu/bin/NexusEngine.exe --version
+      - name: Test exact bundled Windows engine boot and API
+        shell: pwsh
+        run: portable/python/python.exe tests/portable_windows_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-editor-windows-evidence
+          path: windows-appliance-test.log
+      - name: ZIP64 package and full CRC / SHA verification
+        shell: pwsh
+        run: |
+          python -c "import runpy; build_archive=runpy.run_path('packaging/package_release.py')['build_archive']; build_archive('portable','downloads/Nexus-Portable-Guest-Editor-Win10.zip',['Start-Nexus-Editor.cmd','python/python.exe','qemu/bin/NexusEngine.exe','qemu/bin/qemu-img.exe','appliance/root.qcow2','appliance/vmlinuz','appliance/initrd','editor_host.py','editor.html'])"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nexus-Portable-Guest-Editor-Win10
+          path: downloads/*
+      - name: Publish verified preview
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "portable-editor-${GITHUB_RUN_ID}" downloads/* --title 'Nexus Portable Guest Editor — Windows 10 Preview' --notes 'Self-contained preview: bundled Python, QEMU and isolated Linux maintenance appliance. Tests cover real Linux nested squashfs/ext4 editing and bundled Windows TCG maintenance boot. Not yet an Android launcher/boot compatibility certification. Existing Image Studio ISO installer remains separate. Extract the complete ZIP, run Start-Nexus-Editor.cmd, and always edit a new copy.' --prerelease
