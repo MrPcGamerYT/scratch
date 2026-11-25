@@ -86,6 +86,13 @@ def capture_screen(port, filename):
         execute({'execute': 'screendump', 'arguments': {'filename': str(filename)}})
 
 
+def capture_adb_screen(endpoint, filename):
+    capture = subprocess.run(['adb', '-s', endpoint, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=45)
+    if capture.returncode != 0 or not capture.stdout.startswith(b'\x89PNG\r\n\x1a\n') or b'IEND' not in capture.stdout[-12:]:
+        raise RuntimeError('Guest GL screenshot failed or did not return a complete PNG')
+    filename.write_bytes(capture.stdout)
+
+
 def PathEscape(path):
     return str(pathlib.Path(path).resolve()).replace(',', ',,')
 
@@ -184,7 +191,10 @@ def run(args):
                     result['ui_assessment'] = 'Guest compositor did not report VirGL; refusing to call software fallback a renderer pass'
                 if ready:
                     result['status'] = 'framework_ready_visual_unverified'
-                capture_screen(qmp_port, output / 'screen-final.ppm')
+                if args.profile == 'virgl':
+                    capture_adb_screen(endpoint, output / 'screen-final.png')
+                else:
+                    capture_screen(qmp_port, output / 'screen-final.ppm')
                 break
             time.sleep(5)
         else:
