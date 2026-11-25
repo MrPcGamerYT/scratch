@@ -9,6 +9,12 @@ on:
         required: false
         type: string
 
+      engine_benchmark:
+        description: 'Compare reused candidate engine with the previous baseline'
+        required: false
+        type: boolean
+        default: false
+
 jobs:
   qemu-build:
     if: ${{ inputs.qemu_run_id == '' }}
@@ -235,7 +241,7 @@ jobs:
             exit 1
           }
       - name: Fetch isolated previous engine for reference comparison
-        if: ${{ inputs.qemu_run_id == '' }}
+        if: ${{ inputs.qemu_run_id == '' || inputs.engine_benchmark == true }}
         uses: actions/download-artifact@v4
         with:
           name: QEMU-source-build
@@ -243,13 +249,13 @@ jobs:
           run-id: '45580334830'
           github-token: ${{ github.token }}
       - name: Compare real TCG engines without Android FPS claims
-        if: ${{ inputs.qemu_run_id == '' }}
+        if: ${{ inputs.qemu_run_id == '' || inputs.engine_benchmark == true }}
         shell: pwsh
         run: |
           python tests/tcg_engine_benchmark.py --baseline baseline-qemu --candidate package/qemu
           if ($LASTEXITCODE -ne 0) { throw 'Actual TCG engine comparison failed.' }
       - uses: actions/upload-artifact@v4
-        if: ${{ always() && inputs.qemu_run_id == '' }}
+        if: ${{ always() && (inputs.qemu_run_id == '' || inputs.engine_benchmark == true) }}
         with:
           name: Nexus-engine-reference-evidence
           path: |

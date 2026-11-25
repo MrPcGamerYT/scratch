@@ -75,7 +75,7 @@ def main():
     parser.add_argument('--baseline', required=True)
     parser.add_argument('--candidate', required=True)
     parser.add_argument('--output', default='tcg-engine-results.json')
-    parser.add_argument('--iterations', type=int, default=50000000)
+    parser.add_argument('--iterations', type=int, default=500000000)
     args = parser.parse_args()
     if not 1 <= args.iterations <= 1000000000:
         parser.error('iterations out of range')
@@ -84,12 +84,12 @@ def main():
         boot.write_bytes(boot_sector(args.iterations))
         # Alternate order across pairs to reduce systematic warm-up/order bias.
         results = {'baseline': [], 'candidate': []}
-        for pair in range(3):
+        for pair in range(5):
             order = ['baseline', 'candidate'] if pair % 2 == 0 else ['candidate', 'baseline']
             for name in order:
                 results[name].extend(measure(getattr(args, name), boot, 1)['seconds_including_firmware_startup'])
     summary = {name: {'seconds': values, 'median_seconds': statistics.median(values)} for name, values in results.items()}
-    summary['scope'] = 'Single-vCPU TCG integer LCG + firmware startup; NOT Android, WHPX, graphics, input latency or game FPS. Three samples each on one shared CI host.'
+    summary['scope'] = 'Single-vCPU TCG integer LCG + firmware startup; NOT Android, WHPX, graphics, input latency or game FPS. Five samples each on one shared CI host.'
     summary['iterations'] = args.iterations
     summary['baseline_over_candidate_ratio'] = round(summary['baseline']['median_seconds'] / summary['candidate']['median_seconds'], 4)
     text = json.dumps(summary, indent=2)

@@ -20,8 +20,8 @@ while keeping asynchronous updates immediate. Its executable VGA work-count test
 checks reduced presentation calls; this is not proof of higher Android FPS.
 
 `tests/tcg_engine_benchmark.py` compares the last baseline engine and the candidate
-on the same Windows runner using alternating sample order, three samples each.
-A boot sector executes 50 million 32-bit integer LCG steps and checks its final
+on the same Windows runner using alternating sample order, five samples each.
+A boot sector executes 500 million 32-bit integer LCG steps and checks its final
 result against independent affine exponentiation. Both correctness and guest
 exit must pass. Wall time includes firmware/startup. Results and provenance are
 uploaded as `Nexus-engine-reference-evidence`. No speed threshold is invented:
@@ -43,3 +43,14 @@ Android responsiveness, GPU performance, WHPX stability or gaming superiority.
 
 See `graphics-backends.md` for actual guest evidence, rather than treating a
 successful compiler build or tiny boot sector as Android certification.
+
+## Initial candidate result
+
+Full source build/package run 45595712726 passed. The initial short 50-million-step
+comparison produced candidate median 0.314163 s and baseline/candidate ratio
+0.8934: **no measured speedup**. Three samples included firmware startup and were
+too short/noisy for a broad conclusion. The benchmark was subsequently extended
+to 500 million steps and five alternating samples per engine. The candidate
+Player ZIP was 83,086,323 bytes versus the preceding 108,083,378-byte Player ZIP
+(about 23% smaller); package size is not Android FPS. The engine is a candidate,
+not a certified faster replacement. Neither run certifies Android ANR fixes.
