@@ -1,0 +1,28 @@
+{
+  "guest_run": "45648355363",
+  "guest_commit": "c032908",
+  "home_export_run": "45668085298",
+  "boot_export_run": "45667698433",
+  "files": {
+    "nexus-boot-artwork.png": {
+      "bytes": 6642,
+      "sha256": "3729c5ad6d3d5cee708dd9ab74450f9ed515d3e2453591fc622e5ab6a300d676"
+    },
+    "nexus-engine-icon.png": {
+      "bytes": 2007,
+      "sha256": "76618f7aacf75b41f4351cfa4fe45989c18d02a556754e38acd3e40974e43a48"
+    },
+    "first-boot-screen-02.jpg": {
+      "bytes": 9747,
+      "sha256": "b87209d9522071afc49ed42ecc4d91d3e09d5f845cc21fb707fc82e8bf00aba8"
+    },
+    "first-boot-screen-final.jpg": {
+      "bytes": 51221,
+      "sha256": "08ab86c62feeaccad84b9cc6ee962f07843d4d0628abdf05288bc4d6e4076982"
+    },
+    "second-boot-screen-final.jpg": {
+      "bytes": 51695,
+      "sha256": "2974eb1d9cf474d3599d47adeff03eb242fb9792fc7a252ad29e39a114748ab9"
+    }
+  }
+}
