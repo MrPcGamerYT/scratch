@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          print('::notice title=Evidence files::' + ', '.join(str(p) for p in Path('evidence').rglob('*') if p.is_file())[:5000])
           for name in ['serial.log', 'build.log', 'ramdisk-format.txt', 'payload-layout.txt', 'bridge-ramdisk.json']:
               paths = list(Path('evidence').rglob(name))
               if not paths:
