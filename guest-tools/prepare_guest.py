@@ -87,6 +87,17 @@ def build(args):
             g.mkdir('/android/data')
             if getattr(args, 'native_bridge', False):
                 g.write('/android/data/.nexus-provision', b'clean-ci-template-only\n')
+                # Android 11 SettingsProvider schema 191, fresh account-free data only.
+                # Confirm the standard immersive-mode tutorial before FallbackHome
+                # starts: CI recorded a 5-second focus ANR in that tutorial window.
+                directory='/android/data/system/users/0'
+                g.mkdir_p(directory)
+                for target in ['/android/data/system','/android/data/system/users',directory]:
+                    g.chown(1000,1000,target); g.chmod(0o700,target)
+                target=directory+'/settings_secure.xml'
+                xml=b'<?xml version="1.0" encoding="utf-8" standalone="yes"?><settings version="191"><setting id="0" name="immersive_mode_confirmations" value="confirmed" package="android" defaultSysSet="false" /></settings>'
+                g.write(target,xml); g.chown(1000,1000,target); g.chmod(0o600,target)
+
             for name in names:
                 g.upload(str(tree / name), '/android/' + name)
             g.mkdir_p('/boot/efi')
