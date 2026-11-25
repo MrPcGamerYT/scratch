@@ -300,3 +300,26 @@ Diagnostics reports movement packets, sent movement batches and maximum observed
 host batching wait. These are **not** hardware latency, input-to-photon latency,
 game FPS, or a performance guarantee. No fake FPS overlay is displayed. GPU
 acceleration and representative game benchmarks remain required milestones.
+
+### Experimental VirtIO display path for corrupted VGA output
+
+Image Studio → Advanced options → Display device now offers Standard VGA and
+VirtIO VGA. Use **Resume with the exact retained workspace** to test a different
+virtual display without reinstalling/formatting the disk. Close the previous VM
+first; preserve a backup after shutdown. On a new boot, do not reapply temporary
+`nomodeset HWACCEL=0` edits when testing the VirtIO driver. Publishing still
+requires a readable Android boot and clean shutdown. A changing logo alone is
+not successful verification.
+
+The chosen device is retained in `images/graphics.txt`; the player inherits it
+unless Settings → Graphics overrides it (restart required). Only `std` and
+`virtio` are accepted; absent/invalid prepared values fall back to Standard VGA.
+Rust flag 32 selects `virtio-vga,id=nexus_display`, with VGA disabled to avoid
+creating two display devices; touch targets the same display ID. Valid flag mask
+is now 63. The required VirtIO VGA ROM is included and checked in portable ZIPs.
+
+This is **not** virgl, Vulkan, DirectX or GPU passthrough. It does not promise a fix
+for striped RGB output, frame-buffer stride/format problems or every Bliss build.
+CI tests device presence and a visible UEFI firmware screendump on both devices,
+not Android colors, compositor correctness or game FPS. Test results from the
+actual guest are still needed before changing defaults.

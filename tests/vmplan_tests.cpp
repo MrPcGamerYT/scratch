@@ -24,6 +24,11 @@ int main() {
     QByteArray software(static_cast<int>(softwareSize), '\0');
     nexus_vm_plan(&request, reinterpret_cast<std::uint8_t *>(software.data()), softwareSize);
     if (!software.contains("tcg,thread=multi") || software.contains("whpx")) return 8;
+    request.flags = 63;
+    const auto virtioSize = nexus_vm_plan(&request, nullptr, 0);
+    QByteArray virtio(static_cast<int>(virtioSize), '\0');
+    nexus_vm_plan(&request, reinterpret_cast<std::uint8_t *>(virtio.data()), virtioSize);
+    if (!virtio.contains("virtio-vga,id=nexus_display") || !virtio.contains("display=nexus_display")) return 11;
     request.cpus = 0;
     if (nexus_vm_plan(&request, nullptr, 0)) return 7;
     std::cout << "Rust VM launch policy C ABI / Qt JSON roundtrip passed; no Android boot or speed claim.\n";

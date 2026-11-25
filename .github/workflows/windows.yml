@@ -183,6 +183,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Cached QEMU artifacts from older builds did not include this ROM.
           Copy-Item uefi-firmware-source/pc-bios/kvmvapic.bin package/qemu/share/qemu/
+          Copy-Item uefi-firmware-source/pc-bios/vgabios-virtio.bin package/qemu/share/qemu/
           Copy-Item uefi-firmware-source/pc-bios/edk2-licenses.txt package/qemu/licenses/
           Copy-Item packaging/THIRD-PARTY.md package/qemu/licenses/
       - name: Test bundled QEMU without MSYS2 installed
@@ -198,6 +199,7 @@ jobs:
             $audio = & $qemu -audiodev help 2>&1
             if ($LASTEXITCODE -ne 0 -or ($audio -join "`n") -notmatch 'dsound') { throw "Bundled QEMU missing DirectSound: $audio" }
             $devices = & $qemu -device help 2>&1
+            if (($devices -join "`n") -notmatch 'virtio-vga') { throw "Bundled QEMU missing virtio-vga" }
             if ($LASTEXITCODE -ne 0 -or ($devices -join "`n") -notmatch 'hda-output' -or ($devices -join "`n") -notmatch 'ich9-intel-hda') { throw "Bundled QEMU missing HDA output devices" }
             $env:QEMU_SYSTEM = $qemu
             $env:QEMU_IMG = $img
@@ -212,6 +214,12 @@ jobs:
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
             if ($code -ne 0) { throw "UEFI smoke failed: $output" }
+            $env:QEMU_TEST_GRAPHICS = 'virtio'
+            $output = & python tests/uefi_smoke.py 2>&1
+            $code = $LASTEXITCODE
+            Remove-Item Env:QEMU_TEST_GRAPHICS
+            $output | ForEach-Object { Write-Host $_ }
+            if ($code -ne 0) { throw "VirtIO UEFI display smoke failed: $output" }
             $output = & python tests/qmp_smoke.py 2>&1
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }

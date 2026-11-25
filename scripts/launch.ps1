@@ -11,7 +11,8 @@ param(
     [ValidateRange(1024, 65535)][int]$AdbPort = 5555,
     [string]$UefiCodePath = '',
     [string]$UefiVarsPath = '',
-    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx'
+    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx',
+    [ValidateSet('std','virtio')][string]$Graphics = 'std'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,7 +36,9 @@ try {
     if ($IsoPath -and -not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) { throw "ISO not found: $IsoPath" }
     $firmware = [IO.Path]::GetFullPath((Join-Path $QemuDir '../share/qemu'))
     if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) {
-        foreach ($rom in @('bios-256k.bin', 'vgabios-stdvga.bin', 'kvmvapic.bin')) {
+        $roms = @('bios-256k.bin', 'vgabios-stdvga.bin', 'kvmvapic.bin')
+        if ($Graphics -eq 'virtio') { $roms += 'vgabios-virtio.bin' }
+        foreach ($rom in $roms) {
             $romPath = Join-Path $firmware $rom
             if (-not (Test-Path -LiteralPath $romPath -PathType Leaf) -or (Get-Item -LiteralPath $romPath).Length -le 0) {
                 throw "Incomplete QEMU firmware bundle: $rom is missing or empty in $firmware. Extract the complete updated package; no VM was started."
@@ -59,7 +62,7 @@ try {
     if ($ForwardAdb) { $net += ",hostfwd=tcp:127.0.0.1:${AdbPort}-:5555" }
     $accelerator = if ($Acceleration -eq 'tcg') { 'tcg,thread=multi' } else { 'whpx,kernel-irqchip=off' }
     $qemuArgs = @('-accel', $accelerator, '-m', "$MemoryMB", '-smp', "$Cpus",
-        '-vga', 'std', '-usb', '-device', 'usb-tablet', '-hda', $diskFull, '-boot', "order=$order",
+        '-vga', $(if ($Graphics -eq 'virtio') { 'none' } else { 'std' }), '-usb', '-device', 'usb-tablet', '-hda', $diskFull, '-boot', "order=$order",
         '-name', 'Project Nexus', '-netdev', $net, '-device', 'virtio-net-pci,netdev=net0,romfile=')
     if (Test-Path -LiteralPath (Join-Path $firmware 'bios-256k.bin') -PathType Leaf) { $qemuArgs += @('-L', $firmware) }
     if ($UefiCodePath) {
@@ -67,6 +70,8 @@ try {
         $codeArg = $codeFull.Replace(',', ',,'); $varsArg = $varsFull.Replace(',', ',,')
         $qemuArgs += @('-machine', 'q35,vmport=off', '-drive', "if=pflash,format=raw,unit=0,readonly=on,file=$codeArg", '-drive', "if=pflash,format=raw,unit=1,file=$varsArg")
     }
+    if ($Graphics -eq 'virtio') { $qemuArgs += @('-device', 'virtio-vga,id=nexus_display') }
+    Write-Host "Display device: $Graphics (no host GPU acceleration)."
     if ($Acceleration -eq 'tcg') { $qemuArgs += @('-cpu', 'max') }
     if ($IsoPath) { $qemuArgs += @('-cdrom', [IO.Path]::GetFullPath($IsoPath)) }
     Write-Host "Starting QEMU with $Acceleration. Shut down Android before closing QEMU."

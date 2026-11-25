@@ -21,6 +21,8 @@ with tempfile.TemporaryDirectory(prefix='uefi,test ') as d:
             '-accel', 'tcg,thread=multi', '-cpu', 'max', '-smp', '2', '-m', '256', '-display', 'none', '-monitor', 'none', '-serial', 'none', '-nic', 'none',
             '-drive', f'if=pflash,format=raw,unit=0,readonly=on,file={drive(code)}',
             '-drive', f'if=pflash,format=raw,unit=1,file={drive(variables)}', '-qmp', 'stdio']
+    graphics = os.environ.get('QEMU_TEST_GRAPHICS', 'std')
+    if graphics == 'virtio': args.extend(['-vga', 'none', '-device', 'virtio-vga,id=nexus_display'])
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
     lines = queue.Queue()
     def reader():
@@ -51,6 +53,6 @@ with tempfile.TemporaryDirectory(prefix='uefi,test ') as d:
         if idx < 0 or not any(data[idx+4:]): raise RuntimeError('UEFI did not display visible output in the smoke-test window')
         cmd('quit'); p.wait(timeout=15)
         assert p.returncode == 0 and hashlib.sha256(template.read_bytes()).digest() == original
-        print('Q35 UEFI firmware displayed output with isolated variable store (explicit multi-thread TCG/max CPU, no Android or WHPX).')
+        print(f'Q35 UEFI firmware displayed output ({graphics}) with isolated variable store (explicit multi-thread TCG/max CPU, no Android or WHPX).')
     finally:
         if p.poll() is None: p.kill(); p.wait()

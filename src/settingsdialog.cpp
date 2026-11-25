@@ -112,7 +112,10 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     connect(apply, &QPushButton::clicked, this, [=] { if (applyDisplay) applyDisplay(resolution->currentData().toString(), density->currentData().toInt()); });
     showCursor = new QCheckBox("Show host mouse cursor", display); form->addRow(showCursor);
     addPage("Graphics", "Current backend capabilities — not simulated graphics options.", &form);
-    form->addRow("Graphics renderer", unavailable("Standard VGA · compatibility")); form->addRow("ASTC textures", unavailable("Not supported"));
+    graphics = new QComboBox; graphics->setObjectName("vmGraphics");
+    graphics->addItem("Use prepared image's selection", "prepared"); graphics->addItem("Standard VGA · compatibility", "std"); graphics->addItem("VirtIO VGA · experimental", "virtio");
+    form->addRow("Display device", graphics);
+    note(form, "Restart required. VirtIO VGA provides an alternative scanout device, not host GPU acceleration. Guest virtio-gpu/DRM drivers are required. Test in Image Studio Resume first. A black/striped display does not prove a device change will fix it. Temporary nomodeset settings can disable the required driver; restart without those experimental boot edits when testing VirtIO."); form->addRow("ASTC textures", unavailable("Not supported"));
     note(form, "Vulkan, DirectX, GPU passthrough and dedicated-GPU selection are not implemented in this player.");
     auto *games = addPage("Game settings", "Configure the native keymapping runtime.", &form);
     mouseInput = new QComboBox(games); mouseInput->setObjectName("mouseInputBackend");
@@ -152,7 +155,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9/%10").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()).arg(graphics->currentIndex()); };
     auto baseline = std::make_shared<QString>();
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); };
     auto restore = [=] {
@@ -161,13 +164,14 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         showCursor->setChecked(s.value("showCursor", true).toBool()); multitouch->setChecked(s.value("multiTouch", false).toBool());
         adbForward->setChecked(s.value("adbForward", false).toBool()); adbPort->setValue(s.value("adbPort", 5555).toInt());
         acceleration->setCurrentIndex(qMax(0, acceleration->findData(s.value("acceleration", "prepared").toString())));
+        graphics->setCurrentIndex(qMax(0, graphics->findData(s.value("graphics", "prepared").toString())));
         mouseInput->setCurrentIndex(s.value("input/rawMouse", false).toBool() ? 1 : 0);
         aimInterval->setCurrentIndex(qMax(0, aimInterval->findData(s.value("input/aimInterval", 16).toInt())));
         *baseline = snapshot(); update();
     };
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
     for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
-    for (auto *combo : {acceleration, mouseInput, aimInterval}) connect(combo, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
+    for (auto *combo : {acceleration, mouseInput, aimInterval, graphics}) connect(combo, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
     hasChanges = [=] { return snapshot() != *baseline; };
@@ -183,6 +187,7 @@ bool SettingsDialog::save() {
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
     s.setValue("acceleration", acceleration->currentData());
+    s.setValue("graphics", graphics->currentData());
     s.setValue("input/rawMouse", mouseInput->currentData());
     s.setValue("input/aimInterval", aimInterval->currentData());
     s.sync();

@@ -82,6 +82,12 @@ int main(int argc, char **argv) {
     if (inputMode->currentData().toBool() || batch->currentData().toInt() != 16) return 29;
     inputMode->setCurrentIndex(1); batch->setCurrentIndex(batch->findData(4)); save->click();
     if (!QSettings().value("input/rawMouse").toBool() || QSettings().value("input/aimInterval").toInt() != 4) return 30;
+    auto *graphics = dialog.findChild<QComboBox *>("vmGraphics");
+    if (!graphics || graphics->count() != 3 || selectedVmGraphics(QSettings()) != "std") return 31;
+    graphics->setCurrentIndex(graphics->findData("virtio")); save->click();
+    if (selectedVmGraphics(QSettings()) != "virtio") return 32;
+    graphics->setCurrentIndex(graphics->findData("std")); discard->click();
+    if (graphics->currentData().toString() != "virtio") return 33;
     QMimeData mime;
     mime.setUrls({QUrl("https://example.invalid/test.apk")});
     if (!droppedApk(&mime).isEmpty()) return 23;

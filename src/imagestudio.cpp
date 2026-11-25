@@ -74,6 +74,10 @@ public:
         auto *fresh = new QPushButton("Choose fresh workspace automatically");
         advancedForm->addRow(fresh); inputs.append(fresh);
         connect(fresh, &QPushButton::clicked, this, [=] { workspace->setText(freshWorkspace()); mode->setCurrentIndex(0); });
+        graphics = new QComboBox; graphics->setObjectName("installationGraphics");
+        graphics->addItem("Standard VGA · existing compatibility", "std"); graphics->addItem("VirtIO VGA · experimental, guest driver required", "virtio");
+        advancedForm->addRow("Display device", graphics); inputs.append(graphics);
+        graphics->setCurrentIndex(qMax(0, graphics->findData(saved.value("graphics", "std").toString())));
         const auto previousAcceleration = saved.value("acceleration", "tcg").toString();
         acceleration->setCurrentIndex(qMax(0, acceleration->findData(previousAcceleration)));
         auto *advancedToggle = new QPushButton("Advanced options ▸"); advancedToggle->setCheckable(true); advancedToggle->setObjectName("studioAdvancedOptions"); root->addWidget(advancedToggle,0,Qt::AlignLeft);
@@ -171,10 +175,10 @@ private:
         QString shell = QStandardPaths::findExecutable("pwsh"); if (shell.isEmpty()) shell = QStandardPaths::findExecutable("powershell");
         if (shell.isEmpty()) { QMessageBox::warning(this,"PowerShell missing","Install PowerShell or enable Windows PowerShell to run the preparation backend."); return; }
         QSettings saved("ProjectNexus", "ImageStudio");
-        saved.setValue("iso", source->text()); saved.setValue("player", player->text()); saved.setValue("acceleration", acceleration->currentData());
+        saved.setValue("iso", source->text()); saved.setValue("player", player->text()); saved.setValue("acceleration", acceleration->currentData()); saved.setValue("graphics", graphics->currentData());
         approval = std::make_unique<QTemporaryDir>();
         if (!approval->isValid()) { QMessageBox::warning(this,"Workspace","Cannot create checkpoint directory."); approval.reset(); return; }
-        QStringList args{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Mode",QStringList{"Install","Resume"}[mode->currentIndex()],"-Acceleration",acceleration->currentData().toString(),"-Workspace",workspace->text(),"-PlayerFolder",player->text(),"-QemuDir",root+"/qemu/bin","-ApprovalDirectory",approval->path()};
+        QStringList args{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Mode",QStringList{"Install","Resume"}[mode->currentIndex()],"-Acceleration",acceleration->currentData().toString(),"-Graphics",graphics->currentData().toString(),"-Workspace",workspace->text(),"-PlayerFolder",player->text(),"-QemuDir",root+"/qemu/bin","-ApprovalDirectory",approval->path()};
         if (mode->currentIndex()==0) args << "-Source" << source->text();
         if (!hash->text().trimmed().isEmpty()) args << "-ExpectedSha256" << hash->text().trimmed();
         if (bliss->isChecked()) args << "-Bliss";
@@ -182,7 +186,7 @@ private:
         log->clear(); status->setText("Preparing… Watch this log and the VM window. Confirm each checkpoint only after clean shutdown."); progress->setRange(0,0);
         process->setWorkingDirectory(root); process->start(shell,args);
     }
-    QComboBox *mode, *acceleration;
+    QComboBox *mode, *acceleration, *graphics;
     QLineEdit *source, *workspace, *player, *hash;
     QCheckBox *bliss;
     QLabel *output, *status;
@@ -206,7 +210,7 @@ int main(int argc, char **argv) {
         advancedToggle->click();
         if (!window.findChild<QWidget *>("studioAdvancedPanel")->isVisible()) return 2;
         advancedToggle->click();
-        return window.windowFlags().testFlag(Qt::FramelessWindowHint) && window.findChild<QComboBox *>("preparationMode")->count()==2 && window.findChild<QComboBox *>("installationAcceleration")->count()==2 && !window.findChild<QWidget *>("studioAdvancedPanel")->isVisible() && !window.findChild<QPlainTextEdit *>("preparationLog")->isVisible() && window.findChild<QLabel *>("fixedOutputPath")->text().endsWith("android-base.qcow2") ? 0 : 1;
+        return window.windowFlags().testFlag(Qt::FramelessWindowHint) && window.findChild<QComboBox *>("preparationMode")->count()==2 && window.findChild<QComboBox *>("installationAcceleration")->count()==2 && window.findChild<QComboBox *>("installationGraphics")->count()==2 && !window.findChild<QWidget *>("studioAdvancedPanel")->isVisible() && !window.findChild<QPlainTextEdit *>("preparationLog")->isVisible() && window.findChild<QLabel *>("fixedOutputPath")->text().endsWith("android-base.qcow2") ? 0 : 1;
     }
     window.show(); return app.exec();
 }

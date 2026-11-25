@@ -13,7 +13,7 @@ inline QString playerDiagnostics(const QString &root) {
     QStringList report{"Project Nexus diagnostics", "Generated: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODate),
         "Host: " + QSysInfo::prettyProductName() + " / " + QSysInfo::currentCpuArchitecture(),
         "Player folder: " + root, "", "Package checks (non-empty files only):"};
-    for (const auto &relative : {"qemu/bin/qemu-system-x86_64.exe", "qemu/bin/qemu-img.exe", "qemu/share/qemu/bios-256k.bin", "qemu/share/qemu/vgabios-stdvga.bin", "qemu/share/qemu/kvmvapic.bin", "images/android-base.qcow2"}) {
+    for (const auto &relative : {"qemu/bin/qemu-system-x86_64.exe", "qemu/bin/qemu-img.exe", "qemu/share/qemu/bios-256k.bin", "qemu/share/qemu/vgabios-stdvga.bin", "qemu/share/qemu/vgabios-virtio.bin", "qemu/share/qemu/kvmvapic.bin", "images/android-base.qcow2"}) {
         const QFileInfo file(QDir(root).filePath(relative));
         report << QString(file.isFile() && file.size() > 0 ? "OK      " : "MISSING/EMPTY ") + relative;
     }
@@ -28,7 +28,7 @@ inline QString playerDiagnostics(const QString &root) {
         << QString("Configured local ADB forwarding: %1 (restart required after changes)").arg(settings.value("adbForward", false).toBool() ? "enabled" : "disabled")
         << QString("Audio output: automatic Intel HDA / Windows DirectSound (guest driver required)")
         << "Network: QEMU user-mode NAT with virtio-net (guest driver/DHCP required; not a connectivity test)"
-        << "Graphics: QEMU standard VGA; no accelerated GPU backend"
+        << "Configured display: " + selectedVmGraphics(settings) + " (no host GPU acceleration)"
         << "Rust: runtime launch policy and input core; QEMU remains the VM engine"
         << "" << "These checks do not verify ISO integrity, Android boot, ADB authorization or game compatibility."
         << "Privacy: this report and session log may contain local paths/usernames. Review before sharing.";

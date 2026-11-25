@@ -21,13 +21,13 @@ pub struct Config<'a> {
     pub memory_mb: u32,
     pub cpus: u32,
     pub adb_port: u32,
-    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB, 8 = explicit software TCG, 16 = opt-in DirectSound output
+    // 1 = multitouch, 2 = hide host cursor, 4 = loopback ADB, 8 = explicit software TCG, 16 = DirectSound output, 32 = experimental virtio-vga
     pub flags: u32,
 }
 
 pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if !(512..=131072).contains(&c.memory_mb) || !(1..=64).contains(&c.cpus)
-        || !(1024..=65535).contains(&c.adb_port) || c.flags & !31 != 0 {
+        || !(1024..=65535).contains(&c.adb_port) || c.flags & !63 != 0 {
         return Err("Invalid VM resources, port or flags");
     }
     if c.disk.is_empty() || c.uefi_code.is_empty() != c.uefi_vars.is_empty()
@@ -40,10 +40,13 @@ pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     }
     let mut args: Vec<String> = vec!["-accel", if c.flags & 8 != 0 { "tcg,thread=multi" } else { "whpx,kernel-irqchip=off" }, "-m"].into_iter().map(str::to_owned).collect();
     args.extend([c.memory_mb.to_string(), "-smp".into(), c.cpus.to_string()]);
-    args.extend(["-vga", if c.flags & 1 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
+    args.extend(["-vga", if c.flags & 33 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
     if c.flags & 8 != 0 { args.extend(["-cpu".into(), "max".into()]); }
+    if c.flags & 33 != 0 {
+        args.extend(["-device", if c.flags & 32 != 0 { "virtio-vga,id=nexus_display" } else { "VGA,id=nexus_display" }].into_iter().map(str::to_owned));
+    }
     if c.flags & 1 != 0 {
-        args.extend(["-device", "VGA,id=nexus_display", "-device", "virtio-multitouch-pci,id=nexus_touch,display=nexus_display"].into_iter().map(str::to_owned));
+        args.extend(["-device", "virtio-multitouch-pci,id=nexus_touch,display=nexus_display"].into_iter().map(str::to_owned));
     }
     if !c.uefi_code.is_empty() {
         args.extend(["-machine".into(), "q35,vmport=off".into(), "-drive".into(), format!("if=pflash,format=raw,unit=0,readonly=on,file={}", c.uefi_code.replace(',', ",,")), "-drive".into(), format!("if=pflash,format=raw,unit=1,file={}", c.uefi_vars.replace(',', ",,"))]);
@@ -150,9 +153,20 @@ mod tests {
         assert!(!args.iter().any(|a| a.contains("duplex") || a.contains("hda-micro")));
         c.flags = 31; assert!(plan(&c).is_ok());
     }
+    #[test] fn virtio_display_uses_one_device_and_preserves_touch_target() {
+        for flags in [32, 33, 63] {
+            let mut c = config(); c.flags = flags;
+            let args = plan(&c).unwrap();
+            assert!(args.windows(2).any(|a| a[0] == "-vga" && a[1] == "none"));
+            assert_eq!(args.iter().filter(|a| a.contains("id=nexus_display")).count(), 1);
+            assert!(args.iter().any(|a| a == "virtio-vga,id=nexus_display"));
+            assert!(!args.iter().any(|a| a.contains("-gl") || a.contains("gl=on")));
+            if flags & 1 != 0 { assert!(args.iter().any(|a| a.contains("display=nexus_display"))); }
+        }
+    }
     #[test] fn rejects_invalid_and_escapes_paths() {
         let mut c = config(); c.cpus = 0; assert!(plan(&c).is_err()); c.cpus = 4;
-        c.flags = 32; assert!(plan(&c).is_err()); c.flags = 0;
+        c.flags = 64; assert!(plan(&c).is_err()); c.flags = 0;
         c.uefi_code = "code.fd"; assert!(plan(&c).is_err());
         c.uefi_vars = "my,vars.fd";
         assert!(plan(&c).unwrap().iter().any(|a| a.contains("my,,vars.fd")));

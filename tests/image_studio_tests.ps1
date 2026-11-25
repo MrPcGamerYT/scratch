@@ -30,11 +30,13 @@ try {
     if ($LASTEXITCODE -ne 1) { throw 'Existing staged base was not protected.' }
     Remove-Item (Join-Path $player 'images/android-base.qcow2')
     Remove-Item (Join-Path $player 'images/acceleration.txt')
+    Remove-Item (Join-Path $player 'images/graphics.txt')
     $copy = Join-Path $root 'copy.qcow2'
     & $studio -QemuDir $root -CopyFrom $disk -DiskPath $copy -PlayerFolder $player
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $copy) -or -not (Test-Path (Join-Path $player 'images/android-base.qcow2'))) { throw 'Copy and staging contract failed.' }
     Remove-Item (Join-Path $player 'images/android-base.qcow2')
     Remove-Item (Join-Path $player 'images/acceleration.txt')
+    Remove-Item (Join-Path $player 'images/graphics.txt')
     & $studio -QemuDir $root -Resume -DiskPath $copy -PlayerFolder $player
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $player 'images/android-base.qcow2'))) { throw 'Resume contract failed.' }
     $engine = Join-Path $root 'engine/bin'; $share = Join-Path $root 'engine/share/qemu'; $blissPlayer = Join-Path $root 'bliss-player'

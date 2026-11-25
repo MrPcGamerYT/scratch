@@ -32,6 +32,7 @@ const assert = require('node:assert/strict');
       for (const name of ['graphics', 'device']) {
         await page.locator(`[data-page="${name}"]`).click();
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);
+        if (name === 'graphics') await page.locator('#graphicsPreview').selectOption({index: 2});
 
       }
       await page.locator('[data-page="input"]').click();

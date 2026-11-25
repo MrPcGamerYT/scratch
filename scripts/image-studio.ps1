@@ -9,7 +9,8 @@ param(
     [switch]$Bliss,
     [string]$ExpectedSha256 = '',
     [string]$ApprovalDirectory = '',
-    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx'
+    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx',
+    [ValidateSet('std','virtio')][string]$Graphics = 'std'
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -28,7 +29,7 @@ try {
     if (Test-Path -LiteralPath $target) { throw 'The player already has images/android-base.qcow2. Back it up; it will not be overwritten.' }
     New-Item -ItemType Directory -Force -Path $workspaceFull | Out-Null
     $disk = Join-Path $workspaceFull 'android-install.qcow2'
-    $arguments = @{ DiskPath = $disk; PlayerFolder = $PlayerFolder; QemuDir = $QemuDir; Bliss = $Bliss; ApprovalDirectory = $ApprovalDirectory; Acceleration = $Acceleration }
+    $arguments = @{ DiskPath = $disk; PlayerFolder = $PlayerFolder; QemuDir = $QemuDir; Bliss = $Bliss; ApprovalDirectory = $ApprovalDirectory; Acceleration = $Acceleration; Graphics = $Graphics }
     if ($Mode -eq 'Resume') { $arguments.Resume = $true }
     else {
         if (Test-Path -LiteralPath $disk) { throw 'Workspace already contains android-install.qcow2. Select Resume or an empty workspace.' }
