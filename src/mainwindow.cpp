@@ -297,7 +297,7 @@ void MainWindow::launch() {
     recordEvent(QString("Resource allocation: %1 CPUs, %2 MB (%3)").arg(cpus).arg(ram).arg(automaticResources(s) ? "automatic" : "manual"));
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
     bootReady = false;
-    hideGuestBoot = s.value("hideBoot", false).toBool() && s.value("adbForward", false).toBool();
+    hideGuestBoot = s.value("hideBoot", true).toBool();
     view->setGuestVisible(!hideGuestBoot);
     selectAppKeymap(QString());
     runningMultiTouch = s.value("multiTouch", false).toBool();
@@ -647,7 +647,7 @@ void MainWindow::pollGuest() {
     // Check before any ADB early-return: missing adb.exe/authorization is the
     // exact case in which an unbounded loading screen used to conceal the VM.
     if (running && hideGuestBoot && !bootReady &&
-        (!QSettings().value("hideBoot", false).toBool() ||
+        (!QSettings().value("hideBoot", true).toBool() ||
          (bootWait.isValid() && bootDisplayWaitExpired(bootWait.elapsed())))) {
         const bool expired = bootWait.isValid() && bootDisplayWaitExpired(bootWait.elapsed());
         hideGuestBoot = false;

@@ -136,7 +136,9 @@ Boot hiding keeps the embedded SDL child hidden until Android reports
 If ADB is unavailable or boot is not confirmed within three minutes, hiding is
 released and a warning explains that readiness remains unverified. Turning boot
 hiding off in Settings also releases the display during the current session.
-This fixes an earlier unbounded wait that could conceal the VM indefinitely. Hiding is inactive if forwarding was not enabled. SDL
+This fixes an earlier unbounded wait that could conceal the VM indefinitely. Boot hiding defaults to on for settings without an existing preference. Explicit
+user off preferences are preserved. Without forwarding/authorized ADB, the
+three-minute fallback reveals the guest without asserting readiness. SDL
 creates a native window before the Player can discover/embed it, so a brief
 external-window flash is still possible. This is not a zero-flash certification.
 The mouse patch retains the USB tablet and improves native child focus/activation;
@@ -165,3 +167,14 @@ Setup completion does not eliminate cold boot. Instant resume would need a
 separate tested snapshot/hibernate feature; it is not implemented. TCG is CPU
 emulation and remains slow regardless of whether logos are hidden. The existing
 downloadable image has not been rebuilt into a sanitized setup-completed image.
+
+
+### Default boot presentation update
+
+Boot hiding now defaults to ON, including without local ADB. The three-minute
+fallback still reveals the guest and warns if Android readiness cannot be
+confirmed. Existing saved OFF preferences are deliberately not overwritten;
+those users can turn it on once in Performance settings. No automatic guest
+setup bypass, forced Home command, or setup-completed image rebuild is included.
+Complete setup once, select the desired Home launcher in Android, and shut down
+cleanly using the same persistent Player instance on subsequent starts.

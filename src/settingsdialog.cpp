@@ -104,7 +104,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
     showFps = new QCheckBox("Show live display FPS"); showFps->setObjectName("showFps"); form->addRow(showFps);
     hideBoot = new QCheckBox("Hide guest display until Android boot completes"); hideBoot->setObjectName("hideBoot"); form->addRow(hideBoot);
-    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and boot hiding require local ADB forwarding and authorized guest debugging. Boot hiding does not accelerate boot or skip setup. The display is revealed with a warning after three minutes without boot confirmation. Turning this option off reveals it during the current session; turning it on requires restart.");
+    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and early boot-complete detection require local ADB forwarding and authorized guest debugging. Boot hiding defaults to on; without a usable status connection it falls back after three minutes. Boot hiding does not accelerate boot or skip setup. The display is revealed with a warning after three minutes without boot confirmation. Turning this option off reveals it during the current session; turning it on requires restart.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
     auto *resolution = new QComboBox(display); resolution->setObjectName("guestResolution");
     resolution->addItem("Android default", "reset");
@@ -169,7 +169,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); cpus->setEnabled(!autoResources->isChecked()); memory->setEnabled(!autoResources->isChecked()); };
     auto restore = [=] {
         QSettings s;
-        showFps->setChecked(s.value("showFps", false).toBool()); hideBoot->setChecked(s.value("hideBoot", false).toBool());
+        showFps->setChecked(s.value("showFps", false).toBool()); hideBoot->setChecked(s.value("hideBoot", true).toBool());
         autoResources->setChecked(automaticResources(s));
         const auto resources = selectedResources(s);
         cpus->setValue(static_cast<int>(resources.cpus)); memory->setValue(static_cast<int>(resources.memory_mb));

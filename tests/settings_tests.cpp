@@ -44,7 +44,11 @@ int main(int argc, char **argv) {
     if (save->isEnabled() || discard->isEnabled() || cpu->value() != 4) return 3;
     auto *fps = dialog.findChild<QCheckBox *>("showFps");
     auto *hideBoot = dialog.findChild<QCheckBox *>("hideBoot");
-    if (!fps || !hideBoot || fps->isChecked() || hideBoot->isChecked()) return 84;
+    if (!fps || !hideBoot || fps->isChecked() || !hideBoot->isChecked()) return 84;
+    hideBoot->setChecked(false); save->click();
+    if (QSettings().value("hideBoot").toBool()) return 87;
+    SettingsDialog savedBootPreference(false);
+    if (savedBootPreference.findChild<QCheckBox *>("hideBoot")->isChecked()) return 88;
     fps->setChecked(true); hideBoot->setChecked(true); save->click();
     if (!QSettings().value("showFps").toBool() || !QSettings().value("hideBoot").toBool()) return 85;
     cpu->setValue(6);
