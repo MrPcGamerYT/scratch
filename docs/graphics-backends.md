@@ -110,3 +110,56 @@ Standard VGA. Next performance work needs ANR traces and CPU/renderer profiling,
 then repeated identical-workload tests with no ANRs; Windows hardware-virtualized
 and physical-GPU runs remain necessary before making hardware FPS claims.
 DirectX and Vulkan remain unimplemented, not alternative tested backends.
+
+## App controls, telemetry and boot presentation
+
+The next Player build adds per-package keymap libraries (under `keymaps/apps/`),
+using the foreground/resumed activity reported by authorized local ADB. It polls
+every two seconds; switching is not instantaneous. Each app has its own selected
+scheme and mapping-enabled preference. New/unknown apps never inherit the global
+map; the old global library is preserved. On a detected switch or ADB failure,
+held mapping inputs and aim capture are released. During a running session the
+editor waits for an identified app rather than editing a global map. Selecting a
+scheme from another app's private library is intentionally not automatic.
+
+Settings → Performance has **Show live display FPS** (live toggle) and **Hide
+guest display until Android boot completes** (next launch). The draggable badge
+uses recent unique actual-present timestamps from SurfaceFlinger's default
+latency query within one second of guest uptime. It is a display/compositor
+sample, not game FPS; missing, stale or unsupported data is N/A. Local ADB
+forwarding must have been enabled before launch, adb.exe must be supplied and
+guest TCP debugging must be authorized. The controls do not enable debugging in
+the guest. FPS polling has overhead and no speed benefit is claimed.
+
+Boot hiding keeps the embedded SDL child hidden until Android reports
+`sys.boot_completed=1`; that property is not proof of no ANRs or completed setup.
+If ADB is unavailable the loading screen remains; disable boot hiding in Settings
+and restart to diagnose. Hiding is inactive if forwarding was not enabled. SDL
+creates a native window before the Player can discover/embed it, so a brief
+external-window flash is still possible. This is not a zero-flash certification.
+The mouse patch retains the USB tablet and improves native child focus/activation;
+real Windows guest mouse operation remains to be verified.
+
+### A guest that does not repeat first-run setup
+
+A normal persistent Player user overlay retains completed Android setup across
+clean shutdowns. Complete setup once (prefer offline, without personal accounts
+for a redistributable template) and always reopen the same instance. Do not use
+the experimental launcher for this: it deliberately creates a new overlay every
+launch. Do not delete/rename `instances` for routine starts. Renaming was a
+one-time way to preserve the previous disk while switching incompatible bases.
+
+To publish a new setup-completed base, a developer must provision a **separate**
+clean guest, complete its intended setup, remove private accounts/identifiers,
+shut it down fully, and flatten its overlay chain into a **new** QCOW2 file using
+`qemu-img convert -O qcow2` (with all VMs stopped). Preserve matching firmware
+and a clean tested UEFI variable template; inspect and boot-test a fresh overlay
+of the new base before distribution. Never overwrite the backing file of an
+existing instance. Existing users need explicit migration/new instances.
+Blindly toggling `device_provisioned` or disabling SetupWizard is not a verified
+substitute for provisioning and may break GApps initialization.
+
+Setup completion does not eliminate cold boot. Instant resume would need a
+separate tested snapshot/hibernate feature; it is not implemented. TCG is CPU
+emulation and remains slow regardless of whether logos are hidden. The existing
+downloadable image has not been rebuilt into a sanitized setup-completed image.

@@ -11,6 +11,10 @@
 #include "rustcore.h"
 #include "runtimeconfig.h"
 #include "resourceconfig.h"
+#include "guesttelemetry.h"
+#include "fpsbadge.h"
+#include <QApplication>
+#include <QCryptographicHash>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QCheckBox>
@@ -125,6 +129,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
 
     QSettings appSettings;
     profileDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/keymaps";
+    globalProfileDir = profileDir;
     QDir().mkpath(profileDir);
     activeScheme = sanitizeSchemeName(appSettings.value("keymap/activeScheme", "default").toString());
     keymapPath = schemeFilePath(profileDir, activeScheme);
@@ -204,6 +209,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     });
     connect(mouseLock, &MouseLock::unlocked, this, [this] { mouseLockButton->setText("◎  Lock"); statusBar()->showMessage("Mouse unlocked."); });
     connect(keymapEnabled, &QCheckBox::toggled, this, [this](bool enabled) {
+        if (!switchingApp && !currentPackage.isEmpty()) QSettings().setValue("keymap/enabledApps/" + currentPackage, enabled);
         if (!enabled) { mapper->stop(); qmp->releaseAllInputs(); statusBar()->showMessage("Keymap disabled."); return; }
         if (aim->isArmed() && runningMultiTouch) mapper->setReservedTouchSlots({0, 1, 2});
         else mapper->setReservedTouchSlots({});
@@ -235,6 +241,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
         const auto output = QString::fromLocal8Bit(process->readAllStandardError());
         engineErrorTail = (engineErrorTail + output).right(16000); recordEvent("QEMU: " + output);
     });
+    fpsBadge = new FpsBadge(this, view);
+    guestPoll = new QTimer(this); guestPoll->setInterval(2000);
+    connect(guestPoll, &QTimer::timeout, this, [this] { pollGuest(); }); guestPoll->start();
     QTimer::singleShot(0, this, [this] { launch(); });
 }
 
@@ -282,6 +291,10 @@ void MainWindow::launch() {
     const int ram = static_cast<int>(resources.memory_mb), cpus = static_cast<int>(resources.cpus);
     recordEvent(QString("Resource allocation: %1 CPUs, %2 MB (%3)").arg(cpus).arg(ram).arg(automaticResources(s) ? "automatic" : "manual"));
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
+    bootReady = false;
+    hideGuestBoot = s.value("hideBoot", false).toBool() && s.value("adbForward", false).toBool();
+    view->setGuestVisible(!hideGuestBoot);
+    selectAppKeymap(QString());
     runningMultiTouch = s.value("multiTouch", false).toBool();
     runningAdbForward = s.value("adbForward", false).toBool(); runningAdbPort = port;
     const bool softwareCpu = selectedVmAcceleration(s) == "tcg";
@@ -321,7 +334,7 @@ void MainWindow::launch() {
         if (!value.isString()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch argument."); return; }
         args << value.toString();
     }
-    view->setStartupStatus("Starting Android", "Connecting to the VM display. Android may still be booting after its screen appears.", true);
+    view->setStartupStatus("Starting Android", "Waiting for Android. Boot hiding requires authorized guest ADB; check Diagnostics if it does not become ready.", true);
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
     setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
     statusBar()->showMessage(softwareCpu ? "Starting with explicit software CPU emulation (slow)." : "Starting Android with WHPX...");
@@ -339,8 +352,8 @@ void MainWindow::updateControls() {
     shutdownButton->setEnabled(running && qmp->isReady());
     editKeymapButton->setEnabled(!aim->isCapturingMouse());
     mouseLockButton->setEnabled(embedded && !armed);
-    keymapEnabled->setEnabled(embedded && qmp->isReady() && profile.hasAnyInputBindings() && (!armed || runningMultiTouch));
-    aimButton->setEnabled(embedded && qmp->isReady());
+    keymapEnabled->setEnabled(embedded && !currentPackage.isEmpty() && qmp->isReady() && profile.hasAnyInputBindings() && (!armed || runningMultiTouch));
+    aimButton->setEnabled(embedded && !currentPackage.isEmpty() && qmp->isReady());
 }
 void MainWindow::androidAction(int keycode) {
     if (keycode != -1 && keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
@@ -461,6 +474,9 @@ void MainWindow::installApk(const QString &path) {
     statusBar()->showMessage("Connecting to Android to install APK...");
 }
 void MainWindow::editKeymap() {
+    if (process->state() == QProcess::Running && currentPackage.isEmpty()) {
+        QMessageBox::information(this, "Waiting for active app", "Per-app keymaps need authorized local ADB forwarding and an identified foreground Android app. No global keymap will be applied to unknown apps."); return;
+    }
     if (aim->isArmed()) aim->disarm();
     mouseLock->unlock();
     keymapEnabled->setChecked(false);
@@ -469,7 +485,9 @@ void MainWindow::editKeymap() {
         if (QScreen *screen = QGuiApplication::primaryScreen())
             snapshot = screen->grabWindow(reinterpret_cast<WId>(view->windowHandle()));
     }
+    const QString editingPackage = currentPackage;
     KeymapDialog dialog(snapshot, profile, profileDir, activeScheme, this);
+    dialog.setWindowTitle(editingPackage.isEmpty() ? "Keymap library" : "Keymap · " + editingPackage);
     if (dialog.exec() != QDialog::Accepted) {
         overlay->refreshSync();
         return;
@@ -483,7 +501,7 @@ void MainWindow::editKeymap() {
         return;
     }
     QSettings s;
-    s.setValue("keymap/activeScheme", activeScheme);
+    s.setValue(currentPackage.isEmpty() ? "keymap/activeScheme" : "keymap/apps/" + currentPackage, activeScheme);
     profile = updated;
     overlay->setProfile(profile);
     updateControls();
@@ -509,4 +527,83 @@ void MainWindow::changeEvent(QEvent *event) {
         fullscreenButton->setText(fullscreen ? "⛶  Exit full screen · F11" : "⛶  Full screen");
         overlay->refreshSync();
     }
+}
+
+void MainWindow::selectAppKeymap(const QString &package) {
+    switchingApp = true;
+    const auto switchingGuard = qScopeGuard([this] { switchingApp = false; });
+    // Never carry held inputs or aim capture into a different/unknown app.
+    if (aim->isArmed()) aim->disarm();
+    mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); qmp->releaseAllInputs();
+    currentPackage = package;
+    profile = KeymapProfile{};
+    if (package.isEmpty()) {
+        profileDir = globalProfileDir; activeScheme = "default";
+    } else {
+        // Hash the package for a filesystem-safe, per-app library directory.
+        const auto hash = QCryptographicHash::hash(package.toUtf8(), QCryptographicHash::Sha256).toHex();
+        profileDir = globalProfileDir + "/apps/" + QString::fromLatin1(hash);
+        QDir().mkpath(profileDir);
+        activeScheme = sanitizeSchemeName(QSettings().value("keymap/apps/" + package, "default").toString());
+        QString error;
+        if (!loadKeymapProfile(schemeFilePath(profileDir, activeScheme), &profile, &error)) {
+            profile = KeymapProfile{}; profile.name = package;
+        }
+    }
+    keymapPath = schemeFilePath(profileDir, activeScheme);
+    overlay->setProfile(profile); updateControls();
+    if (!package.isEmpty() && profile.hasAnyInputBindings() && QSettings().value("keymap/enabledApps/" + package, false).toBool()) keymapEnabled->setChecked(true);
+    editKeymapButton->setToolTip(package.isEmpty() ? "Keymap · waiting for active Android app" : "Keymap · " + package);
+}
+
+void MainWindow::pollGuest() {
+    const bool running = process->state() == QProcess::Running;
+    const bool fps = QSettings().value("showFps", false).toBool();
+    fpsBadge->setVisible(fps && running && isVisible() && !isMinimized());
+    if (fpsBadge->isVisible()) {
+        fpsBadge->adjustSize(); static_cast<FpsBadge *>(fpsBadge)->syncPosition();
+    }
+    if (!running || !runningAdbForward) {
+        fpsBadge->setText("Display FPS: N/A · ADB required");
+        if (!currentPackage.isEmpty()) selectAppKeymap(QString());
+        return;
+    }
+    if (guestTask || QApplication::activeModalWidget()) return;
+    QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
+    if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
+    if (adb.isEmpty()) { fpsBadge->setText("Display FPS: N/A · adb missing"); return; }
+    auto *task = new QProcess(this); guestTask = task;
+    auto *timeout = new QTimer(task); timeout->setSingleShot(true);
+    connect(timeout, &QTimer::timeout, task, [task] { task->kill(); });
+    const QString endpoint = QString("127.0.0.1:%1").arg(runningAdbPort);
+    connect(task, &QProcess::errorOccurred, this, [this, task](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) { guestTask = nullptr; task->deleteLater(); fpsBadge->setText("Display FPS: N/A"); }
+    });
+    connect(task, &QProcess::finished, this, [this, task, timeout, adb, endpoint, fps](int code, QProcess::ExitStatus exit) {
+        timeout->stop();
+        if (!task->property("queried").toBool() && code == 0 && exit == QProcess::NormalExit) {
+            task->readAllStandardOutput(); task->setProperty("queried", true); timeout->start(8000);
+            QString command = "getprop sys.boot_completed; echo NEXUS_ACTIVITY; dumpsys activity activities; echo NEXUS_FPS; ";
+            if (fps) command += "cat /proc/uptime; echo NEXUS_LATENCY; dumpsys SurfaceFlinger --latency";
+            task->start(adb, {"-s", endpoint, "shell", command}); return;
+        }
+        const QString text = QString::fromUtf8(task->readAllStandardOutput()).replace("\r", "");
+        guestTask = nullptr; task->deleteLater();
+        if (process->state() != QProcess::Running) return;
+        if (code != 0 || exit != QProcess::NormalExit || !task->property("queried").toBool()) {
+            fpsBadge->setText("Display FPS: N/A");
+            if (!currentPackage.isEmpty()) selectAppKeymap(QString());
+            return;
+        }
+        const bool ready = text.section('\n', 0, 0).trimmed() == "1";
+        if (ready && !bootReady) {
+            bootReady = true;
+            if (hideGuestBoot) view->setGuestVisible(true);
+            recordEvent("Android reports boot complete (not a usable-UI or ANR certification).");
+        }
+        const QString package = foregroundPackage(text.section("NEXUS_ACTIVITY\n", 1).section("NEXUS_FPS\n", 0, 0));
+        if (!QApplication::activeModalWidget() && package != currentPackage) selectAppKeymap(package);
+        fpsBadge->setText(fps ? compositorFps(text.section("NEXUS_FPS\n", 1)) : "Display FPS: N/A");
+    });
+    timeout->start(8000); task->start(adb, {"connect", endpoint});
 }

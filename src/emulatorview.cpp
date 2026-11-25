@@ -3,11 +3,13 @@
 #include <QPainter>
 #include <QLinearGradient>
 #include <QTimer>
+#include <QFocusEvent>
 
 EmulatorView::EmulatorView(QWidget *parent) : QWidget(parent) {
     animation = new QTimer(this); animation->setInterval(80);
     connect(animation, &QTimer::timeout, this, [this] { animationFrame = (animationFrame + 1) % 45; update(); });
     setAttribute(Qt::WA_NativeWindow);
+    setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(480, 320);
     setAttribute(Qt::WA_OpaquePaintEvent);
 }
@@ -16,30 +18,38 @@ bool EmulatorView::attach(HWND window) {
     if (!IsWindow(window)) return false;
     const LONG_PTR oldStyle = GetWindowLongPtr(window, GWL_STYLE);
     SetWindowLongPtr(window, GWL_STYLE,
-                     (oldStyle & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD);
+                     (oldStyle & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_DISABLED)) | WS_CHILD | WS_TABSTOP);
     SetLastError(0);
     HWND previousParent = SetParent(window, reinterpret_cast<HWND>(winId()));
     if (!previousParent && GetLastError() != 0) {
         SetWindowLongPtr(window, GWL_STYLE, oldStyle);
         return false;
     }
-    animation->stop(); starting = false;
+    if (guestVisible) { animation->stop(); starting = false; }
     guestWindow = window;
     SetWindowPos(window, nullptr, 0, 0, qRound(width() * devicePixelRatioF()), qRound(height() * devicePixelRatioF()),
-                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    ShowWindow(window, guestVisible ? SW_SHOW : SW_HIDE);
     return true;
+}
+
+void EmulatorView::setGuestVisible(bool visible) {
+    guestVisible = visible;
+    if (guestWindow && IsWindow(guestWindow)) ShowWindow(guestWindow, visible ? SW_SHOW : SW_HIDE);
+    if (visible) animation->stop(); else { starting = true; animation->start(); }
+    update();
 }
 
 void EmulatorView::clear() { guestWindow = nullptr; setStartupStatus("Android stopped", "Your per-user disk is preserved. Open Settings → Diagnostics for details."); }
 
 void EmulatorView::setStartupStatus(const QString &title, const QString &detail, bool busy) {
     startupTitle = title; startupDetail = detail; starting = busy;
-    if (busy && !guestWindow) animation->start(); else animation->stop();
+    if (busy && (!guestWindow || !guestVisible)) animation->start(); else animation->stop();
     update();
 }
 
 void EmulatorView::paintEvent(QPaintEvent *) {
-    if (guestWindow && IsWindow(guestWindow)) return;
+    if (guestVisible && guestWindow && IsWindow(guestWindow)) return;
     QPainter p(this); p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#0b0d17"));
     const QPixmap wallpaper(":/assets/nexus-wallpaper.png");
@@ -66,4 +76,18 @@ void EmulatorView::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);
     if (guestWindow && IsWindow(guestWindow))
         MoveWindow(guestWindow, 0, 0, qRound(width() * devicePixelRatioF()), qRound(height() * devicePixelRatioF()), TRUE);
+}
+
+void EmulatorView::focusInEvent(QFocusEvent *event) {
+    QWidget::focusInEvent(event);
+    if (guestVisible && guestWindow && IsWindow(guestWindow)) ::SetFocus(guestWindow);
+}
+
+bool EmulatorView::nativeEvent(const QByteArray &type, void *message, qintptr *result) {
+    const auto *msg = static_cast<MSG *>(message);
+    if (msg->message == WM_MOUSEACTIVATE && guestVisible && guestWindow && IsWindow(guestWindow)) {
+        // Do not consume the first click after activating the embedded SDL child.
+        ::SetFocus(guestWindow); *result = MA_ACTIVATE; return true;
+    }
+    return QWidget::nativeEvent(type, message, result);
 }

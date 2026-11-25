@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include "runtimeconfig.h"
+#include "guesttelemetry.h"
 #include "diagnostics.h"
 #include "apkdrop.h"
 #include "resourceconfig.h"
@@ -23,6 +24,10 @@ int main(int argc, char **argv) {
     QCoreApplication::setApplicationName("Isolated");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, tmp.path());
+    if (foregroundPackage("mResumedActivity: ActivityRecord{u0 com.example.game/.Main t1}") != "com.example.game") return 80;
+    if (!foregroundPackage("background: com.example.game/.Main").isEmpty()) return 81;
+    if (compositorFps("100.0 10.0\nNEXUS_LATENCY\n16666666\n1 99500000000 3\n1 99500000000 3\n1 99000000001 3\n1 9223372036854775807 3\n") != "Display FPS: 2") return 82;
+    if (compositorFps("100.0 10.0\nNEXUS_LATENCY\n16666666\n1 1000 3\n") != "Display FPS: N/A") return 83;
     QSettings().setValue("cpus", 4); QSettings().setValue("memory", 4096); // existing manual user
     WindowChrome chrome;
     app.installEventFilter(&chrome);
@@ -36,6 +41,11 @@ int main(int argc, char **argv) {
     for (auto *button : dialog.findChildren<QPushButton *>()) if (button->text() == "Discard") discard = button;
     if (!tabs || tabs->count() != 13 || !cpu || !save || !discard) return 2;
     if (save->isEnabled() || discard->isEnabled() || cpu->value() != 4) return 3;
+    auto *fps = dialog.findChild<QCheckBox *>("showFps");
+    auto *hideBoot = dialog.findChild<QCheckBox *>("hideBoot");
+    if (!fps || !hideBoot || fps->isChecked() || hideBoot->isChecked()) return 84;
+    fps->setChecked(true); hideBoot->setChecked(true); save->click();
+    if (!QSettings().value("showFps").toBool() || !QSettings().value("hideBoot").toBool()) return 85;
     cpu->setValue(6);
     if (!save->isEnabled() || !discard->isEnabled()) return 4;
     discard->click();

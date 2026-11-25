@@ -20,6 +20,8 @@ private:
     QSpinBox *memory;
     QSpinBox *cpus;
     QSpinBox *adbPort;
+    QCheckBox *showFps;
+    QCheckBox *hideBoot;
     QCheckBox *showCursor;
     QCheckBox *adbForward;
     QCheckBox *multitouch;

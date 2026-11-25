@@ -102,7 +102,9 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("CPU execution", acceleration);
     note(form, "Software compatibility bypasses WHPX MMIO crashes, but can be extremely slow. There is no automatic fallback or compatibility guarantee. Restart player after changes.");
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
-    note(form, "High-FPS unlock, VSync control and a live guest FPS counter are not implemented. A target value would not guarantee game FPS.");
+    showFps = new QCheckBox("Show live display FPS"); showFps->setObjectName("showFps"); form->addRow(showFps);
+    hideBoot = new QCheckBox("Hide guest display until Android boot completes"); hideBoot->setObjectName("hideBoot"); form->addRow(hideBoot);
+    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and boot hiding require local ADB forwarding and authorized guest debugging. Boot hiding does not accelerate boot or skip setup. Restart to apply boot hiding.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
     auto *resolution = new QComboBox(display); resolution->setObjectName("guestResolution");
     resolution->addItem("Android default", "reset");
@@ -162,11 +164,12 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9/%10/%11").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()).arg(graphics->currentIndex()).arg(autoResources->isChecked()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9/%10/%11/%12/%13").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()).arg(graphics->currentIndex()).arg(autoResources->isChecked()).arg(showFps->isChecked()).arg(hideBoot->isChecked()); };
     auto baseline = std::make_shared<QString>();
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); cpus->setEnabled(!autoResources->isChecked()); memory->setEnabled(!autoResources->isChecked()); };
     auto restore = [=] {
         QSettings s;
+        showFps->setChecked(s.value("showFps", false).toBool()); hideBoot->setChecked(s.value("hideBoot", false).toBool());
         autoResources->setChecked(automaticResources(s));
         const auto resources = selectedResources(s);
         cpus->setValue(static_cast<int>(resources.cpus)); memory->setValue(static_cast<int>(resources.memory_mb));
@@ -184,7 +187,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         cpus->setValue(static_cast<int>(resources.cpus)); memory->setValue(static_cast<int>(resources.memory_mb));
     });
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
-    for (auto *check : {showCursor, multitouch, adbForward, autoResources}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
+    for (auto *check : {showCursor, multitouch, adbForward, autoResources, showFps, hideBoot}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
     for (auto *combo : {acceleration, mouseInput, aimInterval, graphics}) connect(combo, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
@@ -197,7 +200,7 @@ void SettingsDialog::reject() {
     QDialog::reject();
 }
 bool SettingsDialog::save() {
-    QSettings s; s.setValue("automaticResources", autoResources->isChecked()); s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
+    QSettings s; s.setValue("showFps", showFps->isChecked()); s.setValue("hideBoot", hideBoot->isChecked()); s.setValue("automaticResources", autoResources->isChecked()); s.setValue("cpus", cpus->value()); s.setValue("memory", memory->value());
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
     s.setValue("acceleration", acceleration->currentData());

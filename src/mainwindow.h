@@ -33,6 +33,16 @@ protected:
     void changeEvent(QEvent *event) override;
 private:
     void launch();
+    void pollGuest();
+    void selectAppKeymap(const QString &package);
+    QProcess *guestTask = nullptr;
+    QTimer *guestPoll = nullptr;
+    QString currentPackage;
+    QString globalProfileDir;
+    bool bootReady = false;
+    bool hideGuestBoot = false;
+    bool switchingApp = false;
+    QLabel *fpsBadge = nullptr;
     void recordEvent(const QString &message);
     QString sessionLog;
     QString engineErrorTail;
