@@ -29,6 +29,9 @@ int main(int argc, char **argv) {
     if (compositorFps("100.0 10.0\nNEXUS_LATENCY\n16666666\n1 99500000000 3\n1 99500000000 3\n1 99000000001 3\n1 9223372036854775807 3\n") != "Display FPS: 2") return 82;
     if (compositorFps("100.0 10.0\nNEXUS_LATENCY\n16666666\n1 1000 3\n") != "Display FPS: N/A") return 83;
     if (bootDisplayWaitExpired(-1) || bootDisplayWaitExpired(179999) || !bootDisplayWaitExpired(180000) || !bootDisplayWaitExpired(3600000)) return 86;
+    if (telemetryRetryDelayMs(0) != 0 || telemetryRetryDelayMs(1) != 4000 || telemetryRetryDelayMs(4) != 30000 || telemetryRetryDelayMs(100) != 30000) return 89;
+    if (guestTelemetryCommand(false).contains("SurfaceFlinger") || !guestTelemetryCommand(true).contains("SurfaceFlinger")) return 90;
+    if (!guestTelemetryCommand(true).contains("if [ \"$boot\" = 1 ]")) return 91;
     QSettings().setValue("cpus", 4); QSettings().setValue("memory", 4096); // existing manual user
     WindowChrome chrome;
     app.installEventFilter(&chrome);

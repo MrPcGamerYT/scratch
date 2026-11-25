@@ -43,6 +43,9 @@ private:
     void pollGuest();
     void selectAppKeymap(const QString &package);
     QProcess *guestTask = nullptr;
+    bool telemetryConnected = false;
+    int telemetryFailures = 0;
+    QElapsedTimer telemetryFailureTime;
     QTimer *guestPoll = nullptr;
     QString currentPackage;
     QString globalProfileDir;

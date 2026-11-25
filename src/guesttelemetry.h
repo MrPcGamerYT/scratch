@@ -29,3 +29,16 @@ inline QString compositorFps(const QString &text) {
     if (times.isEmpty()) return "Display FPS: N/A";
     return QString("Display FPS: %1").arg(times.size());
 }
+
+// Bound failed/offline telemetry retries instead of spawning adb every tick.
+inline int telemetryRetryDelayMs(int failures) {
+    if (failures <= 0) return 0;
+    return failures >= 4 ? 30000 : (2000 << failures);
+}
+
+inline QString guestTelemetryCommand(bool fps) {
+    QString command = "boot=$(getprop sys.boot_completed); printf '%s\\n' \"$boot\"; echo NEXUS_ACTIVITY; "
+        "if [ \"$boot\" = 1 ]; then dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity'; fi; echo NEXUS_FPS; ";
+    if (fps) command += "if [ \"$boot\" = 1 ]; then cat /proc/uptime; echo NEXUS_LATENCY; dumpsys SurfaceFlinger --latency; fi; ";
+    return command + "exit 0";
+}

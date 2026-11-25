@@ -296,7 +296,7 @@ void MainWindow::launch() {
     const int ram = static_cast<int>(resources.memory_mb), cpus = static_cast<int>(resources.cpus);
     recordEvent(QString("Resource allocation: %1 CPUs, %2 MB (%3)").arg(cpus).arg(ram).arg(automaticResources(s) ? "automatic" : "manual"));
     const int port = qBound(1024, s.value("adbPort", 5555).toInt(), 65535);
-    bootReady = false;
+    bootReady = false; telemetryConnected = false; telemetryFailures = 0; telemetryFailureTime.invalidate();
     hideGuestBoot = s.value("hideBoot", true).toBool();
     view->setGuestVisible(!hideGuestBoot);
     selectAppKeymap(QString());
@@ -672,6 +672,7 @@ void MainWindow::pollGuest() {
         return;
     }
     if (guestTask || QApplication::activeModalWidget()) return;
+    if (telemetryFailureTime.isValid() && telemetryFailureTime.elapsed() < telemetryRetryDelayMs(telemetryFailures)) return;
     QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
     if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
     if (adb.isEmpty()) { fpsBadge->setText("Display FPS: N/A · adb missing"); return; }
@@ -680,24 +681,34 @@ void MainWindow::pollGuest() {
     connect(timeout, &QTimer::timeout, task, [task] { task->kill(); });
     const QString endpoint = QString("127.0.0.1:%1").arg(runningAdbPort);
     connect(task, &QProcess::errorOccurred, this, [this, task](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart) { guestTask = nullptr; task->deleteLater(); fpsBadge->setText("Display FPS: N/A"); }
+        if (error == QProcess::FailedToStart) {
+            telemetryConnected = false; telemetryFailures = qMin(4, telemetryFailures + 1); telemetryFailureTime.restart();
+            guestTask = nullptr; task->deleteLater(); fpsBadge->setText("Display FPS: N/A");
+            if (!currentPackage.isEmpty()) selectAppKeymap(QString());
+        }
     });
-    connect(task, &QProcess::finished, this, [this, task, timeout, adb, endpoint, fps](int code, QProcess::ExitStatus exit) {
+    const auto startQuery = [task, timeout, adb, endpoint, fps] {
+        task->setProperty("queried", true); timeout->start(8000);
+        task->start(adb, {"-s", endpoint, "shell", guestTelemetryCommand(fps)});
+    };
+    connect(task, &QProcess::finished, this, [this, task, timeout, startQuery](int code, QProcess::ExitStatus exit) {
         timeout->stop();
         if (!task->property("queried").toBool() && code == 0 && exit == QProcess::NormalExit) {
-            task->readAllStandardOutput(); task->setProperty("queried", true); timeout->start(8000);
-            QString command = "getprop sys.boot_completed; echo NEXUS_ACTIVITY; dumpsys activity activities; echo NEXUS_FPS; ";
-            if (fps) command += "cat /proc/uptime; echo NEXUS_LATENCY; dumpsys SurfaceFlinger --latency";
-            task->start(adb, {"-s", endpoint, "shell", command}); return;
+            const QString reply = QString::fromUtf8(task->readAllStandardOutput());
+            if (reply.contains("connected to ")) {
+                telemetryConnected = true; startQuery(); return;
+            }
         }
         const QString text = QString::fromUtf8(task->readAllStandardOutput()).replace("\r", "");
         guestTask = nullptr; task->deleteLater();
         if (closePending || process->state() != QProcess::Running) return;
         if (code != 0 || exit != QProcess::NormalExit || !task->property("queried").toBool()) {
+            telemetryConnected = false; telemetryFailures = qMin(4, telemetryFailures + 1); telemetryFailureTime.restart();
             fpsBadge->setText("Display FPS: N/A");
             if (!currentPackage.isEmpty()) selectAppKeymap(QString());
             return;
         }
+        telemetryFailures = 0; telemetryFailureTime.invalidate();
         const bool ready = text.section('\n', 0, 0).trimmed() == "1";
         if (ready && !bootReady) {
             bootReady = true;
@@ -708,5 +719,6 @@ void MainWindow::pollGuest() {
         if (!QApplication::activeModalWidget() && package != currentPackage) selectAppKeymap(package);
         fpsBadge->setText(fps ? compositorFps(text.section("NEXUS_FPS\n", 1)) : "Display FPS: N/A");
     });
-    timeout->start(8000); task->start(adb, {"connect", endpoint});
+    if (telemetryConnected) startQuery();
+    else { timeout->start(8000); task->start(adb, {"connect", endpoint}); }
 }

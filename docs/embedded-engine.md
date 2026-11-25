@@ -114,3 +114,22 @@ shutdown already in progress. Guests that ignore ACPI and lack usable/authorized
 ADB cannot be guaranteed to power off automatically. Real Android/Windows
 shutdown and persistence verification remains necessary; the QMP smoke test
 checks command acceptance only.
+
+## Low-overhead telemetry update
+
+The previous telemetry loop ran `adb connect` before every two-second query and
+queried the activity service even while Android was still booting. The next
+Player reuses the successful connection (one shell helper per steady-state poll,
+not a connect helper plus shell helper), reconnects after transport failures,
+and backs failed retries off to 4/8/16/30 seconds. Boot-time polls only request
+the boot property; activity/FPS dumps run only after boot completion. Activity
+output is filtered to resumed-activity lines; FPS stays opt-in. Shell invocation
+checks verify that unbooted guests receive no activity/SurfaceFlinger dump.
+This reduces requested work; no measured Android FPS improvement or ANR fix is
+claimed. It does not change CPU acceleration or the guest graphics backend.
+
+For the user's i3-6100T/HD 530, the prepared TCG configuration is a major
+architectural limitation. WHPX compatibility and a verified hardware graphics
+path are prerequisites for credible gaming-performance work. Do not silently
+change the user's backing image/CPU mode, disable Windows protections, increase
+vCPUs indiscriminately, or call a boot-hiding/branding/compiler change a solution.
