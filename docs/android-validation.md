@@ -1,6 +1,30 @@
 # Actual Bliss Android validation — investigation, not a release certificate
 
-## Latest installed-disk result
+## Experimental download now retained
+
+Rebuild [45575332515](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45575332515)
+passed the boot-readiness and packaging gates, and uploaded
+[Nexus-Experimental-Android-Guest](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45575332515/artifacts/15004767630)
+(approximately 2.16 GB, seven-day retention; GitHub sign-in may be required).
+This is an experimental upstream Bliss diagnostic guest, not a finished Nexus OS.
+Windows, setup completion, repeat boot/persistence and gaming remain unverified.
+
+The pristine base was verified through a disposable overlay, and its original
+hash was checked again before packaging:
+`6d51ab7beb663735a625cc6626d12c094952b0668228dfaa7f8c39efcff689b1`.
+The package includes full SHA256SUMS, compatibility metadata, matching firmware,
+required firmware notices and a Windows diagnostic launcher whose syntax was
+checked in CI. That syntax check is **not** a Windows Android boot test.
+
+Extract all files together. Do not replace an existing Player backing image.
+Read README.txt and launch Start-ExperimentalGuest.ps1, selecting the QEMU system
+executable from the complete updated Developer package. It creates a new retained
+instance on each invocation, does not publish ADB host forwarding, and does not
+implement audio or persistent-instance selection. No image was uploaded to Drive.
+This rebuild's captured service-readiness result is not a new visual certificate;
+the earlier inspected screenshot below remains the visual evidence for the recipe.
+
+## Earlier installed-disk result
 
 Candidate run [45571864477](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45571864477)
 **passed disk construction, QCOW2 checks and automated UEFI disk-only Android readiness checks**.
