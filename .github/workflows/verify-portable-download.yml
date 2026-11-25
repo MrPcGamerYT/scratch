@@ -1,0 +1,34 @@
+name: Verify published portable editor download
+on:
+  push:
+    paths: ['.github/workflows/verify-portable-download.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download actual published release assets and verify extraction
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download portable-editor-45678447414 --dir downloaded
+          cd downloaded
+          sha256sum -c Nexus-Portable-Guest-Editor-Win10.zip.sha256
+          unzip -t Nexus-Portable-Guest-Editor-Win10.zip > unzip-test.txt
+          python3 - <<'PY'
+          import hashlib,zipfile
+          from pathlib import Path
+          path=Path('Nexus-Portable-Guest-Editor-Win10.zip')
+          with zipfile.ZipFile(path) as archive:
+              assert archive.testzip() is None
+              for line in archive.read('MANIFEST.sha256').decode().splitlines():
+                  expected,name=line.split('  ',1)
+                  assert hashlib.sha256(archive.read(name)).hexdigest()==expected,name
+              assert 'appliance/test-fixture.qcow2' not in archive.namelist()
+              archive.extractall('extracted')
+          print('::notice::PUBLISHED DOWNLOAD VERIFIED: SHA256='+hashlib.sha256(path.read_bytes()).hexdigest()+f'; bytes={path.stat().st_size}; sha256sum, unzip, Python ZIP CRC, extracted-file manifest hashes PASS')
+          PY
