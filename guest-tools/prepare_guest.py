@@ -12,9 +12,9 @@ def payloads(tree):
     required = ['kernel', 'initrd.img']
     if not all((tree / name).is_file() for name in required):
         raise ValueError('Extracted ISO must contain root kernel and initrd.img')
-    if not any((tree / name).is_file() for name in ['system.sfs', 'system.img']):
-        raise ValueError('Unsupported ISO: no root system.sfs/system.img; refusing to invent installation layout')
-    names = sorted(p.name for p in tree.iterdir() if p.is_file() and (p.name in required or p.suffix in ['.sfs', '.img']))
+    if not any((tree / name).is_file() for name in ['system.sfs', 'system.img', 'system.efs']):
+        raise ValueError('Unsupported ISO: no root system.sfs/system.img/system.efs. Root files: ' + ', '.join(sorted(p.name for p in tree.iterdir())[:60]))
+    names = sorted(p.name for p in tree.iterdir() if p.is_file() and (p.name in required or p.suffix in ['.sfs', '.img', '.efs']))
     for name in names:
         if (tree / name).is_symlink():
             raise ValueError('Payload symlinks are not accepted')

@@ -17,6 +17,14 @@ class BuilderTests(unittest.TestCase):
                 (tree / name).touch()
             self.assertEqual(builder.payloads(tree), ['initrd.img', 'kernel', 'ramdisk.img', 'system.sfs'])
 
+    def test_erofs_payload_is_retained(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tree = Path(directory)
+            for name in ['kernel', 'initrd.img', 'system.efs', 'vendor.efs']:
+                (tree / name).touch()
+            self.assertIn('system.efs', builder.payloads(tree))
+            self.assertIn('vendor.efs', builder.payloads(tree))
+
     def test_profiles_never_skip_setup_or_attach_installer(self):
         for profile in ['no-avx', 'drm-gbm', 'drm-gbm-no-avx']:
             config = builder.grub_config(profile)

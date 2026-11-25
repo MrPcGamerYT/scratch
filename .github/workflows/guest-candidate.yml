@@ -32,8 +32,16 @@ jobs:
           fi
           echo '17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751  bliss.iso' | sha256sum -c -
           7z x bliss.iso -ofixture > candidate/evidence/extract.log
-      - name: Build standalone experimental UEFI disk (not certified)
+      - name: Record source layout
         run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          print('::notice title=ISO root payloads::' + ', '.join(sorted(p.name for p in Path('fixture').iterdir())))
+          PYCODE
+      - name: Build standalone experimental UEFI disk (not certified)
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso bliss.iso --sha256 17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751 --profile drm-gbm-no-avx --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
       - name: Verify disk-only boot without installer ISO
         run: |
