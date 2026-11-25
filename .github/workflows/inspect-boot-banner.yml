@@ -21,10 +21,23 @@ jobs:
       - run: |
           sudo apt-get update && sudo apt-get install -y qemu-utils
           qemu-img convert -f qcow2 -O raw guest/images/android-base.qcow2 guest.raw
-          loop=$(sudo losetup --find --show --read-only --partscan guest.raw)
-          mkdir disk
-          sudo mount -o ro "${loop}p2" disk
-          cp disk/android/initrd.img initrd.img
+          python3 - <<'PY'
+          import struct,subprocess
+          from pathlib import Path
+          with open('guest.raw','rb') as f:
+              f.seek(512); header=f.read(92)
+              table=struct.unpack_from('<Q',header,72)[0]
+              f.seek(table*512); entries=f.read(128*4)
+              for i in range(4):
+                  entry=entries[i*128:(i+1)*128]
+                  first,last=struct.unpack_from('<QQ',entry,32)
+                  if not first: continue
+                  print(f'::notice::Partition {i+1}: {first}..{last}')
+                  subprocess.run(['dd','if=guest.raw','of=partition.raw','bs=512',f'skip={first}',f'count={last-first+1}','conv=sparse','status=none'],check=True)
+                  p=subprocess.run(['debugfs','-R','dump /android/initrd.img initrd.img','partition.raw'],capture_output=True,text=True)
+                  if Path('initrd.img').exists():break
+          assert Path('initrd.img').stat().st_size>1000
+          PY
           python3 - <<'PY'
           import gzip,sys
           from pathlib import Path
@@ -38,5 +51,3 @@ jobs:
                           if 'bliss' in line.lower() or 'detecting' in line.lower():
                               print(f'::notice::{name}:{number}: '+line.replace('%','%25'))
           PY
-          sudo umount disk
-          sudo losetup -d "$loop"
