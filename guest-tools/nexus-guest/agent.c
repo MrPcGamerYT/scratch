@@ -74,7 +74,7 @@ static int execute(const char *key) {
         else execl(NEXUS_SYSTEM_BIN "svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
     }
-    int budget = key && !strcmp(key,"PROVISION_HOME") ? 1200 : (key && !strcmp(key,"APK_INSTALL") ? 1200 : 600);
+    int budget = key && !strcmp(key,"PROVISION_HOME") ? 2400 : (key && (!strcmp(key,"APK_INSTALL") || !strcmp(key,"CHECK_HOME")) ? 1200 : 600);
     for (int i = 0; i < budget; ++i) {
         int status = 0;
         pid_t result = waitpid(child, &status, WNOHANG);
@@ -157,7 +157,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
     unsigned long long apk_total=0, apk_received=0;
     size_t apk_remaining=0;
     if (reply(output,"NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK\n")) return -1;
-    time_t worker_started=0;
+    time_t worker_started=0; int worker_limit=130;
     char worker_output[512]; size_t worker_used=0;
     for (;;) {
         if (*apkowned && apk_activity && time(NULL)-apk_activity>180) return -1;
@@ -179,7 +179,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
                 worker_output[worker_used]=0;
                 if (reply(output,worker_used ? worker_output : "NEXUS 1 ERROR COMMAND_FAILED\n")) return -1;
                 worker_used=0;
-            } else if (time(NULL)-worker_started>130) {
+            } else if (time(NULL)-worker_started>worker_limit) {
                 kill(-*worker,SIGKILL); waitpid(*worker,NULL,0);
                 close(*workfd); *workfd=-1; *worker=0;
                 if (*apkowned && *apkfd<0) { unlink(apk_path); *apkowned=0; }
@@ -268,6 +268,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
                         setpgid(*worker,*worker); close(ends[1]);
                         *workfd=ends[0]; fcntl(*workfd,F_SETFL,O_NONBLOCK);
                         worker_started=time(NULL); worker_used=0;
+                        worker_limit=key && !strcmp(key,"PROVISION_HOME") ? 300 : (key && !strcmp(key,"APK_INSTALL") ? 180 : 130);
                     }
                 } else if (reply(output,"NEXUS 1 ERROR UNSUPPORTED\n")) return -1;
             }
