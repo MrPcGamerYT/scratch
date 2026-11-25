@@ -335,7 +335,7 @@ void MainWindow::launch() {
         args << value.toString();
     }
     view->setStartupStatus("Starting Android", "Waiting for Android. Boot hiding requires authorized guest ADB; check Diagnostics if it does not become ready.", true);
-    process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); process->start();
+    process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); bootWait.start(); process->start();
     setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
     statusBar()->showMessage(softwareCpu ? "Starting with explicit software CPU emulation (slow)." : "Starting Android with WHPX...");
 }
@@ -558,6 +558,23 @@ void MainWindow::selectAppKeymap(const QString &package) {
 
 void MainWindow::pollGuest() {
     const bool running = process->state() == QProcess::Running;
+    // Check before any ADB early-return: missing adb.exe/authorization is the
+    // exact case in which an unbounded loading screen used to conceal the VM.
+    if (running && hideGuestBoot && !bootReady &&
+        (!QSettings().value("hideBoot", false).toBool() ||
+         (bootWait.isValid() && bootDisplayWaitExpired(bootWait.elapsed())))) {
+        const bool expired = bootWait.isValid() && bootDisplayWaitExpired(bootWait.elapsed());
+        hideGuestBoot = false;
+        view->setGuestVisible(true);
+        view->setStartupStatus("Android startup not confirmed",
+            "The boot-status connection is unavailable or Android is still starting. Boot hiding has been released. Check Settings → Diagnostics. Your disk was not reset.", false);
+        if (expired) {
+            recordEvent("Boot display wait expired after 180 seconds. Guest display revealed; Android readiness NOT confirmed. Check ADB/debugging, guest boot and TCG slowness.");
+            setWindowTitle("Project Nexus · Android startup not confirmed");
+            QMessageBox::warning(this, "Android startup not confirmed",
+                "Nexus has not received Android's boot-complete reply after three minutes. The guest display is now revealed instead of hiding behind an endless spinner.\n\nThis can mean missing/unauthorized ADB, a guest boot hang, or slow software CPU emulation. This timeout does not prove which one. Check Settings → Diagnostics.\n\nYour disk was preserved; no reset or automatic force-stop was performed.");
+        }
+    }
     const bool fps = QSettings().value("showFps", false).toBool();
     fpsBadge->setVisible(fps && running && isVisible() && !isMinimized());
     if (fpsBadge->isVisible()) {

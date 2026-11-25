@@ -104,7 +104,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
     showFps = new QCheckBox("Show live display FPS"); showFps->setObjectName("showFps"); form->addRow(showFps);
     hideBoot = new QCheckBox("Hide guest display until Android boot completes"); hideBoot->setObjectName("hideBoot"); form->addRow(hideBoot);
-    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and boot hiding require local ADB forwarding and authorized guest debugging. Boot hiding does not accelerate boot or skip setup. Restart to apply boot hiding.");
+    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and boot hiding require local ADB forwarding and authorized guest debugging. Boot hiding does not accelerate boot or skip setup. The display is revealed with a warning after three minutes without boot confirmation. Turning this option off reveals it during the current session; turning it on requires restart.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
     auto *resolution = new QComboBox(display); resolution->setObjectName("guestResolution");
     resolution->addItem("Android default", "reset");

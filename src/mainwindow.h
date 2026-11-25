@@ -1,5 +1,6 @@
 #pragma once
 #include <QMainWindow>
+#include <QElapsedTimer>
 #include "keymap.h"
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -41,6 +42,7 @@ private:
     QString globalProfileDir;
     bool bootReady = false;
     bool hideGuestBoot = false;
+    QElapsedTimer bootWait;
     bool switchingApp = false;
     QLabel *fpsBadge = nullptr;
     void recordEvent(const QString &message);

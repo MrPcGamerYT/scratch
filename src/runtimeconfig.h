@@ -27,3 +27,8 @@ inline bool preparedReducedAvx() {
     QFile file(QCoreApplication::applicationDirPath() + "/images/cpu-profile.txt");
     return file.open(QIODevice::ReadOnly) && file.read(32).trimmed() == "reduced-avx";
 }
+
+// Presentation deadline only: never infer Android readiness from elapsed time.
+inline bool bootDisplayWaitExpired(qint64 elapsedMs) {
+    return elapsedMs >= 180000;
+}

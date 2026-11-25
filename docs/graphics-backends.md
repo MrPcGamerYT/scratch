@@ -133,8 +133,10 @@ the guest. FPS polling has overhead and no speed benefit is claimed.
 
 Boot hiding keeps the embedded SDL child hidden until Android reports
 `sys.boot_completed=1`; that property is not proof of no ANRs or completed setup.
-If ADB is unavailable the loading screen remains; disable boot hiding in Settings
-and restart to diagnose. Hiding is inactive if forwarding was not enabled. SDL
+If ADB is unavailable or boot is not confirmed within three minutes, hiding is
+released and a warning explains that readiness remains unverified. Turning boot
+hiding off in Settings also releases the display during the current session.
+This fixes an earlier unbounded wait that could conceal the VM indefinitely. Hiding is inactive if forwarding was not enabled. SDL
 creates a native window before the Player can discover/embed it, so a brief
 external-window flash is still possible. This is not a zero-flash certification.
 The mouse patch retains the USB tablet and improves native child focus/activation;
