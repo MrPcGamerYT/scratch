@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y debootstrap qemu-system-x86 qemu-utils squashfs-tools e2fsprogs
-      - run: python3 tests/portable_workspace_test.py
+      - run: python3 tests/portable_workspace_test.py && python3 tests/boot_branding_test.py
       - name: Build bundled Linux maintenance appliance
         shell: bash
         run: |

@@ -44,12 +44,21 @@ jobs:
           sys.path.insert(0,'guest-tools')
           from install_bridge_ramdisk import records
           data=Path('initrd.img').read_bytes()
-          for name,fields,body in records(gzip.decompress(data) if data.startswith(b'\x1f\x8b') else data):
-              if name.lstrip('./')=='init':
-                  print('::notice::INIT_PREFIX_BASE64='+base64.b64encode(body[:2400]).decode())
-              if name.lstrip('./') in ('init','scripts/1-install','scripts/2-mount') or b'Bliss' in body:
-                  if b'\0' not in body:
-                      for number,line in enumerate(body.decode(errors='replace').splitlines(),1):
-                          if 'bliss' in line.lower() or 'detecting' in line.lower():
-                              print(f'::notice::{name}:{number}: '+line.replace('%','%25'))
+          from rebrand_boot import patch
+          old=list(records(gzip.decompress(data) if data.startswith(b'\x1f\x8b') else data))
+          updated=patch(data)
+          new=list(records(gzip.decompress(updated) if updated.startswith(b'\x1f\x8b') else updated))
+          assert len(old)==len(new)
+          changed=[]
+          for before,after in zip(old,new):
+              assert before[:2][0]==after[:2][0]
+              assert before[1][1:6]==after[1][1:6]
+              if before[2]!=after[2]:
+                  changed.append(before[0])
+                  assert before[0].lstrip('./')=='init'
+                  assert after[2].startswith(before[2].split(b'# ASCII art')[0])
+                  assert b'Welcome to Nexus Android' in after[2]
+          assert len(changed)==1,changed
+          import hashlib
+          print('::notice::PASS: actual verified initrd banner replaced; only init content changed; original copyright/licence prefix and record mode/ownership preserved. SHA256='+hashlib.sha256(updated).hexdigest())
           PY

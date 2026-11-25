@@ -110,6 +110,7 @@ class PortableWorkspace:
         if not apps.is_dir(): raise ValueError('Recognized system app directory missing')
         folder=safe_path(root,apps.relative_to(root)/('NexusAdded-'+package[1]))
         if folder.exists(): raise FileExistsError('Package staging folder already exists; use file replacement explicitly')
+        self.dirty=True
         folder.mkdir(mode=0o755); os.chown(folder,0,0)
         os.setxattr(folder,'security.selinux',b'u:object_r:system_file:s0')
         replace_file(source,folder/'base.apk',new_system_file=True)
