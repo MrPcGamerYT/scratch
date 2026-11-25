@@ -9,6 +9,23 @@ import time
 
 
 def boot_recipe(tree):
+    # ISOLINUX is a literal representation of the live recipe in this Bliss ISO;
+    # its EFI GRUB config builds equivalent entries using shell-like functions.
+    for config in sorted(tree.rglob('isolinux.cfg')):
+        text = config.read_text(errors='replace')
+        for stanza in re.split(r'(?m)^label\s+', text)[1:]:
+            kernel_match = re.search(r'(?m)^\s*kernel\s+(\S+)', stanza)
+            append = re.search(r'(?m)^\s*append\s+(.+)', stanza)
+            if not kernel_match or not append:
+                continue
+            args = append[1].split()
+            if any(token.startswith(('INSTALL=', 'AUTO_INSTALL=', 'DEBUG=')) for token in args):
+                continue
+            initrd_arg = next((token.split('=', 1)[1] for token in args if token.startswith('initrd=')), '')
+            kernels = list(tree.rglob(pathlib.PurePosixPath(kernel_match[1]).name))
+            images = list(tree.rglob(pathlib.PurePosixPath(initrd_arg).name)) if initrd_arg else []
+            if kernels and images and not any('$' in token for token in args):
+                return kernels[0], images[0], ' '.join(token for token in args if token != 'quiet' and not token.startswith('initrd=')), str(config)
     candidates = sorted(tree.rglob('grub.cfg')) + sorted(tree.rglob('menu.lst'))
     for config in candidates:
         lines = config.read_text(errors='replace').splitlines()

@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install test tools
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 adb p7zip-full
+      - name: Probe parser unit tests
+        run: python3 tests/android_probe_tests.py
       - name: Download exact diagnostic fixture
         run: |
           mkdir -p evidence fixture
@@ -51,9 +53,20 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
+          import base64
           for image in Path('evidence').glob('*.ppm'):
               Image.open(image).save(image.with_suffix('.png'))
               image.unlink()
+          serial = Path('evidence/serial.log')
+          if serial.exists():
+              tail = serial.read_text(errors='replace')[-22000:]
+              print('::notice title=Guest serial tail::' + tail.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          screenshots = sorted(Path('evidence').glob('screen-*.png'))
+          if screenshots:
+              thumbnail = Image.open(screenshots[-1])
+              thumbnail.thumbnail((640, 480))
+              thumbnail.save('evidence/last-screen.jpg', quality=65)
+              print('::notice title=Last screenshot JPEG base64::' + base64.b64encode(Path('evidence/last-screen.jpg').read_bytes()).decode())
           PY
       - uses: actions/upload-artifact@v4
         if: always()
