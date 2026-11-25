@@ -95,6 +95,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     mouseLockButton = dockButton("◎  Lock mouse", keyMenu);
     auto *lockAction = new QWidgetAction(keyMenu); lockAction->setDefaultWidget(mouseLockButton); keyMenu->addAction(lockAction);
     aimButton = dockButton("⌖  Aim & fire", header); aimButton->hide();
+    auto *aimAction = keyMenu->addAction("Arm / disarm aim (configure in Keymap Studio)");
+    connect(aimAction, &QAction::triggered, this, [this] { aimButton->click(); });
     auto *volume = dockButton("♫  Volume", dock); dockLayout->addWidget(volume);
     auto *volumeMenu = new QMenu(volume); volume->setMenu(volumeMenu);
     for (const auto &entry : {qMakePair(QString("Volume up"), 24), qMakePair(QString("Volume down"), 25), qMakePair(QString("Toggle mute"), 164)}) {
@@ -139,7 +141,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(launchButton, &QPushButton::clicked, this, [this] { launch(); });
     connect(shutdownButton, &QPushButton::clicked, this, [this] { qmp->powerDown(); statusBar()->showMessage("Shutdown requested. If Android ignores it, shut down inside the guest."); });
     connect(apkButton, &QPushButton::clicked, this, [this] { installApk(); });
-    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.sessionDiagnostics = [this] { return QString("Process: %1; QMP: %2; display embedded: %3\n").arg(process->state() == QProcess::Running ? "running" : "stopped").arg(qmp->isReady() ? "ready" : "not ready").arg(view->windowHandle() ? "yes" : "no") + sessionLog; }; dialog.applyDisplay = [this](QString size, int dpi) { applyGuestDisplay(size, dpi); }; dialog.exec(); });
+    connect(settingsButton, &QPushButton::clicked, this, [this] { SettingsDialog dialog(process->state() != QProcess::NotRunning, this); dialog.sessionDiagnostics = [this] { return QString("Process: %1; QMP: %2; display embedded: %3\n").arg(process->state() == QProcess::Running ? "running" : "stopped").arg(qmp->isReady() ? "ready" : "not ready").arg(view->windowHandle() ? "yes" : "no") + aim->inputDiagnostics() + "\n\n" + sessionLog; }; dialog.applyDisplay = [this](QString size, int dpi) { applyGuestDisplay(size, dpi); }; dialog.exec(); });
     auto toggleFullscreen = [this] { if (isFullScreen()) showNormal(); else showFullScreen(); };
     connect(fullscreenButton, &QPushButton::clicked, this, toggleFullscreen);
     auto *fullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_F11), this);

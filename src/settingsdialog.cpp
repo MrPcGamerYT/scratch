@@ -115,6 +115,13 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("Graphics renderer", unavailable("Standard VGA · compatibility")); form->addRow("ASTC textures", unavailable("Not supported"));
     note(form, "Vulkan, DirectX, GPU passthrough and dedicated-GPU selection are not implemented in this player.");
     auto *games = addPage("Game settings", "Configure the native keymapping runtime.", &form);
+    mouseInput = new QComboBox(games); mouseInput->setObjectName("mouseInputBackend");
+    mouseInput->addItem("Compatibility cursor deltas", false); mouseInput->addItem("Experimental relative raw mouse", true);
+    form->addRow("Aim mouse input", mouseInput);
+    aimInterval = new QComboBox(games); aimInterval->setObjectName("aimBatchInterval");
+    aimInterval->addItem("16 ms · compatibility", 16); aimInterval->addItem("8 ms · lower batch delay", 8); aimInterval->addItem("4 ms · more host work", 4);
+    form->addRow("Aim movement batching", aimInterval);
+    note(form, "Save then release/reactivate aim to apply. Raw mode uses relative device counts (sensitivity may need retuning), bypasses cursor-position deltas, and rejects absolute devices. Unsupported registration fails visibly rather than silently changing mode. Smaller batching intervals can increase CPU/QMP traffic and do not guarantee lower game latency. Diagnostics reports host-only counters.");
     multitouch = new QCheckBox("Experimental multi-touch keymapping", games); form->addRow(multitouch);
     note(form, "Requires virtio multitouch support in the Android guest and a player restart. Single-pointer fallback remains available.");
     note(form, "Open Keymap Studio from the player toolbar for schemes, D-pad, taps, swipes, pinch zoom, MOBA skills and scripts. Aim settings configure ADS and free-look.");
@@ -145,7 +152,7 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     auto *footer = new QHBoxLayout; footer->setContentsMargins(24, 16, 24, 16);
     auto *notice = new QLabel(running ? "ⓘ  Changes apply on next player launch" : "ⓘ  Some changes apply on next launch"); notice->setObjectName("muted"); footer->addWidget(notice); footer->addStretch();
     auto *discard = new QPushButton("Discard"); auto *saveButton = new QPushButton("Save changes"); saveButton->setObjectName("saveSettings"); footer->addWidget(discard); footer->addWidget(saveButton); layout->addLayout(footer);
-    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()); };
+    auto snapshot = [this] { return QString("%1/%2/%3/%4/%5/%6/%7/%8/%9").arg(cpus->value()).arg(memory->value()).arg(showCursor->isChecked()).arg(multitouch->isChecked()).arg(adbForward->isChecked()).arg(adbPort->value()).arg(acceleration->currentData().toString()).arg(mouseInput->currentIndex()).arg(aimInterval->currentIndex()); };
     auto baseline = std::make_shared<QString>();
     auto update = [=] { bool changed = snapshot() != *baseline; dirty->setVisible(changed); discard->setEnabled(changed); saveButton->setEnabled(changed); adbPort->setEnabled(adbForward->isChecked()); };
     auto restore = [=] {
@@ -154,11 +161,13 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
         showCursor->setChecked(s.value("showCursor", true).toBool()); multitouch->setChecked(s.value("multiTouch", false).toBool());
         adbForward->setChecked(s.value("adbForward", false).toBool()); adbPort->setValue(s.value("adbPort", 5555).toInt());
         acceleration->setCurrentIndex(qMax(0, acceleration->findData(s.value("acceleration", "prepared").toString())));
+        mouseInput->setCurrentIndex(s.value("input/rawMouse", false).toBool() ? 1 : 0);
+        aimInterval->setCurrentIndex(qMax(0, aimInterval->findData(s.value("input/aimInterval", 16).toInt())));
         *baseline = snapshot(); update();
     };
     for (auto *spin : {cpus, memory, adbPort}) connect(spin, &QSpinBox::valueChanged, this, [=](int) { update(); });
     for (auto *check : {showCursor, multitouch, adbForward}) connect(check, &QCheckBox::toggled, this, [=](bool) { update(); });
-    connect(acceleration, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
+    for (auto *combo : {acceleration, mouseInput, aimInterval}) connect(combo, &QComboBox::currentIndexChanged, this, [=](int) { update(); });
     connect(discard, &QPushButton::clicked, this, restore);
     connect(saveButton, &QPushButton::clicked, this, [=] { if (!save()) return; *baseline = snapshot(); update(); notice->setText("✓  Saved locally · restart player to apply"); });
     hasChanges = [=] { return snapshot() != *baseline; };
@@ -174,6 +183,8 @@ bool SettingsDialog::save() {
     s.setValue("showCursor", showCursor->isChecked()); s.setValue("multiTouch", multitouch->isChecked());
     s.setValue("adbForward", adbForward->isChecked()); s.setValue("adbPort", adbPort->value());
     s.setValue("acceleration", acceleration->currentData());
+    s.setValue("input/rawMouse", mouseInput->currentData());
+    s.setValue("input/aimInterval", aimInterval->currentData());
     s.sync();
     if (s.status() != QSettings::NoError) {
         QMessageBox::critical(this, "Settings not saved", "Could not write local settings. Check your user configuration folder permissions and free space.");

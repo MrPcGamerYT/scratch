@@ -1,5 +1,6 @@
 #include "aimmodel.h"
 #include "qmp.h"
+#include "rustcore.h"
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -22,6 +23,9 @@ int main(int argc, char **argv) {
     // Asymmetric X/Y sensitivity check
     AimModel asym(QPointF(.5, .5), 1.0, 2.0);
     if (asym.move(100, -50, 1000, 1000) || std::abs(asym.position().x() - .6) > 0.0001 || std::abs(asym.position().y() - .4) > 0.0001) return 7;
+    if (nexus_input_interval(8) != 8 || nexus_input_interval(3) != 16) return 8;
+    const auto delta = nexus_input_accumulate(2147483647, -2147483647, 1000, -1000);
+    if (delta.x != 32768 || delta.y != -32768) return 9;
     std::cout << "Aim gesture arithmetic (uniform and asymmetric X/Y) and pointer motion passed; no Windows hook or Android test.\n";
     return 0;
 }

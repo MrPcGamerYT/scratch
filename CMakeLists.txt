@@ -58,6 +58,8 @@ qt_add_executable(ProjectNexus WIN32
     src/inputmapper.h
     src/mouselock.cpp
     src/mouselock.h
+    src/rawmouse.cpp
+    src/rawmouse.h
     src/aimcontroller.cpp
     src/aimcontroller.h
     src/aimsettings.cpp
@@ -84,6 +86,10 @@ if(BUILD_TESTING)
     add_executable(keymap_tests tests/keymap_tests.cpp)
     target_link_libraries(keymap_tests PRIVATE nexus_controls)
     add_test(NAME keymap_tests COMMAND keymap_tests)
+    add_executable(rawmouse_tests tests/rawmouse_tests.cpp src/rawmouse.cpp src/rawmouse.h)
+    target_include_directories(rawmouse_tests PRIVATE src)
+    target_link_libraries(rawmouse_tests PRIVATE user32)
+    add_test(NAME rawmouse_tests COMMAND rawmouse_tests)
     add_executable(aimmodel_tests tests/aimmodel_tests.cpp)
     target_link_libraries(aimmodel_tests PRIVATE nexus_controls)
     add_test(NAME aimmodel_tests COMMAND aimmodel_tests)

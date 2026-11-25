@@ -3,6 +3,8 @@
 #include <QPointF>
 #include "aimmodel.h"
 #include "keymap.h"
+#include "rawmouse.h"
+#include <QElapsedTimer>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -26,6 +28,7 @@ public:
     bool isArmed() const { return keyboard != nullptr; }
     bool isActive() const { return active; }
     bool isCapturingMouse() const { return active && !suspended; }
+    QString inputDiagnostics() const;
     const AimConfig &currentConfig() const { return cfg; }
 signals:
     void statusChanged(bool armed, bool active, const QString &message);
@@ -42,6 +45,12 @@ private:
     void triggerAdsDown();
     void triggerAdsUp();
     void flushMove();
+    void queueMove(int dx, int dy);
+    RawMouseInput rawMouse;
+    QElapsedTimer pendingAge;
+    quint64 receivedMoves = 0, sentBatches = 0;
+    qint64 maximumBatchWait = 0;
+    bool useRawMouse = false;
     bool centerCursor();
     void notifyState(bool armedState, bool activeState, bool suspendedState, const QString &msg);
 

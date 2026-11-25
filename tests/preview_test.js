@@ -34,6 +34,10 @@ const assert = require('node:assert/strict');
         assert.match(await page.locator('#settingsPage').innerText(), /not available/i);
 
       }
+      await page.locator('[data-page="input"]').click();
+      await page.locator('#mouseInputPreview').selectOption({index: 1});
+      await page.locator('#aimBatchPreview').selectOption({index: 1});
+      assert.match(await page.locator('#settingsPage').innerText(), /No game FPS/);
       await page.locator('[data-page="display"]').click();
       await page.locator('#guestResolution').selectOption({label: '1920x1080'});
       await page.locator('#guestDensity').selectOption({label: '240 DPI'});

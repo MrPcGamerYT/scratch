@@ -66,6 +66,9 @@ struct NexusVmRequest {
     std::uint32_t memory_mb, cpus, adb_port, flags;
 };
 std::size_t nexus_vm_plan(const NexusVmRequest *request, std::uint8_t *output, std::size_t capacity);
+struct NexusInputDelta { std::int32_t x, y; };
+NexusInputDelta nexus_input_accumulate(std::int32_t x, std::int32_t y, std::int32_t dx, std::int32_t dy);
+std::uint32_t nexus_input_interval(std::uint32_t requested);
 std::int32_t nexus_whpx_available();
 // Manual working-set trim; 1 success, 0 failed, -1 unsupported.
 std::int32_t nexus_trim_working_set(std::uint32_t pid);

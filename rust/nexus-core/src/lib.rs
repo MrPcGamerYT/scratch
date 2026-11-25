@@ -3,6 +3,7 @@
 //! QEMU remains the VM backend; Qt remains the UI. No external crates are used.
 
 pub mod runtime;
+pub mod input;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

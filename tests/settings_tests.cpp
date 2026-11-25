@@ -75,6 +75,13 @@ int main(int argc, char **argv) {
     QDir().mkpath(tmp.path() + "/images"); emptyFirmware.open(QIODevice::WriteOnly); emptyFirmware.close();
     if (!playerDiagnostics(tmp.path()).contains("incomplete/empty UEFI")) return 19;
     if (dialog.findChild<QCheckBox *>("audioOutput")) return 20; // automatic, no user toggle
+    auto *inputMode = dialog.findChild<QComboBox *>("mouseInputBackend");
+    auto *batch = dialog.findChild<QComboBox *>("aimBatchInterval");
+    if (!inputMode || !batch || inputMode->currentData().toBool() || batch->currentData().toInt() != 16) return 28;
+    inputMode->setCurrentIndex(1); batch->setCurrentIndex(batch->findData(8)); discard->click();
+    if (inputMode->currentData().toBool() || batch->currentData().toInt() != 16) return 29;
+    inputMode->setCurrentIndex(1); batch->setCurrentIndex(batch->findData(4)); save->click();
+    if (!QSettings().value("input/rawMouse").toBool() || QSettings().value("input/aimInterval").toInt() != 4) return 30;
     QMimeData mime;
     mime.setUrls({QUrl("https://example.invalid/test.apk")});
     if (!droppedApk(&mime).isEmpty()) return 23;

@@ -14,6 +14,8 @@ private:
     std::function<bool()> hasChanges;
     bool save();
     QComboBox *acceleration;
+    QComboBox *mouseInput;
+    QComboBox *aimInterval;
     QSpinBox *memory;
     QSpinBox *cpus;
     QSpinBox *adbPort;

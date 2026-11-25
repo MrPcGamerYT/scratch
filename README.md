@@ -277,3 +277,26 @@ Missing ADB/authorization or command failure is reported without claiming succes
 Real guest/game FPS, a movable measured-FPS HUD, accelerated graphics and a
 lower-latency raw-input transport remain unfinished. Do not substitute Qt paint
 rate or a timer count for game FPS. No zero-latency or fastest-emulator claim is made.
+
+### Experimental raw mouse and input batching
+
+Settings → Game settings provides an opt-in relative raw-mouse receiver and
+4/8/16 ms aim-movement batching intervals. Save, release aim, and activate it again
+to apply. Compatibility cursor input and 16 ms batching remain defaults pending
+real-game validation. Arm/disarm aim from the Keymap menu; configure bindings and
+independent X/Y sensitivity in Keymap Studio. Raw device counts may need different
+sensitivity from cursor deltas. Absolute tablets/touch devices are not supported
+by this relative-mouse mode.
+
+The raw receiver preserves other process-local registrations, releases its own
+registration on capture stop, and accepts movement only while the guest is focused
+and aim is active (not suspended). Existing mouse hooks still handle button capture
+and cursor confinement. Raw mode does not silently fall back on registration error.
+The Rust core owns overflow-safe movement accumulation and supported batching
+interval validation. A precise Qt timer schedules batches; OS scheduling and QMP
+transport can still delay them. Lower intervals increase host/monitor work.
+
+Diagnostics reports movement packets, sent movement batches and maximum observed
+host batching wait. These are **not** hardware latency, input-to-photon latency,
+game FPS, or a performance guarantee. No fake FPS overlay is displayed. GPU
+acceleration and representative game benchmarks remain required milestones.

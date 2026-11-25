@@ -190,6 +190,7 @@ body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:
         <button data-page="graphics">Graphics</button>
         <button data-page="device">Device</button>
         <button data-page="audio">Audio</button>
+        <button data-page="input">Input</button>
         <button data-page="preferences">Preferences</button>
         <button data-page="diagnostics">Diagnostics</button>
       </nav>
@@ -365,6 +366,7 @@ document.querySelectorAll('.dock button').forEach(button => {
   if (icon) button.replaceChildren(icon);
 });
 const pages = {
+  input: `<h3>Input performance</h3><p class="desc">Desktop options apply after Save and reactivating aim. Preview only.</p><label class="field">Aim mouse input <select id="mouseInputPreview"><option>Compatibility cursor deltas</option><option>Experimental relative raw mouse</option></select></label><label class="field">Aim movement batching <select id="aimBatchPreview"><option>16 ms · compatibility</option><option>8 ms · lower batch delay</option><option>4 ms · more host work</option></select></label><div class="note">Relative raw mouse uses device counts rather than cursor-position deltas. Retune X/Y sensitivity as needed. Absolute devices are not supported in raw mode. Smaller intervals may increase CPU and monitor traffic. No game FPS or end-to-end latency measurement is available.</div><div class="note">Desktop: Settings → Game settings. Input packet counts, movement batches, and largest observed host batch wait are available in Diagnostics. These are not gameplay FPS.</div>`,
   audio: `<h3>Audio output</h3><p class="desc">Automatic guest sound through Intel HDA and Windows DirectSound.</p><div class="field">Playback <div class="disabled">Windows default playback device · automatic</div></div><div class="note">Desktop sound is enabled by default without an on/off switch. Android needs a compatible HDA driver. Microphone capture and per-device routing are not implemented. This browser demo does not play guest audio.</div>`,
   diagnostics: `<h3>Diagnostics</h3><p class="desc">Package checks and bounded current-session events in the desktop player.</p><div class="note">Browser demo only — this page cannot inspect your PC, installed files or Android guest.</div><pre style="white-space:pre-wrap;background:#10131c;padding:16px;border-radius:8px">Engine: not connected (browser preview)
 QMP monitor: not connected

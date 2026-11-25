@@ -2,12 +2,15 @@
 #include "qmp.h"
 #include <QTimer>
 #include <QtGlobal>
+#include <QSettings>
+#include "rustcore.h"
 
 AimController *AimController::instance = nullptr;
 
 AimController::AimController(Qmp *qmp, QObject *parent)
     : QObject(parent), monitor(qmp), timer(new QTimer(this)) {
     timer->setInterval(16);
+    timer->setTimerType(Qt::PreciseTimer);
     connect(timer, &QTimer::timeout, this, [this] {
         if (active && (!focused() || !monitor->isReady())) { stop(); return; }
         if (active && !suspended) {
@@ -102,6 +105,17 @@ bool AimController::start() {
     if (!focused() || !monitor->isReady()) return false;
     mouse = SetWindowsHookExW(WH_MOUSE_LL, mouseProc, nullptr, 0);
     if (!mouse) return false;
+    const QSettings settings;
+    useRawMouse = settings.value("input/rawMouse", false).toBool();
+    timer->setInterval(static_cast<int>(nexus_input_interval(settings.value("input/aimInterval", 16).toUInt())));
+    if (useRawMouse && !rawMouse.start([this](int dx, int dy) {
+        if (active && !suspended && focused() && (!firing || touchMode)) queueMove(dx, dy);
+    })) {
+        UnhookWindowsHookEx(mouse); mouse = nullptr;
+        notifyState(true, false, false, "Raw mouse registration failed or is owned by another component. Choose compatibility input in Settings → Game settings.");
+        return false;
+    }
+    receivedMoves = sentBatches = 0; maximumBatchWait = 0; pendingAge.invalidate();
     active = true;
     suspended = false;
     freeLooking = false;
@@ -119,6 +133,7 @@ bool AimController::start() {
         .arg(cfg.adsEnabled ? QStringLiteral(", RMB ADS") : QString())
         .arg(keyName(cfg.toggleKey));
     if (cfg.suspendKey != 0) hint += QStringLiteral(" Hold %1 for cursor.").arg(keyName(cfg.suspendKey));
+    hint += QString(" Input: %1, %2 ms batching.").arg(useRawMouse ? "raw mouse" : "compatibility").arg(timer->interval());
     notifyState(true, true, false, hint);
     return true;
 }
@@ -218,6 +233,7 @@ void AimController::triggerAdsUp() {
 void AimController::stop() {
     if (!active && !mouse) return;
     timer->stop();
+    rawMouse.stop();
     if (active && !suspended) {
         if (touchMode) {
             monitor->touchUp(0);
@@ -244,6 +260,8 @@ void AimController::flushMove() {
     if (!pendingX && !pendingY) return;
     RECT r{};
     if (!GetClientRect(guest, &r) || r.right <= 0 || r.bottom <= 0) { stop(); return; }
+    if (pendingAge.isValid()) maximumBatchWait = qMax(maximumBatchWait, pendingAge.elapsed());
+    pendingAge.invalidate(); ++sentBatches;
     const int dx = pendingX, dy = pendingY;
     pendingX = pendingY = 0;
     auto &cam = freeLooking ? freeLookModel : model;
@@ -260,6 +278,18 @@ void AimController::flushMove() {
     } else {
         monitor->pointerMove(cam.position().x(), cam.position().y());
     }
+}
+
+void AimController::queueMove(int dx, int dy) {
+    if (!dx && !dy) return;
+    if (!pendingX && !pendingY) pendingAge.start();
+    const auto delta = nexus_input_accumulate(pendingX, pendingY, dx, dy);
+    pendingX = delta.x; pendingY = delta.y; ++receivedMoves;
+}
+QString AimController::inputDiagnostics() const {
+    return QString("Aim input: %1; capture: %2; target batch interval: %3 ms\nMovement packets: %4; sent movement batches: %5; largest observed host batch wait: %6 ms\nHost-only counters, not game FPS or end-to-end input latency. Absolute raw-mouse devices are unsupported.")
+        .arg(useRawMouse ? "experimental relative raw mouse" : "compatibility cursor deltas")
+        .arg(isCapturingMouse() ? "active" : "inactive").arg(timer->interval()).arg(receivedMoves).arg(sentBatches).arg(maximumBatchWait);
 }
 
 LRESULT CALLBACK AimController::keyboardProc(int code, WPARAM msg, LPARAM data) {
@@ -320,9 +350,8 @@ LRESULT CALLBACK AimController::mouseProc(int code, WPARAM msg, LPARAM data) {
     const auto *event = reinterpret_cast<const MSLLHOOKSTRUCT *>(data);
     if (msg == WM_MOUSEMOVE) {
         int dx = event->pt.x - self->cursorCenter.x, dy = event->pt.y - self->cursorCenter.y;
-        if (!(event->flags & LLMHF_INJECTED) && (dx || dy) && (!self->firing || self->touchMode)) {
-            self->pendingX = qBound(-4096, self->pendingX + dx, 4096);
-            self->pendingY = qBound(-4096, self->pendingY + dy, 4096);
+        if (!self->useRawMouse && !(event->flags & LLMHF_INJECTED) && (dx || dy) && (!self->firing || self->touchMode)) {
+            self->queueMove(dx, dy);
         }
         if ((dx || dy) && !SetCursorPos(self->cursorCenter.x, self->cursorCenter.y)) self->stop();
         return 1;
