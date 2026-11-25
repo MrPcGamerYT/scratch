@@ -289,7 +289,17 @@ void MainWindow::launch() {
         QMessageBox::critical(this, "Hardware acceleration unavailable", "The Rust runtime could not confirm Windows Hypervisor Platform availability. Enable CPU virtualization in firmware and Windows Hypervisor Platform, then restart Windows. The player will not silently use slow software CPU emulation.");
         return;
     }
-    if (selectedVmGraphics(s) == "virtio") {
+    const bool virgl = selectedVmGraphics(s) == "virgl";
+    if (virgl) {
+        QProcess capability;
+        capability.start(qemu, {"-device", "help"});
+        if (!capability.waitForFinished(10000) || capability.exitCode() != 0 ||
+            !(capability.readAllStandardOutput() + capability.readAllStandardError()).contains("virtio-vga-gl")) {
+            capability.kill(); capability.waitForFinished(1000);
+            QMessageBox::critical(this, "OpenGL renderer unavailable", "This QEMU build does not advertise virtio-vga-gl. Install the OpenGL/VirGL-enabled engine. No software-rendering fallback was attempted."); return;
+        }
+    }
+    if (selectedVmGraphics(s) == "virtio" || virgl) {
         const QFileInfo rom(root + "/qemu/share/qemu/vgabios-virtio.bin");
         if (!rom.isFile() || rom.size() <= 0) { QMessageBox::critical(this, "VirtIO firmware missing", "Extract the complete updated package; vgabios-virtio.bin is missing or empty."); return; }
     }
@@ -298,7 +308,7 @@ void MainWindow::launch() {
     const QByteArray firmwareBytes = (QFileInfo::exists(firmware + "/bios-256k.bin") ? firmware : QString()).toUtf8();
     const QByteArray codeBytes = (hasCode ? code : QString()).toUtf8();
     const QByteArray varsBytes = (hasCode ? vars : QString()).toUtf8();
-    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u) | 16u | (selectedVmGraphics(s) == "virtio" ? 32u : 0u);
+    const std::uint32_t flags = (runningMultiTouch ? 1u : 0u) | (!s.value("showCursor", true).toBool() ? 2u : 0u) | (runningAdbForward ? 4u : 0u) | (softwareCpu ? 8u : 0u) | 16u | (selectedVmGraphics(s) == "virtio" ? 32u : 0u) | (softwareCpu && preparedReducedAvx() ? 64u : 0u) | (virgl ? 128u : 0u);
     const NexusVmRequest request{diskBytes.constData(), firmwareBytes.constData(), codeBytes.constData(), varsBytes.constData(), static_cast<std::uint32_t>(ram), static_cast<std::uint32_t>(cpus), static_cast<std::uint32_t>(port), flags};
     const auto size = nexus_vm_plan(&request, nullptr, 0);
     if (size == 0 || size > 1024 * 1024) { QMessageBox::critical(this, "VM configuration", "Rust runtime rejected the launch configuration."); return; }

@@ -27,7 +27,7 @@ pub struct Config<'a> {
 
 pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if !(512..=131072).contains(&c.memory_mb) || !(1..=64).contains(&c.cpus)
-        || !(1024..=65535).contains(&c.adb_port) || c.flags & !63 != 0 {
+        || !(1024..=65535).contains(&c.adb_port) || c.flags & !255 != 0 || (c.flags & 64 != 0 && c.flags & 8 == 0) {
         return Err("Invalid VM resources, port or flags");
     }
     if c.disk.is_empty() || c.uefi_code.is_empty() != c.uefi_vars.is_empty()
@@ -40,10 +40,10 @@ pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     }
     let mut args: Vec<String> = vec!["-accel", if c.flags & 8 != 0 { "tcg,thread=multi" } else { "whpx,kernel-irqchip=off" }, "-m"].into_iter().map(str::to_owned).collect();
     args.extend([c.memory_mb.to_string(), "-smp".into(), c.cpus.to_string()]);
-    args.extend(["-vga", if c.flags & 33 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
-    if c.flags & 8 != 0 { args.extend(["-cpu".into(), "max".into()]); }
-    if c.flags & 33 != 0 {
-        args.extend(["-device", if c.flags & 32 != 0 { "virtio-vga,id=nexus_display" } else { "VGA,id=nexus_display" }].into_iter().map(str::to_owned));
+    args.extend(["-vga", if c.flags & 161 != 0 { "none" } else { "std" }, "-usb", "-device", "usb-tablet", "-hda", c.disk, "-boot", "order=c", "-name", "Project Nexus", "-qmp", "stdio"].into_iter().map(str::to_owned));
+    if c.flags & 8 != 0 { args.extend(["-cpu".into(), if c.flags & 64 != 0 { "max,avx=off,avx2=off,f16c=off,fma=off" } else { "max" }.into()]); }
+    if c.flags & 161 != 0 {
+        args.extend(["-device", if c.flags & 128 != 0 { "virtio-vga-gl,id=nexus_display" } else if c.flags & 32 != 0 { "virtio-vga,id=nexus_display" } else { "VGA,id=nexus_display" }].into_iter().map(str::to_owned));
     }
     if c.flags & 1 != 0 {
         args.extend(["-device", "virtio-multitouch-pci,id=nexus_touch,display=nexus_display"].into_iter().map(str::to_owned));
@@ -54,7 +54,9 @@ pub fn plan(c: &Config<'_>) -> Result<Vec<String>, &'static str> {
     if c.flags & 16 != 0 {
         args.extend(["-audiodev", "dsound,id=nexus_audio", "-device", "ich9-intel-hda,id=nexus_hda", "-device", "hda-output,bus=nexus_hda.0,audiodev=nexus_audio"].into_iter().map(str::to_owned));
     }
-    if c.flags & 2 != 0 { args.extend(["-display".into(), "sdl,show-cursor=off".into()]); }
+    if c.flags & 128 != 0 {
+        args.extend(["-display".into(), if c.flags & 2 != 0 { "sdl,gl=on,show-cursor=off" } else { "sdl,gl=on" }.into()]);
+    } else if c.flags & 2 != 0 { args.extend(["-display".into(), "sdl,show-cursor=off".into()]); }
     if !c.firmware_dir.is_empty() { args.extend(["-L".into(), c.firmware_dir.into()]); }
     let net = if c.flags & 4 != 0 { format!("user,id=net0,hostfwd=tcp:127.0.0.1:{}-:5555", c.adb_port) } else { "user,id=net0".into() };
     args.extend(["-netdev".into(), net, "-device".into(), "virtio-net-pci,netdev=net0,romfile=".into()]);
@@ -164,9 +166,19 @@ mod tests {
             if flags & 1 != 0 { assert!(args.iter().any(|a| a.contains("display=nexus_display"))); }
         }
     }
+    #[test] fn gl_renderer_is_explicit_and_uses_one_display() {
+        let mut c = config(); c.flags = 128 | 64 | 8 | 2 | 1;
+        let args = plan(&c).unwrap();
+        assert!(args.iter().any(|arg| arg == "virtio-vga-gl,id=nexus_display"));
+        assert!(args.iter().any(|arg| arg == "sdl,gl=on,show-cursor=off"));
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-display").count(), 1);
+        assert!(args.iter().any(|arg| arg == "max,avx=off,avx2=off,f16c=off,fma=off"));
+        c.flags = 0;
+        assert!(!plan(&c).unwrap().iter().any(|arg| arg.contains("gl=on")));
+    }
     #[test] fn rejects_invalid_and_escapes_paths() {
         let mut c = config(); c.cpus = 0; assert!(plan(&c).is_err()); c.cpus = 4;
-        c.flags = 64; assert!(plan(&c).is_err()); c.flags = 0;
+        c.flags = 256; assert!(plan(&c).is_err()); c.flags = 64; assert!(plan(&c).is_err()); c.flags = 0;
         c.uefi_code = "code.fd"; assert!(plan(&c).is_err());
         c.uefi_vars = "my,vars.fd";
         assert!(plan(&c).unwrap().iter().any(|a| a.contains("my,,vars.fd")));

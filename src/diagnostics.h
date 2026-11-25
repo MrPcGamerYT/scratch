@@ -30,7 +30,7 @@ inline QString playerDiagnostics(const QString &root) {
         << QString("Configured local ADB forwarding: %1 (restart required after changes)").arg(settings.value("adbForward", false).toBool() ? "enabled" : "disabled")
         << QString("Audio output: automatic Intel HDA / Windows DirectSound (guest driver required)")
         << "Network: QEMU user-mode NAT with virtio-net (guest driver/DHCP required; not a connectivity test)"
-        << "Configured display: " + selectedVmGraphics(settings) + " (no host GPU acceleration)"
+        << "Configured display: " + selectedVmGraphics(settings) + " (configuration only; actual guest rendering not verified)"
         << "Rust: runtime launch policy and input core; QEMU remains the VM engine"
         << "" << "These checks do not verify ISO integrity, Android boot, ADB authorization or game compatibility."
         << "Privacy: this report and session log may contain local paths/usernames. Review before sharing.";

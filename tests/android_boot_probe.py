@@ -47,6 +47,7 @@ def boot_recipe(tree):
 # Diagnostic hypotheses, NOT production presets or measured optimizations.
 PROFILES = {
     'baseline': ('max', ''),
+    'virgl': ('max,avx=off,avx2=off,f16c=off,fma=off', 'HWC=drm GRALLOC=gbm'),
     'no-avx': ('max,avx=off,avx2=off,f16c=off,fma=off', ''),
     'drm-gbm': ('max', 'HWC=drm GRALLOC=gbm'),
     'drm-gbm-no-avx': ('max,avx=off,avx2=off,f16c=off,fma=off', 'HWC=drm GRALLOC=gbm'),
@@ -104,6 +105,8 @@ def run(args):
         cpu, command_line = profile_recipe(args.profile, command_line)
         result['profile'] = args.profile
         result['guest_gpu_acceleration'] = False
+        result['requested_renderer'] = 'virgl-opengl' if args.profile == 'virgl' else '2d-scanout'
+        result['physical_host_gpu_verified'] = False
         result.update(kernel=str(kernel), initrd=str(initrd), source_config=config, iso_kernel_args=command_line)
         # Reserve local ephemeral ports; CI runs each probe in its own isolated job.
         def free_port():
@@ -131,6 +134,11 @@ def run(args):
                         '-drive', f'if=pflash,format=raw,file={PathEscape(args.uefi_vars)}', '-boot', 'order=c']
             result['scope'] = 'Linux TCG installed-disk UEFI boot; not Windows or persistence certification'
         command += ['-vga', 'std'] if args.graphics == 'std' else ['-vga', 'none', '-device', 'virtio-vga']
+        if args.profile == 'virgl':
+            display_index = command.index('-display')
+            command[display_index + 1] = 'sdl,gl=on'
+            device_index = command.index('virtio-vga')
+            command[device_index] = 'virtio-vga-gl'
         result['command'] = command
         serial_file = (output / 'serial.log').open('wb')
         process = subprocess.Popen(command, stdout=serial_file, stderr=serial_file)
@@ -166,11 +174,14 @@ def run(args):
                         break
                     time.sleep(10)
                 result['visual_validation'] = 'Screenshots require inspection; boot_completed does not prove correct graphics'
-                for name, command_args in [('getprop.txt', ['getprop']), ('logcat.txt', ['logcat', '-d', '-t', '2000'])]:
+                for name, command_args in [('getprop.txt', ['getprop']), ('logcat.txt', ['logcat', '-d', '-t', '2000']), ('surfaceflinger.txt', ['dumpsys', 'SurfaceFlinger'])]:
                     capture = subprocess.run(['adb', '-s', endpoint, 'shell', *command_args], capture_output=True, timeout=30)
                     (output / name).write_bytes(capture.stdout + capture.stderr)
                 ready, reason = assess_ui((output / 'getprop.txt').read_text(errors='replace'), (output / 'logcat.txt').read_text(errors='replace'))
                 result['ui_assessment'] = reason
+                if args.profile == 'virgl' and 'virgl' not in (output / 'surfaceflinger.txt').read_text(errors='replace').lower():
+                    ready = False
+                    result['ui_assessment'] = 'Guest compositor did not report VirGL; refusing to call software fallback a renderer pass'
                 if ready:
                     result['status'] = 'framework_ready_visual_unverified'
                 capture_screen(qmp_port, output / 'screen-final.ppm')

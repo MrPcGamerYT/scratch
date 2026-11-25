@@ -28,7 +28,7 @@ QString hostGraphicsReport() {
     }
     factory->Release();
     lines << "Window GPU preference: automatic / Windows-managed."
-          << "Android GPU selection: unavailable — current std/virtio scanout has no accelerated host renderer."
+          << "Android GPU selection: no automatic adapter selection. std/virtio is 2D scanout; experimental VirGL requests host OpenGL but is not yet Windows-Android validated."
           << "Adapter memory figures are capabilities, not usage or proof that a GPU is rendering this guest.";
     return lines.join('\n');
 }

@@ -117,12 +117,12 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     showCursor = new QCheckBox("Show host mouse cursor", display); form->addRow(showCursor);
     addPage("Graphics", "Current backend capabilities — not simulated graphics options.", &form);
     graphics = new QComboBox; graphics->setObjectName("vmGraphics");
-    graphics->addItem("Use prepared image's selection", "prepared"); graphics->addItem("Standard VGA · compatibility", "std"); graphics->addItem("VirtIO VGA · experimental", "virtio");
+    graphics->addItem("Use prepared image's selection", "prepared"); graphics->addItem("Standard VGA · compatibility", "std"); graphics->addItem("VirtIO VGA · experimental", "virtio"); graphics->addItem("OpenGL / VirGL · experimental backend", "virgl");
     form->addRow("Host GPU preference", new QLabel("Automatic / Windows-managed window"));
-    note(form, "Integrated/dedicated GPU inventory is shown below. No accelerated Android host renderer is implemented yet, so this is not guest GPU selection.");
+    note(form, "Integrated/dedicated GPU inventory is shown below. VirGL is an opt-in OpenGL backend under validation, not automatic dedicated-GPU selection or proof of accelerated Android rendering.");
     auto *gpuReport = new QPlainTextEdit(hostGraphicsReport()); gpuReport->setReadOnly(true); gpuReport->setMaximumHeight(150); gpuReport->setObjectName("hostGpuReport"); form->addRow(gpuReport);
     form->addRow("Display device", graphics);
-    note(form, "Restart required. VirtIO VGA provides an alternative scanout device, not host GPU acceleration. Guest virtio-gpu/DRM drivers are required. Test in Image Studio Resume first. A black/striped display does not prove a device change will fix it. Temporary nomodeset settings can disable the required driver; restart without those experimental boot edits when testing VirtIO."); form->addRow("ASTC textures", unavailable("Not supported"));
+    note(form, "OpenGL/VirGL requires a GL-enabled QEMU build, a working host OpenGL context and compatible guest Mesa drivers. Failures are reported, never silently replaced with scanout. Android/Windows rendering is not yet certified. Restart required. VirtIO VGA provides an alternative scanout device, not host GPU acceleration. Guest virtio-gpu/DRM drivers are required. Test in Image Studio Resume first. A black/striped display does not prove a device change will fix it. Temporary nomodeset settings can disable the required driver; restart without those experimental boot edits when testing VirtIO."); form->addRow("ASTC textures", unavailable("Not supported"));
     note(form, "Vulkan, DirectX, GPU passthrough and dedicated-GPU selection are not implemented in this player.");
     auto *games = addPage("Game settings", "Configure the native keymapping runtime.", &form);
     mouseInput = new QComboBox(games); mouseInput->setObjectName("mouseInputBackend");

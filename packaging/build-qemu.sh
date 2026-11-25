@@ -11,7 +11,7 @@ git -C "$source" apply "$root/packaging/qemu-patches/0001-sdl2-batch-present.pat
 mkdir -p "$root/qemu-build" "$prefix/share/qemu" "$prefix/sources" "$prefix/licenses"
 cd "$root/qemu-build"
 "$source/configure" --prefix="$prefix" --target-list=x86_64-softmmu \
-  --enable-whpx --enable-sdl --enable-slirp --enable-tools \
+  --enable-whpx --enable-sdl --enable-slirp --enable-tools --enable-opengl --enable-virglrenderer \
   --disable-docs --disable-capstone --disable-install-blobs --disable-modules --disable-werror
 ninja -j 2 qemu-system-x86_64.exe qemu-img.exe
 mkdir -p "$prefix/bin"

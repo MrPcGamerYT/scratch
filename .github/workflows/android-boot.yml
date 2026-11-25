@@ -14,13 +14,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {graphics: virtio, profile: no-avx}
-          - {graphics: virtio, profile: drm-gbm}
-          - {graphics: virtio, profile: drm-gbm-no-avx}
+          - {graphics: virtio, profile: virgl}
     steps:
       - uses: actions/checkout@v4
       - name: Install test tools
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 adb p7zip-full
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-system-gui adb p7zip-full xvfb xauth mesa-utils
       - name: Probe parser unit tests
         run: python3 tests/android_probe_tests.py
       - uses: actions/cache/restore@v4
@@ -47,7 +45,9 @@ jobs:
           path: bliss.iso
           key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
       - name: Probe actual Android boot (not firmware smoke test)
-        run: python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --profile '${{ matrix.profile }}' --output evidence --timeout 720
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --profile '${{ matrix.profile }}' --output evidence --timeout 720
       - name: Expose diagnostic summary through GitHub checks
         if: always()
         run: |

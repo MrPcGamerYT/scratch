@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
     inputMode->setCurrentIndex(1); batch->setCurrentIndex(batch->findData(4)); save->click();
     if (!QSettings().value("input/rawMouse").toBool() || QSettings().value("input/aimInterval").toInt() != 4) return 30;
     auto *graphics = dialog.findChild<QComboBox *>("vmGraphics");
-    if (!graphics || graphics->count() != 3 || selectedVmGraphics(QSettings()) != "std") return 31;
+    if (!graphics || graphics->count() != 4 || selectedVmGraphics(QSettings()) != "std") return 31;
     graphics->setCurrentIndex(graphics->findData("virtio")); save->click();
     if (selectedVmGraphics(QSettings()) != "virtio") return 32;
     graphics->setCurrentIndex(graphics->findData("std")); discard->click();

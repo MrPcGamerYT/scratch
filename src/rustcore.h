@@ -57,7 +57,7 @@ NexusPoint nexus_moba_target(double skill_x, double skill_y, double radius,
                              double origin_x, double origin_y, double cursor_x, double cursor_y);
 std::uint32_t nexus_validate_script_steps(const NexusScriptStep *steps, std::size_t length);
 // Caller owns UTF-8 NUL-terminated strings and output buffer for each call.
-// flags: 1 multitouch, 2 hide cursor, 4 local ADB, 8 explicitly selected TCG, 16 DirectSound guest output, 32 experimental virtio-vga.
+// flags: 1 multitouch, 2 hide cursor, 4 local ADB, 8 explicitly selected TCG, 16 DirectSound guest output, 32 experimental virtio-vga, 64 reduced AVX (TCG only), 128 experimental VirGL OpenGL.
 struct NexusVmRequest {
     const char *disk;
     const char *firmware_dir;
