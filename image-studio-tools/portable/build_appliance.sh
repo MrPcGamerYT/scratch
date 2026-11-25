@@ -35,6 +35,7 @@ mkdir -p "$root/lib/modules"
 cp -a "/lib/modules/$version" "$root/lib/modules/"
 # On merged-/usr builds modules may contain build/source links: never follow them.
 rm -f "$root/lib/modules/$version/build" "$root/lib/modules/$version/source"
+cp guest-tools/rebrand_boot.py guest-tools/install_bridge_ramdisk.py "$root/opt/nexus/"
 cp image-studio-tools/portable_workspace.py image-studio-tools/portable/appliance_server.py "$root/opt/nexus/"
 cat > "$root/init" <<'EOF'
 #!/bin/sh

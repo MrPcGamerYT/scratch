@@ -80,7 +80,7 @@ def open_copy(source,destination):
               '-append',f'console=ttyS0 net.ifnames=0 panic=-1 nexus_token={TOKEN}',
               '-drive',f'file={destination},format=qcow2,if=virtio',
               '-drive',f'file={work / "scratch.qcow2"},format=qcow2,if=virtio',
-              '-netdev',f'user,id=api,restrict=on,hostfwd=tcp:127.0.0.1:{guest_port}-:8080','-device','virtio-net-pci,netdev=api']
+              '-netdev',f'user,id=api,restrict=on,hostfwd=tcp:127.0.0.1:{guest_port}-:8080','-device','virtio-net-pci,netdev=api,romfile=']
         # QEMU's -drive parser uses a doubled comma for literal commas in paths.
         args=[str(a) for a in args]
         for i,a in enumerate(args):

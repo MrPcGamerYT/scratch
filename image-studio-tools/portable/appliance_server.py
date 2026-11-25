@@ -23,6 +23,16 @@ class Handler(BaseHTTPRequestHandler):
             op=data['op']; result={}
             if op=='hello': result={'ready':True}
             elif op=='open': workspace.mount(); result={'ready':True}
+            elif op=='brand':
+                from rebrand_boot import patch
+                if workspace.base is None: raise ValueError('Open a disk first')
+                initrd=safe_path(workspace.base,'initrd.img')
+                if initrd.stat().st_size>32*1024**2: raise ValueError('Unsupported ramdisk size')
+                updated=patch(initrd.read_bytes())
+                with tempfile.TemporaryDirectory(dir=workspace.scratch) as folder:
+                    source=Path(folder)/'initrd.img'; source.write_bytes(updated)
+                    workspace.dirty=True; replace_file(source,initrd)
+                result={'message':'Nexus startup banner installed. Upstream notices retained.'}
             elif op=='save': workspace.save()
             elif op=='close': workspace.close()
             else:

@@ -70,6 +70,9 @@ jobs:
           Invoke-WebRequest https://raw.githubusercontent.com/qemu/qemu/698104725efad4b29079d857dfdebbd804e34c99/pc-bios/kvmvapic.bin -OutFile portable/qemu/share/qemu/kvmvapic.bin
           Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip -OutFile python.zip
           Expand-Archive python.zip portable/python
+          foreach ($rom in @('linuxboot_dma.bin','linuxboot.bin')) {
+            Invoke-WebRequest "https://raw.githubusercontent.com/qemu/qemu/698104725efad4b29079d857dfdebbd804e34c99/pc-bios/$rom" -OutFile "portable/qemu/share/qemu/$rom"
+          }
           Copy-Item image-studio-tools/portable/editor_host.py,image-studio-tools/portable/editor.html portable/
           Copy-Item image-studio-tools/portable/Start-Nexus-Editor.cmd portable/
           Copy-Item image-studio-tools/portable/README.txt portable/

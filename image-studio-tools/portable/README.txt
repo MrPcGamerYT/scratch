@@ -29,8 +29,8 @@ LIMITATIONS / RECOVERY
 - If an error occurs, retain both the new .qcow2 and its .nexus-work folder/log.
   Never boot that copy while the maintenance VM is active. Closing the console
   without Save & Finish may leave changes unrepacked. Original remains safe.
-- The early Bliss initrd banner is NOT automatically rebranded by this preview.
-  Copyright/licence notices and Android package IDs must not be blanket-replaced.
+- Use Nexus early boot banner replaces only the recognized initrd ASCII banner.
+  Unknown banners are refused. Copyright/licence notices and package IDs remain.
 
 This separate portable utility does not replace or remove the existing Image
 Studio ISO installer or the developer Linux/WSLg file editor.
