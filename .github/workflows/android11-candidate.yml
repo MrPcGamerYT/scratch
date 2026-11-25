@@ -15,17 +15,18 @@ jobs:
       - name: Install isolated guest tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio
+          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio squashfs-tools
           sudo chmod a+r /boot/vmlinuz*
       - name: Unit checks
         run: |
           /usr/bin/python3 tests/guest_builder_tests.py
           /usr/bin/python3 tests/android_probe_tests.py
           /usr/bin/python3 tests/guest_bridge_tests.py
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: source-cache
         with:
           path: android11.iso
-          key: bliss14-foss-generic-20241012-v1
+          key: bliss14-foss-44e4144a3d31f823-v1
       - name: Resolve and fingerprint official FOSS source
         run: |
           mkdir -p candidate/evidence source-evidence fixture
@@ -44,6 +45,7 @@ jobs:
           if [ ! -f android11.iso ]; then
             curl --fail --location --retry 2 --max-time 900 'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS14/FOSS/Generic/Bliss-v14.10.3-x86_64-OFFICIAL-foss-20241012.iso' -o android11.iso
           fi
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
           sha256sum android11.iso | tee source-evidence/SOURCE-SHA256.txt
           python3 - <<'PY'
           from pathlib import Path
@@ -60,6 +62,11 @@ jobs:
           PY
           7z x android11.iso -ofixture > source-evidence/extract.log
           find fixture -maxdepth 2 -type f | head -60 > source-evidence/payload-layout.txt
+      - uses: actions/cache/save@v4
+        if: steps.source-cache.outputs.cache-hit != 'true'
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
       - name: Build new standalone disk and original boot asset
         run: |
           set -o pipefail
@@ -67,10 +74,7 @@ jobs:
           cp /usr/share/doc/musl/copyright source-evidence/MUSL-COPYRIGHT.txt
           dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
           musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
-          file fixture/ramdisk.img | tee source-evidence/ramdisk-format.txt
-          /usr/bin/python3 guest-tools/install_bridge_ramdisk.py --ramdisk fixture/ramdisk.img --agent candidate/nexus-agent --output candidate/ramdisk-nexus.img 2>&1 | tee source-evidence/bridge-ramdisk.json
-          mv fixture/ramdisk.img source-evidence/upstream-ramdisk.img
-          cp candidate/ramdisk-nexus.img fixture/ramdisk.img
+          /usr/bin/python3 guest-tools/install_bridge_tree.py --tree fixture --agent candidate/nexus-agent --evidence source-evidence 2>&1 | tee source-evidence/bridge-build.log
           /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
           /usr/bin/python3 guest-tools/make_boot_animation.py candidate/nexus-bootanimation.zip
       - name: First boot, explicitly provision clean offline template and require Home without ANRs
@@ -129,7 +133,7 @@ jobs:
           for path in Path('candidate/evidence').rglob('result.json'):
               text=path.read_text()
               print('::notice title='+str(path)+'::'+text[-6000:].replace('%','%25').replace('\n','%0A'))
-          for name in ['bridge-ramdisk.json','ramdisk-format.txt','payload-layout.txt']:
+          for name in ['bridge-build.log','system-image-layout.json','squashfs-layout.txt','payload-layout.txt']:
               path=Path('source-evidence')/name
               if path.exists(): print('::notice title='+name+'::'+path.read_text(errors='replace')[-5000:].replace('%','%25').replace('\n','%0A'))
           for path in Path('source-evidence').glob('SOURCE-SHA256.txt'):
