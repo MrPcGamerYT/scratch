@@ -34,6 +34,12 @@ protected:
     void changeEvent(QEvent *event) override;
 private:
     void launch();
+    void requestCloseShutdown();
+    void shutdownWaitExpired();
+    bool closePending = false;
+    bool forcedClose = false;
+    QTimer *shutdownTimer = nullptr;
+    QProcess *shutdownTask = nullptr;
     void pollGuest();
     void selectAppKeymap(const QString &package);
     QProcess *guestTask = nullptr;

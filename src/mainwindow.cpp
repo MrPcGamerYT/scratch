@@ -223,18 +223,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     connect(mapper, &InputMapper::stopped, this, [this](const QString &reason) {
         QSignalBlocker block(keymapEnabled); keymapEnabled->setChecked(false); statusBar()->showMessage(reason);
     });
-    connect(qmp, &Qmp::readyChanged, this, [this](bool ready) { if (!ready) aim->disarm(); updateControls(); });
+    connect(qmp, &Qmp::readyChanged, this, [this](bool ready) { if (!ready) aim->disarm();
+        if (ready && closePending) qmp->powerDown();
+        updateControls(); });
     connect(qmp, &Qmp::error, this, [this](const QString &message) { aim->disarm(); if (keymapEnabled->isChecked()) keymapEnabled->setChecked(false); statusBar()->showMessage("QEMU monitor: " + message); });
     connect(embedTimer, &QTimer::timeout, this, [this] { findGuestWindow(); });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError errorCode) {
         recordEvent("Process error: " + process->errorString());
-        if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); view->setStartupStatus("Engine failed to start", process->errorString()); QMessageBox::critical(this, "Player failed to start", process->errorString()); }
+        if (errorCode == QProcess::FailedToStart) { embedTimer->stop(); qmp->reset(); setRunning(false); view->setStartupStatus("Engine failed to start", process->errorString()); QMessageBox::critical(this, "Player failed to start", process->errorString()); if (closePending) QTimer::singleShot(0, this, [this] { close(); }); }
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
         const QString output = (engineErrorTail + QString::fromLocal8Bit(process->readAllStandardError())).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
-        if (status == QProcess::CrashExit || code != 0) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
+        if (shutdownTimer) shutdownTimer->stop();
+        if (shutdownTask) shutdownTask->kill();
+        if (closePending) QTimer::singleShot(0, this, [this] { close(); });
+        if (!forcedClose && (status == QProcess::CrashExit || code != 0)) QMessageBox::warning(this, "Player stopped", QString("QEMU exited with code %1.\n\n%2").arg(code).arg(output.isEmpty() ? "No error output was provided." : output.right(4000)));
     });
     connect(statusBar(), &QStatusBar::messageChanged, this, [this](const QString &message) { recordEvent(message); });
     connect(process, &QProcess::readyReadStandardError, this, [this] {
@@ -346,7 +351,7 @@ void MainWindow::findGuestWindow() {
     else if (++embedAttempts >= 120) { embedTimer->stop(); view->setStartupStatus("Waiting for Android display", "The VM may be running in a separate window. Open Settings → Diagnostics; no Android-ready state has been confirmed."); statusBar()->showMessage("Could not embed the QEMU window; it may be running separately."); }
 }
 void MainWindow::updateControls() {
-    const bool running = process->state() == QProcess::Running;
+    const bool running = process->state() == QProcess::Running && !closePending;
     const bool embedded = running && view->windowHandle() && IsWindow(view->windowHandle());
     const bool armed = aim->isArmed();
     shutdownButton->setEnabled(running && qmp->isReady());
@@ -356,6 +361,7 @@ void MainWindow::updateControls() {
     aimButton->setEnabled(embedded && !currentPackage.isEmpty() && qmp->isReady());
 }
 void MainWindow::androidAction(int keycode) {
+    if (closePending) return;
     if (keycode != -1 && keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
     if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
         QMessageBox::information(this, "Android controls", "Start Android with local ADB forwarding enabled and authorized TCP debugging. Wait for other ADB operations to finish."); return;
@@ -394,6 +400,7 @@ void MainWindow::androidAction(int keycode) {
     timer->start(15000); task->start(adb, {"connect", endpoint});
 }
 void MainWindow::applyGuestDisplay(const QString &size, int dpi) {
+    if (closePending) return;
     const QStringList sizes = {"reset", "1280x720", "1600x900", "1920x1080", "720x1280", "1080x1920"};
     const QList<int> densities = {0, 160, 200, 240, 280, 320, 400, 480};
     if (!sizes.contains(size) || !densities.contains(dpi)) return;
@@ -440,6 +447,7 @@ void MainWindow::dropEvent(QDropEvent *event) {
     event->acceptProposedAction(); installApk(path);
 }
 void MainWindow::installApk(const QString &path) {
+    if (closePending) return;
     if (process->state() != QProcess::Running) {
         QMessageBox::information(this, "Install APK", "Start Android first. APK installation requires TCP ADB enabled in the Android image and local ADB forwarding enabled in Settings before startup."); return;
     }
@@ -474,6 +482,7 @@ void MainWindow::installApk(const QString &path) {
     statusBar()->showMessage("Connecting to Android to install APK...");
 }
 void MainWindow::editKeymap() {
+    if (closePending) return;
     if (process->state() == QProcess::Running && currentPackage.isEmpty()) {
         QMessageBox::information(this, "Waiting for active app", "Per-app keymaps need authorized local ADB forwarding and an identified foreground Android app. No global keymap will be applied to unknown apps."); return;
     }
@@ -509,12 +518,88 @@ void MainWindow::editKeymap() {
 }
 void MainWindow::closeEvent(QCloseEvent *event) {
     if (process->state() != QProcess::NotRunning) {
-        const auto choice = QMessageBox::question(this, "Player still running", "Force stop and close? This can corrupt the guest disk. Choose No and shut down Android first.", QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-        if (choice != QMessageBox::Yes) { event->ignore(); return; }
-        aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->hide(); disconnect(process, nullptr, this, nullptr); process->kill(); process->waitForFinished(5000);
+        event->ignore();
+        if (!closePending) requestCloseShutdown();
+        return;
     }
-    overlay->hide();
+    if (shutdownTimer) shutdownTimer->stop();
+    if (shutdownTask) shutdownTask->kill();
+    overlay->hide(); fpsBadge->hide();
     event->accept();
+}
+
+void MainWindow::requestCloseShutdown() {
+    closePending = true; forcedClose = false;
+    aim->disarm(); mouseLock->unlock();
+    // Preserve each app's mapping preference while releasing all active input.
+    { const QSignalBlocker blocked(keymapEnabled); keymapEnabled->setChecked(false); }
+    mapper->stop(); qmp->releaseAllInputs(); overlay->hide(); fpsBadge->hide();
+    if (guestTask) guestTask->kill();
+    setWindowTitle("Project Nexus · Shutting down Android…");
+    recordEvent("Close requested: asking Android to shut down; waiting for engine exit, no automatic kill.");
+    if (!shutdownTimer) {
+        shutdownTimer = new QTimer(this); shutdownTimer->setSingleShot(true);
+        connect(shutdownTimer, &QTimer::timeout, this, [this] { shutdownWaitExpired(); });
+    }
+    shutdownTimer->start(45000);
+    updateControls();
+    // ACPI is the fallback even when guest debugging is absent. Some Android
+    // builds ignore it; never treat sending the request as completed shutdown.
+    if (qmp->isReady()) qmp->powerDown();
+    if (!runningAdbForward) return;
+    QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
+    if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
+    if (adb.isEmpty()) { recordEvent("Shutdown: adb.exe unavailable; relying on ACPI request."); return; }
+    auto *task = new QProcess(this); shutdownTask = task;
+    auto *deadline = new QTimer(task); deadline->setSingleShot(true);
+    connect(deadline, &QTimer::timeout, task, [task] { task->kill(); });
+    const QString endpoint = QString("127.0.0.1:%1").arg(runningAdbPort);
+    connect(task, &QProcess::errorOccurred, this, [this, task](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) {
+            recordEvent("Shutdown ADB failed to start; ACPI request remains the fallback.");
+            if (shutdownTask == task) shutdownTask = nullptr;
+            task->deleteLater();
+        }
+    });
+    connect(task, &QProcess::finished, this, [this, task, deadline, adb, endpoint](int code, QProcess::ExitStatus status) {
+        deadline->stop();
+        if (closePending && process->state() == QProcess::Running &&
+            !task->property("powerRequested").toBool() && code == 0 && status == QProcess::NormalExit) {
+            task->readAllStandardOutput(); task->setProperty("powerRequested", true); deadline->start(10000);
+            task->start(adb, {"-s", endpoint, "shell", "svc", "power", "shutdown"}); return;
+        }
+        recordEvent(QString("Shutdown ADB helper finished (exit %1); only engine exit completes closing.").arg(code));
+        if (shutdownTask == task) shutdownTask = nullptr;
+        task->deleteLater();
+    });
+    deadline->start(10000); task->start(adb, {"connect", endpoint});
+}
+
+void MainWindow::shutdownWaitExpired() {
+    if (!closePending || process->state() == QProcess::NotRunning) return;
+    QMessageBox box(QMessageBox::Warning, "Android is still running",
+        "Android has not stopped after 45 seconds. It may be busy, or this guest may not support the shutdown request.\n\nWait longer, keep the Player open, or explicitly force-stop. Force-stopping can corrupt Android data.", QMessageBox::NoButton, this);
+    auto *wait = box.addButton("Wait another 45 seconds", QMessageBox::AcceptRole);
+    auto *keep = box.addButton("Keep Player open", QMessageBox::RejectRole);
+    auto *force = box.addButton("Force stop and close", QMessageBox::DestructiveRole);
+    box.setDefaultButton(wait); box.setEscapeButton(keep);
+    connect(process, &QProcess::finished, &box, [&box] { box.accept(); });
+    box.exec();
+    if (process->state() == QProcess::NotRunning) { close(); return; }
+    if (box.clickedButton() == force) {
+        forcedClose = true;
+        recordEvent("User explicitly confirmed force-stop after graceful shutdown timed out.");
+        process->kill(); // finished signal closes the Player; no blocking GUI wait.
+        shutdownTimer->start(45000);
+    } else if (box.clickedButton() == wait) {
+        shutdownTimer->start(45000);
+    } else {
+        closePending = false;
+        if (shutdownTask) shutdownTask->kill();
+        setWindowTitle("Project Nexus · Shutdown not confirmed");
+        recordEvent("Close cancelled; guest may still be shutting down. Disk not reset.");
+        updateControls();
+    }
 }
 
 void MainWindow::changeEvent(QEvent *event) {
@@ -557,6 +642,7 @@ void MainWindow::selectAppKeymap(const QString &package) {
 }
 
 void MainWindow::pollGuest() {
+    if (closePending) return;
     const bool running = process->state() == QProcess::Running;
     // Check before any ADB early-return: missing adb.exe/authorization is the
     // exact case in which an unbounded loading screen used to conceal the VM.
@@ -606,7 +692,7 @@ void MainWindow::pollGuest() {
         }
         const QString text = QString::fromUtf8(task->readAllStandardOutput()).replace("\r", "");
         guestTask = nullptr; task->deleteLater();
-        if (process->state() != QProcess::Running) return;
+        if (closePending || process->state() != QProcess::Running) return;
         if (code != 0 || exit != QProcess::NormalExit || !task->property("queried").toBool()) {
             fpsBadge->setText("Display FPS: N/A");
             if (!currentPackage.isEmpty()) selectAppKeymap(QString());

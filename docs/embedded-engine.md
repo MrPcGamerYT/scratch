@@ -96,3 +96,21 @@ The branding resource script can update a complete cached unsigned engine bundle
 before packaging, and verifies that the PE icon payload matches the Nexus asset.
 Patched engine sources and the branding recipe/assets remain bundled. Do not
 manually rename only the old executable: old launcher paths would then break.
+
+## Closing the Player
+
+Close now requests a guest shutdown instead of initially asking to kill QEMU.
+The Player releases mapping/aim input, sends QMP ACPI `system_powerdown`, and, if
+local ADB is configured and available, attempts `svc power shutdown` through the
+authorized guest connection. It closes only when the engine process exits.
+Neither an ADB zero exit code nor QMP command acceptance is treated as proof of
+completed Android shutdown. If closing during engine startup, the ACPI request
+is also sent when QMP becomes ready.
+
+After 45 seconds without engine exit, the user can wait another 45 seconds,
+keep the Player open, or explicitly force-stop with a disk-corruption warning.
+There is no automatic timeout kill. Cancelling Close cannot reverse an Android
+shutdown already in progress. Guests that ignore ACPI and lack usable/authorized
+ADB cannot be guaranteed to power off automatically. Real Android/Windows
+shutdown and persistence verification remains necessary; the QMP smoke test
+checks command acceptance only.
