@@ -1,11 +1,13 @@
 # Nexus native guest bridge v1 (prototype)
 
 This change is an initial implementation, not the complete ADB replacement plan.
-It must not be called working in Android until the actual guest gate passes.
+Real Android guest integration passed Linux TCG gates in run 45648355363
+(commit c032908); Windows end-to-end transport and acceleration remain unverified.
 
 ## Implemented code
 
-- Static x86-64 guest daemon, installed in a copied Android-x86 ramdisk, launched
+- Static x86-64 guest daemon, installed through recognized Android 11 system init files (or a copied
+  Android-x86 ramdisk for supported layouts), launched
   by Android init as a privileged fixed-command service. SELinux is not disabled.
   The current recipe requires a userdebug image whose policy permits the `su`
   domain; other images fail the test rather than being silently weakened.
@@ -36,8 +38,19 @@ and removes the marker. It does not accept arbitrary shell text or paths.
 Both first provisioning and second persistence boots now run **without a NIC
 or ADB**. They require native readiness, launcher/SDK 30/no-ANR checks, Home and
 clean shutdown. The branding asset is installed offline in the copied system.
-Real CI has verified the VirtIO handshake/readiness and launcher provisioning;
-the latest gate still rejects a recorded ANR. No image has passed packaging.
+Run 45648355363 passed both boots and packaging. First native boot-ready time
+was 314.59 seconds, second boot 157.8 seconds, under Linux TCG, 2 vCPUs / 3072 MiB.
+Both confirmed SDK 30, resumed Home, no recorded ANR, completed native Home and
+clean shutdown. These are functional checks, not smoothness/FPS measurements.
+Fresh settings initialization preconfirms the standard immersive tutorial to
+avoid its measured focus-event ANR; no ANR records or dialogs are suppressed.
+
+Guest artifact: `15040221057` (Nexus-Android11-FOSS-Candidate).
+Matching Windows host test/build run: `45617255804`, Player artifact `15023935349`.
+Use a separate new instance; never replace an existing backing base in place.
+Drive transfer has not completed: workspace uploads are capped at 100 MB, the
+artifact is about 2.1 GB, and GitHub integration cannot write the temporary upload
+session secret (HTTP 403). No Drive file content has been uploaded.
 
 ## Not implemented in v1
 
