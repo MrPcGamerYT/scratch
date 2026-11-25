@@ -1,0 +1,42 @@
+name: Inspect verified initrd banner
+on:
+  push:
+    paths: ['.github/workflows/inspect-boot-banner.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Nexus-Android11-FOSS-Candidate
+          run-id: 45648355363
+          github-token: ${{ github.token }}
+          path: guest
+      - run: |
+          sudo apt-get update && sudo apt-get install -y qemu-utils
+          qemu-img convert -f qcow2 -O raw guest/images/android-base.qcow2 guest.raw
+          loop=$(sudo losetup --find --show --read-only --partscan guest.raw)
+          mkdir disk
+          sudo mount -o ro "${loop}p2" disk
+          cp disk/android/initrd.img initrd.img
+          python3 - <<'PY'
+          import gzip,sys
+          from pathlib import Path
+          sys.path.insert(0,'guest-tools')
+          from install_bridge_ramdisk import records
+          data=Path('initrd.img').read_bytes()
+          for name,fields,body in records(gzip.decompress(data) if data.startswith(b'\x1f\x8b') else data):
+              if name.lstrip('./') in ('init','scripts/1-install','scripts/2-mount') or b'Bliss' in body:
+                  if b'\0' not in body:
+                      for number,line in enumerate(body.decode(errors='replace').splitlines(),1):
+                          if 'bliss' in line.lower() or 'detecting' in line.lower():
+                              print(f'::notice::{name}:{number}: '+line.replace('%','%25'))
+          PY
+          sudo umount disk
+          sudo losetup -d "$loop"
