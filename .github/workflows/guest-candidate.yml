@@ -23,6 +23,12 @@ jobs:
           /usr/bin/python3 tests/guest_builder_tests.py
           /usr/bin/python3 tests/guest_package_tests.py
           /usr/bin/python3 tests/android_probe_tests.py
+      - name: Validate packaged PowerShell launcher syntax
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/guest-tools/Start-ExperimentalGuest.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }
       - uses: actions/cache/restore@v4
         with:
           path: bliss.iso
