@@ -1,0 +1,76 @@
+name: Inspect prepared guest evidence
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Candidate build run to inspect
+        required: true
+        default: '45571864477'
+  push:
+    paths:
+      - .github/workflows/guest-evidence.yml
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: experimental-guest-build-evidence
+          path: evidence
+          run-id: ${{ inputs.run_id || '45571864477' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Inspect final framebuffer
+        run: |
+          python3 -m pip install Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import base64, io
+          images = sorted(Path('evidence').rglob('screen-*.ppm'))
+          if images:
+              image = Image.open(images[-1]).convert('RGB')
+              image.thumbnail((480, 320))
+              while True:
+                  stream = io.BytesIO()
+                  image.save(stream, format='JPEG', quality=40)
+                  if stream.tell() <= 12000 or image.width < 160:
+                      break
+                  image.thumbnail((image.width * 3 // 4, image.height * 3 // 4))
+              encoded = base64.b64encode(stream.getvalue()).decode()
+              for offset in range(0, len(encoded), 2800):
+                  print(f'::notice title=SCREEN-{offset//2800:03}::{encoded[offset:offset+2800]}')
+          PY
+      - name: Inspect kernel and construction logs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['serial.log', 'build.log']:
+              paths = list(Path('evidence').rglob(name))
+              if not paths:
+                  continue
+              text = paths[0].read_text(errors='replace')[-5600:]
+              for offset in range(0, len(text), 2800):
+                  chunk = text[offset:offset+2800].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                  print(f'::notice title={name}-{offset//2800:03}::{chunk}')
+          PY
+      - name: Inspect boot result and UI state
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['result.json', 'getprop.txt', 'logcat.txt']:
+              paths = list(Path('evidence').rglob(name))
+              if not paths:
+                  continue
+              text = paths[0].read_text(errors='replace')
+              if name == 'getprop.txt':
+                  text = '\n'.join(line for line in text.splitlines() if any(key in line for key in ['boot_completed', 'init.svc.bootanim', 'init.svc.surfaceflinger', 'ro.hardware']))
+              if name == 'logcat.txt':
+                  text = '\n'.join(line for line in text.splitlines() if any(key in line.lower() for key in ['fatal signal', 'egl-main', 'surfaceflinger', 'gralloc']))[-5600:]
+              for offset in range(0, min(len(text), 7000), 2800):
+                  chunk = text[offset:offset+2800].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                  print(f'::notice title={name}-{offset//2800:03}::{chunk}')
+          PY
