@@ -2,7 +2,6 @@
 The host attaches only a newly created image copy as /dev/vda and a disposable
 scratch disk as /dev/vdb. No host disks, shares or network are exposed writable.
 """
-import gzip
 import os
 from pathlib import Path
 import re
@@ -82,8 +81,11 @@ class PortableWorkspace:
             if not match or match[1] not in ('gzip','xz','lz4','lzo','zstd'): raise ValueError('Unsupported squashfs compression')
             self.compression=match[1]
             tree=self.scratch/'system-tree'
-            if tree.exists(): raise ValueError('Retained scratch tree exists; do not overwrite an unfinished edit')
-            run('unsquashfs','-d',str(tree),str(source)); raw=tree/'system.img'
+            if tree.exists():
+                if self.system_payload != source: raise ValueError('Retained scratch tree exists; do not overwrite an unfinished edit')
+            else:
+                run('unsquashfs','-d',str(tree),str(source))
+            raw=tree/'system.img'
             self.system_payload=source
         if raw.is_file():
             if run('blkid','-o','value','-s','TYPE',str(raw)).strip()!='ext4': raise ValueError('Nested system must be ext4; EROFS/AVB rewriting is not supported')
@@ -119,6 +121,7 @@ class PortableWorkspace:
             if output.exists(): raise FileExistsError('Previous repack output retained; inspect before retry')
             run('mksquashfs',str(self.scratch/'system-tree'),str(output),'-noappend','-comp',self.compression,'-processors','2')
             replace_file(output,self.system_payload)
+            output.unlink()
         run('sync')
         self.dirty=False
 

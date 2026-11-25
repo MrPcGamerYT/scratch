@@ -75,10 +75,9 @@ def open_copy(source,destination):
         log=(work/'maintenance.log').open('w')
         args=[qemu,'-L',ROOT/'qemu/share/qemu','-machine','q35','-accel','tcg','-m','1536','-smp','2','-display','none','-monitor','none','-serial','stdio','-no-reboot',
               '-kernel',ROOT/'appliance/vmlinuz','-initrd',ROOT/'appliance/initrd',
-              '-append',f'root=/dev/vdc rw console=ttyS0 nexus_token={TOKEN}',
+              '-append',f'console=ttyS0 net.ifnames=0 panic=-1 nexus_token={TOKEN}',
               '-drive',f'file={destination},format=qcow2,if=virtio',
               '-drive',f'file={work / "scratch.qcow2"},format=qcow2,if=virtio',
-              '-drive',f'file={ROOT / "appliance/root.qcow2"},format=qcow2,if=virtio,snapshot=on',
               '-netdev',f'user,id=api,restrict=on,hostfwd=tcp:127.0.0.1:{guest_port}-:8080','-device','virtio-net-pci,netdev=api']
         # QEMU's -drive parser uses a doubled comma for literal commas in paths.
         args=[str(a) for a in args]

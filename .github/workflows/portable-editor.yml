@@ -19,7 +19,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y debootstrap qemu-system-x86 qemu-utils squashfs-tools e2fsprogs
       - run: python3 tests/portable_workspace_test.py
       - name: Build bundled Linux maintenance appliance
-        run: bash image-studio-tools/portable/build_appliance.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! bash image-studio-tools/portable/build_appliance.sh 2>&1 | tee build-appliance.log; then
+            tail -30 build-appliance.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - name: Real isolated VM nested-image editing test
         run: python3 -u tests/portable_appliance_test.py
       - uses: actions/upload-artifact@v4
@@ -74,7 +80,7 @@ jobs:
       - name: ZIP64 package and full CRC / SHA verification
         shell: pwsh
         run: |
-          python -c "import runpy; build_archive=runpy.run_path('packaging/package_release.py')['build_archive']; build_archive('portable','downloads/Nexus-Portable-Guest-Editor-Win10.zip',['Start-Nexus-Editor.cmd','python/python.exe','qemu/bin/NexusEngine.exe','qemu/bin/qemu-img.exe','appliance/root.qcow2','appliance/vmlinuz','appliance/initrd','editor_host.py','editor.html'])"
+          python -c "import runpy; build_archive=runpy.run_path('packaging/package_release.py')['build_archive']; build_archive('portable','downloads/Nexus-Portable-Guest-Editor-Win10.zip',['Start-Nexus-Editor.cmd','python/python.exe','qemu/bin/NexusEngine.exe','qemu/bin/qemu-img.exe','appliance/vmlinuz','appliance/initrd','editor_host.py','editor.html'])"
       - uses: actions/upload-artifact@v4
         with:
           name: Nexus-Portable-Guest-Editor-Win10
