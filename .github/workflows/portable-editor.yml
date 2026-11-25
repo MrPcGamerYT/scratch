@@ -1,5 +1,11 @@
 name: Portable Windows 10 guest editor
 on:
+  push:
+    paths:
+      - '.github/workflows/portable-editor.yml'
+      - 'image-studio-tools/portable/**'
+      - 'image-studio-tools/portable_workspace.py'
+      - 'tests/portable*'
   workflow_dispatch:
 permissions:
   contents: write
