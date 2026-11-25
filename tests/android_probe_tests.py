@@ -45,6 +45,11 @@ class RecipeTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             probe.profile_recipe('unvalidated', '')
 
+    def test_virgl_must_be_the_reported_gles_renderer(self):
+        self.assertTrue(probe.virgl_renderer_line('GLES: Mesa/X.org, virgl, OpenGL ES 3.1'))
+        self.assertFalse(probe.virgl_renderer_line('GLES: Mesa/X.org, llvmpipe\nInstalled driver: virgl'))
+        self.assertFalse(probe.virgl_renderer_line('Vulkan: virtio'))
+
     def test_unknown_recipe_fails_instead_of_guessing(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(RuntimeError):

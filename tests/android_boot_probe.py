@@ -86,6 +86,10 @@ def capture_screen(port, filename):
         execute({'execute': 'screendump', 'arguments': {'filename': str(filename)}})
 
 
+def virgl_renderer_line(dump):
+    return next((line.strip() for line in dump.splitlines() if re.search(r'\bGLES\s*:.*\bvirgl\b', line, re.I)), '')
+
+
 def capture_adb_screen(endpoint, filename):
     capture = subprocess.run(['adb', '-s', endpoint, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=45)
     if capture.returncode != 0 or not capture.stdout.startswith(b'\x89PNG\r\n\x1a\n') or b'IEND' not in capture.stdout[-12:]:
@@ -186,7 +190,9 @@ def run(args):
                     (output / name).write_bytes(capture.stdout + capture.stderr)
                 ready, reason = assess_ui((output / 'getprop.txt').read_text(errors='replace'), (output / 'logcat.txt').read_text(errors='replace'))
                 result['ui_assessment'] = reason
-                if args.profile == 'virgl' and 'virgl' not in (output / 'surfaceflinger.txt').read_text(errors='replace').lower():
+                if args.profile == 'virgl':
+                    result['guest_gles_renderer'] = virgl_renderer_line((output / 'surfaceflinger.txt').read_text(errors='replace'))
+                if args.profile == 'virgl' and not result['guest_gles_renderer']:
                     ready = False
                     result['ui_assessment'] = 'Guest compositor did not report VirGL; refusing to call software fallback a renderer pass'
                 if ready:
