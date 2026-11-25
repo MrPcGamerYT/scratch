@@ -1,5 +1,9 @@
 # Nexus native guest bridge v1 (prototype)
 
+For unverified follow-up code and current test blockers, see
+[native-bridge-next-verification.md](native-bridge-next-verification.md).
+The verified results below describe the previous downloadable c032908 build.
+
 This change is an initial implementation, not the complete ADB replacement plan.
 Real Android guest integration passed Linux TCG gates in run 45648355363
 (commit c032908); Windows end-to-end transport and acceleration remain unverified.

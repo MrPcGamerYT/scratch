@@ -30,6 +30,9 @@ public:
         });
         retry.setInterval(1000);
         connect(&retry, &QTimer::timeout, this, [this] {
+            if (appEvents && appAge.isValid() && appAge.elapsed()>15000) {
+                appAge.invalidate(); if (activeApp) activeApp(QString());
+            }
             if (online && heartbeat.isValid() && heartbeat.elapsed() > 20000) socket.abort();
             if (!pipe.isEmpty() && socket.state() == QLocalSocket::UnconnectedState) socket.connectToServer(pipe);
         });
@@ -69,6 +72,7 @@ public:
                     static const QRegularExpression valid("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+$");
                     if (package!="-" && !valid.match(package).hasMatch()) { socket.abort(); return; }
                     heartbeat.restart();
+                    appAge.restart();
                     if (activeApp) activeApp(package=="-" ? QString() : package);
                 } else if (online && (line.startsWith("NEXUS 1 RESULT ") || line.startsWith("NEXUS 1 ERROR "))) {
                     heartbeat.restart();
@@ -78,9 +82,9 @@ public:
                             if (!queued.isEmpty() && isOnline() && !commandPending && !installing) send(queued.takeFirst());
                         });
                     }
-                    if (line=="NEXUS 1 ERROR BUSY") {
-                        commandPending=false;
-                        if (diagnostic) diagnostic("Guest busy; command was not completed.");
+                    if (line.startsWith("NEXUS 1 ERROR ")) {
+                        commandPending=false; queued.clear();
+                        if (installing) { finishInstall(false,"Guest rejected the native operation; installation outcome may be unknown."); socket.abort(); return; }
                     }
                     if (line=="NEXUS 1 RESULT APK_INSTALL OK") finishInstall(true,"Android reports APK installation succeeded.");
                     else if (line=="NEXUS 1 RESULT APK_INSTALL FAILED") finishInstall(false,"APK checksum or Android package installation failed. No signature checks were bypassed.");
@@ -89,14 +93,14 @@ public:
             }
         });
         connect(&socket, &QLocalSocket::disconnected, this, [this] {
-            online = false; appEvents=false; apkSupported=false; commandPending=false; queued.clear(); buffer.clear();
+            online = false; appEvents=false; apkSupported=false; commandPending=false; queued.clear(); appAge.invalidate(); buffer.clear();
             if (installing) finishInstall(false,"Native guest connection lost; installation outcome may be unknown.");
             if (disconnected) disconnected();
         });
     }
     ~NativeGuestBridge() override { bootStatus={}; disconnected={}; diagnostic={}; activeApp={}; installFinished={}; stop(); }
     void start(const QString &name) { stop(); pipe=name; retry.start(); socket.connectToServer(pipe); }
-    void stop() { pipe.clear(); retry.stop(); hashTimer.stop(); transferTimer.stop(); apk.close(); installing=false; socket.abort(); online=false; appEvents=false; apkSupported=false; commandPending=false; queued.clear(); buffer.clear(); }
+    void stop() { pipe.clear(); retry.stop(); hashTimer.stop(); transferTimer.stop(); apk.close(); installing=false; socket.abort(); online=false; appEvents=false; apkSupported=false; commandPending=false; queued.clear(); appAge.invalidate(); buffer.clear(); }
     bool isOnline() const { return online && socket.state()==QLocalSocket::ConnectedState; }
     bool send(const QString &command) {
         static const QStringList allowed{"BACK","HOME","RECENTS","VOLUME_UP","VOLUME_DOWN","MUTE","SHUTDOWN","QUERY_APP"};
@@ -137,7 +141,7 @@ private:
     bool installing=false,apkSupported=false,commandPending=false;
     QLocalSocket socket;
     QTimer retry;
-    QElapsedTimer heartbeat;
+    QElapsedTimer heartbeat, appAge;
     QByteArray buffer;
     QString pipe;
     bool online = false;

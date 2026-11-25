@@ -1,4 +1,5 @@
 #include "nativeguestbridge.h"
+#include "enginepresentation.h"
 #include <QCoreApplication>
 #include <QLocalServer>
 #include <QUuid>
@@ -52,5 +53,18 @@ int main(int argc,char **argv) {
     second->write("NEXUS 1 RESULT APK_INSTALL OK\n"); second->flush();
     if (!until([&]{return installed && !bridge.isInstalling();})) return 17;
     bridge.stop();
+    EnginePresentation counter(&app);
+    double fps=-1;
+    counter.sample=[&](double rate) {fps=rate;};
+    const auto endpoint=counter.start();
+    if (endpoint.isEmpty()) return 18;
+    QLocalSocket producer; producer.connectToServer(endpoint);
+    if (!until([&]{return producer.state()==QLocalSocket::ConnectedState;})) return 19;
+    producer.write("123: sdl2_2d_nexus_present console=0 rectangles=1\n123: sdl2_2d_nexus_present console=1 rectangles=20\n123: sdl2_2d_nexus_present console=0 rectangles=50\nnoise\n"); producer.flush();
+    if (!until([&]{return fps>0;})) return 20;
+    if (fps<1 || fps>4) return 21; // two presents, not 51 dirty rectangles
+    producer.abort();
+    if (!until([&]{return fps<0;})) return 22;
+    counter.stop();
     return 0;
 }

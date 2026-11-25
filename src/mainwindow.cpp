@@ -15,6 +15,7 @@
 #include "nativeguestbridge.h"
 #include <QUuid>
 #include "fpsbadge.h"
+#include "enginepresentation.h"
 #include <QApplication>
 #include <QCryptographicHash>
 #include <QJsonDocument>
@@ -71,6 +72,10 @@ QPushButton *dockButton(const QString &label, QWidget *parent) {
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProcess(this)), embedTimer(new QTimer(this)) {
+    enginePresentation=new EnginePresentation(this);
+    enginePresentation->sample=[this](double rate) {
+        if (fpsBadge) fpsBadge->setText(rate<0 ? "Engine FPS: N/A" : QString("Engine FPS: %1").arg(rate,0,'f',1));
+    };
     nativeBridge = new NativeGuestBridge(this);
     nativeBridge->diagnostic = [this](const QString &message) { recordEvent(message); };
     nativeBridge->bootStatus = [this](bool ready) {
@@ -259,6 +264,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), process(new QProc
     });
     connect(process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         nativeBridge->stop();
+        enginePresentation->stop();
+        fpsBadge->setText("Engine FPS: N/A");
         embedTimer->stop(); aim->disarm(); mouseLock->unlock(); keymapEnabled->setChecked(false); mapper->stop(); overlay->setAimCrosshairActive(false); qmp->reset(); view->clear(); setRunning(false);
         const QString output = (engineErrorTail + QString::fromLocal8Bit(process->readAllStandardError())).trimmed();
         statusBar()->showMessage(QString("Player stopped (exit code %1).").arg(code));
@@ -365,6 +372,13 @@ void MainWindow::launch() {
         if (!value.isString()) { QMessageBox::critical(this, "VM configuration", "Invalid Rust launch argument."); return; }
         args << value.toString();
     }
+    enginePresentation->stop();
+    fpsBadge->setText("Engine FPS: N/A");
+    QFile presentationMarker(root+"/qemu/presentation-counter.txt");
+    if (!virgl && presentationMarker.open(QIODevice::ReadOnly) && presentationMarker.read(16).trimmed()=="1") {
+        const auto endpoint=enginePresentation->start();
+        if (!endpoint.isEmpty()) args << "-trace" << ("enable=sdl2_2d_nexus_present,file="+endpoint);
+    }
     QString bridgePipe;
     QFile bridgeMarker(root + "/images/nexus-bridge.txt");
     if (bridgeMarker.open(QIODevice::ReadOnly) && bridgeMarker.read(16).trimmed() == "1") {
@@ -373,7 +387,7 @@ void MainWindow::launch() {
              << "-device" << "virtio-serial-pci,id=nexus_serial"
              << "-device" << "virtserialport,chardev=nexus_control,name=org.nexus.control.0";
     }
-    view->setStartupStatus("Starting Android", "Waiting for Android. Boot hiding requires authorized guest ADB; check Diagnostics if it does not become ready.", true);
+    view->setStartupStatus("Starting Android", "Waiting for Android through the native guest bridge, or legacy authorized ADB. Check Diagnostics if it does not become ready.", true);
     process->setProgram(qemu); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); bootWait.start(); process->start();
     if (!bridgePipe.isEmpty()) nativeBridge->start(bridgePipe);
     setWindowTitle(softwareCpu ? "Project Nexus · SOFTWARE CPU (slow)" : "Project Nexus");
@@ -404,8 +418,10 @@ void MainWindow::androidAction(int keycode) {
     case 25: bridgeCommand="VOLUME_DOWN"; break; case 164: bridgeCommand="MUTE"; break;
     default: break;
     }
-    if (!bridgeCommand.isEmpty() && nativeBridge->send(bridgeCommand)) {
-        recordEvent("Native guest command queued: " + bridgeCommand + " (completion reported separately)."); return;
+    if (!bridgeCommand.isEmpty() && nativeBridge->isOnline()) {
+        if (nativeBridge->send(bridgeCommand)) recordEvent("Native guest command queued: " + bridgeCommand + " (completion reported separately).");
+        else QMessageBox::information(this,"Android controls","The native guest connection is busy. Wait for the current APK operation or command queue; no ADB fallback was used.");
+        return;
     }
     if (keycode != -1 && keycode != 3 && keycode != 4 && keycode != 187 && keycode != 24 && keycode != 25 && keycode != 164) return;
     if (process->state() != QProcess::Running || !runningAdbForward || apkTask) {
@@ -722,12 +738,10 @@ void MainWindow::pollGuest() {
         fpsBadge->adjustSize(); static_cast<FpsBadge *>(fpsBadge)->syncPosition();
     }
     if (running && nativeBridge->supportsAppEvents()) {
-        nativeBridge->send("QUERY_APP");
-        fpsBadge->setText("Engine FPS: N/A · instrumentation pending");
+        if (!QApplication::activeModalWidget()) nativeBridge->send("QUERY_APP");
         return;
     }
     if (!running || !runningAdbForward) {
-        fpsBadge->setText("Display FPS: N/A · ADB required");
         if (!currentPackage.isEmpty()) selectAppKeymap(QString());
         return;
     }
@@ -735,7 +749,7 @@ void MainWindow::pollGuest() {
     if (telemetryFailureTime.isValid() && telemetryFailureTime.elapsed() < telemetryRetryDelayMs(telemetryFailures)) return;
     QString adb = QCoreApplication::applicationDirPath() + "/platform-tools/adb.exe";
     if (!QFileInfo(adb).isFile()) adb = QStandardPaths::findExecutable("adb.exe");
-    if (adb.isEmpty()) { fpsBadge->setText("Display FPS: N/A · adb missing"); return; }
+    if (adb.isEmpty()) return;
     auto *task = new QProcess(this); guestTask = task;
     auto *timeout = new QTimer(task); timeout->setSingleShot(true);
     connect(timeout, &QTimer::timeout, task, [task] { task->kill(); });
@@ -743,15 +757,15 @@ void MainWindow::pollGuest() {
     connect(task, &QProcess::errorOccurred, this, [this, task](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
             telemetryConnected = false; telemetryFailures = qMin(4, telemetryFailures + 1); telemetryFailureTime.restart();
-            guestTask = nullptr; task->deleteLater(); fpsBadge->setText("Display FPS: N/A");
+            guestTask = nullptr; task->deleteLater();
             if (!currentPackage.isEmpty()) selectAppKeymap(QString());
         }
     });
-    const auto startQuery = [task, timeout, adb, endpoint, fps] {
+    const auto startQuery = [task, timeout, adb, endpoint] {
         task->setProperty("queried", true); timeout->start(8000);
-        task->start(adb, {"-s", endpoint, "shell", guestTelemetryCommand(fps)});
+        task->start(adb, {"-s", endpoint, "shell", guestTelemetryCommand(false)});
     };
-    connect(task, &QProcess::finished, this, [this, task, timeout, startQuery, fps](int code, QProcess::ExitStatus exit) {
+    connect(task, &QProcess::finished, this, [this, task, timeout, startQuery](int code, QProcess::ExitStatus exit) {
         timeout->stop();
         if (!task->property("queried").toBool() && code == 0 && exit == QProcess::NormalExit) {
             const QString reply = QString::fromUtf8(task->readAllStandardOutput());
@@ -764,7 +778,6 @@ void MainWindow::pollGuest() {
         if (closePending || process->state() != QProcess::Running) return;
         if (code != 0 || exit != QProcess::NormalExit || !task->property("queried").toBool()) {
             telemetryConnected = false; telemetryFailures = qMin(4, telemetryFailures + 1); telemetryFailureTime.restart();
-            fpsBadge->setText("Display FPS: N/A");
             if (!currentPackage.isEmpty()) selectAppKeymap(QString());
             return;
         }
@@ -777,7 +790,6 @@ void MainWindow::pollGuest() {
         }
         const QString package = foregroundPackage(text.section("NEXUS_ACTIVITY\n", 1).section("NEXUS_FPS\n", 0, 0));
         if (!QApplication::activeModalWidget() && package != currentPackage) selectAppKeymap(package);
-        fpsBadge->setText(fps ? compositorFps(text.section("NEXUS_FPS\n", 1)) : "Display FPS: N/A");
     });
     if (telemetryConnected) startQuery();
     else { timeout->start(8000); task->start(adb, {"connect", endpoint}); }

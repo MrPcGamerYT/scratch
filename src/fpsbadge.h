@@ -8,10 +8,10 @@
 class FpsBadge : public QLabel {
 public:
     FpsBadge(QWidget *owner, QWidget *viewport)
-        : QLabel("Display FPS: N/A", owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus), target(viewport) {
+        : QLabel("Engine FPS: N/A", owner, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus), target(viewport) {
         setAttribute(Qt::WA_ShowWithoutActivating);
         setCursor(Qt::SizeAllCursor);
-        setToolTip("Drag to move · Android display/compositor FPS, not game FPS");
+        setToolTip("Drag to move · engine SDL presentation completions per second, not game FPS; unsupported renderers show N/A");
         setStyleSheet("background:#141927;color:#b8f5c8;padding:6px;border-radius:5px;");
     }
     void syncPosition() {

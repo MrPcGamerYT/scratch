@@ -57,6 +57,7 @@ def run(args):
                         channel.sendall(b'NEXUS 1 CHECK_HOME\n'); phase='check'
                     elif line==b'NEXUS 1 RESULT CHECK_HOME OK' and phase=='check':
                         result['home_without_adb']=True; result['no_recorded_anr']=True
+                        result['home_verified_seconds']=round(time.monotonic()-started,2)
                         channel.sendall(b'NEXUS 1 QUERY_APP\n'); phase='app'
                     elif line.startswith(b'NEXUS 1 APP ') and phase=='app':
                         package=line[12:].decode()
@@ -76,6 +77,7 @@ def run(args):
                         channel.sendall(b'NEXUS 1 SHUTDOWN\n'); phase='shutdown'
                     elif line==b'NEXUS 1 RESULT HOME OK' and phase=='home':
                         result['native_home_command_completed']=True
+                        result['home_command_completed_seconds']=round(time.monotonic()-started,2)
                         capture_screen(qmp_port,output/'screen-final.ppm')
                         if args.apk_fixture:
                             apk_data=Path(args.apk_fixture).read_bytes()

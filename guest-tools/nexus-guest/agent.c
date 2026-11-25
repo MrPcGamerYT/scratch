@@ -15,6 +15,13 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef NEXUS_SYSTEM_BIN
+#define NEXUS_SYSTEM_BIN "/system/bin/"
+#endif
+#ifndef NEXUS_APK_DIR
+#define NEXUS_APK_DIR "/data/local/tmp/"
+#endif
+
 #define PORT_NAME "org.nexus.control.0"
 #define MAX_LINE 128
 #define MAX_APK (512ULL*1024*1024)
@@ -47,11 +54,11 @@ static int execute(const char *key) {
     if (!child) {
         int nullfd = open("/dev/null", O_RDWR);
         if (nullfd >= 0) { dup2(nullfd,0); dup2(nullfd,1); dup2(nullfd,2); if (nullfd > 2) close(nullfd); }
-        if (key && !strcmp(key,"PROVISION_HOME")) execl("/system/bin/sh", "sh", access("/nexus-provision-home.sh",R_OK)==0 ? "/nexus-provision-home.sh" : "/system/bin/nexus-provision-home.sh", (char *)NULL);
-        else if (key && !strcmp(key,"CHECK_HOME")) execl("/system/bin/sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
-        else if (key && !strcmp(key,"APK_INSTALL")) execl("/system/bin/pm", "pm", "install", "-r", "--user", "0", apk_path, (char *)NULL);
-        else if (key) execl("/system/bin/input", "input", "keyevent", key, (char *)NULL);
-        else execl("/system/bin/svc", "svc", "power", "shutdown", (char *)NULL);
+        if (key && !strcmp(key,"PROVISION_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-provision-home.sh",R_OK)==0 ? "/nexus-provision-home.sh" : "/system/bin/nexus-provision-home.sh", (char *)NULL);
+        else if (key && !strcmp(key,"CHECK_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
+        else if (key && !strcmp(key,"APK_INSTALL")) execl(NEXUS_SYSTEM_BIN "pm", "pm", "install", "-r", "--user", "0", apk_path, (char *)NULL);
+        else if (key) execl(NEXUS_SYSTEM_BIN "input", "input", "keyevent", key, (char *)NULL);
+        else execl(NEXUS_SYSTEM_BIN "svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
     }
     int budget = key && !strcmp(key,"PROVISION_HOME") ? 1200 : (key && !strcmp(key,"APK_INSTALL") ? 1200 : 600);
@@ -94,7 +101,7 @@ static void run_command(int output, const char *name, const char *key) {
     if (!strcmp(name,"QUERY_APP")) {
         char package[96] = "-", text[4096];
 #ifndef NEXUS_AGENT_TEST
-        FILE *source=popen("/system/bin/dumpsys activity activities", "r");
+        FILE *source=popen(NEXUS_SYSTEM_BIN "dumpsys activity activities", "r");
         result=-1;
         if (source) {
             int found=0;
@@ -117,7 +124,7 @@ static void run_command(int output, const char *name, const char *key) {
         int ends[2];
         if (!pipe(ends)) {
             pid_t child=fork();
-            if (!child) { close(ends[0]); dup2(ends[1],1); close(ends[1]); execl("/system/bin/sha256sum","sha256sum",apk_path,(char *)NULL); _exit(127); }
+            if (!child) { close(ends[0]); dup2(ends[1],1); if (ends[1]!=1) close(ends[1]); execl(NEXUS_SYSTEM_BIN "sha256sum","sha256sum",apk_path,(char *)NULL); _exit(127); }
             close(ends[1]); char hash[65]={0}; size_t used=0;
             while (used<64) { ssize_t count=read(ends[0],hash+used,64-used); if (count<=0) break; used+=(size_t)count; }
             close(ends[0]); int status=0;
@@ -138,29 +145,37 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
     size_t apk_remaining=0;
     if (reply(output,"NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK\n")) return -1;
     time_t worker_started=0;
+    char worker_output[512]; size_t worker_used=0;
     for (;;) {
         if (*apkowned && apk_activity && time(NULL)-apk_activity>180) return -1;
         if (*worker>0) {
             char event[256];
             ssize_t count=read(*workfd,event,sizeof(event)-1);
-            if (count>0) { event[count]=0; if (reply(output,event)) return -1; }
+            if (count>0) {
+                if (worker_used+(size_t)count>=sizeof(worker_output)) return -1;
+                memcpy(worker_output+worker_used,event,(size_t)count); worker_used+=(size_t)count;
+            }
             int status=0;
             if (waitpid(*worker,&status,WNOHANG)==*worker) {
                 while ((count=read(*workfd,event,sizeof(event)-1))>0) {
-                    event[count]=0; if (reply(output,event)) return -1;
+                    if (worker_used+(size_t)count>=sizeof(worker_output)) return -1;
+                    memcpy(worker_output+worker_used,event,(size_t)count); worker_used+=(size_t)count;
                 }
                 close(*workfd); *workfd=-1; *worker=0;
-                if (*apkowned && *apkfd<0) *apkowned=0;
+                if (*apkowned && *apkfd<0) { unlink(apk_path); *apkowned=0; }
+                worker_output[worker_used]=0;
+                if (reply(output,worker_used ? worker_output : "NEXUS 1 ERROR COMMAND_FAILED\n")) return -1;
+                worker_used=0;
             } else if (time(NULL)-worker_started>130) {
                 kill(-*worker,SIGKILL); waitpid(*worker,NULL,0);
                 close(*workfd); *workfd=-1; *worker=0;
-                if (*apkowned && *apkfd<0) *apkowned=0;
+                if (*apkowned && *apkfd<0) { unlink(apk_path); *apkowned=0; }
                 if (reply(output,"NEXUS 1 ERROR COMMAND_TIMEOUT\n")) return -1;
             }
         }
         if (!testing && time(NULL) >= next_status) {
             char value[32] = {0};
-            FILE *property = popen("/system/bin/getprop sys.boot_completed", "r");
+            FILE *property = popen(NEXUS_SYSTEM_BIN "getprop sys.boot_completed", "r");
             if (property) { if (!fgets(value,sizeof(value),property)) value[0] = 0; pclose(property); }
             if (reply(output, value[0]=='1' ? "NEXUS 1 READY 1\n" : "NEXUS 1 READY 0\n")) return -1;
             next_status = time(NULL)+2;
@@ -239,7 +254,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
                         }
                         setpgid(*worker,*worker); close(ends[1]);
                         *workfd=ends[0]; fcntl(*workfd,F_SETFL,O_NONBLOCK);
-                        worker_started=time(NULL);
+                        worker_started=time(NULL); worker_used=0;
                     }
                 } else if (reply(output,"NEXUS 1 ERROR UNSUPPORTED\n")) return -1;
             }
@@ -254,7 +269,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
 
 static int serve(int input, int output, int testing) {
     pid_t worker=0; int workfd=-1,apkfd=-1,apkowned=0;
-    snprintf(apk_path,sizeof(apk_path),"/data/local/tmp/nexus-install-%ld.apk",(long)getpid());
+    snprintf(apk_path,sizeof(apk_path),NEXUS_APK_DIR "nexus-install-%ld.apk",(long)getpid());
     int result=serve_loop(input,output,testing,&worker,&workfd,&apkfd,&apkowned);
     if (worker>0) { kill(-worker,SIGKILL); waitpid(worker,NULL,0); }
     if (workfd>=0) close(workfd);
@@ -263,7 +278,7 @@ static int serve(int input, int output, int testing) {
     return result;
 }
 
-#ifndef NEXUS_AGENT_TEST
+#if !defined(NEXUS_AGENT_TEST) && !defined(NEXUS_AGENT_HARNESS)
 static int open_port(void) {
     glob_t paths;
     if (glob("/sys/class/virtio-ports/*/name",0,NULL,&paths)) return -1;
@@ -288,7 +303,9 @@ static int open_port(void) {
 
 int main(void) {
     signal(SIGPIPE,SIG_IGN);
-#ifdef NEXUS_AGENT_TEST
+#ifdef NEXUS_AGENT_HARNESS
+    return serve(STDIN_FILENO,STDOUT_FILENO,0) < 0;
+#elif defined(NEXUS_AGENT_TEST)
     return serve(STDIN_FILENO,STDOUT_FILENO,1) < 0;
 #else
     for (;;) {

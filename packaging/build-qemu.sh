@@ -12,12 +12,13 @@ mkdir -p "$root/qemu-build" "$prefix/share/qemu" "$prefix/sources" "$prefix/lice
 cd "$root/qemu-build"
 "$source/configure" --prefix="$prefix" --target-list=x86_64-softmmu \
   --enable-lto --extra-cflags="-O3 -mtune=generic" \
-  --enable-whpx --enable-sdl --enable-slirp --enable-tools --enable-opengl --enable-virglrenderer \
+  --enable-trace-backends=log --enable-whpx --enable-sdl --enable-slirp --enable-tools --enable-opengl --enable-virglrenderer \
   --disable-docs --disable-capstone --disable-install-blobs --disable-modules --disable-werror
 ninja -j 2 qemu-system-x86_64.exe qemu-img.exe
 mkdir -p "$prefix/bin"
 cp qemu-system-x86_64.exe "$prefix/bin/NexusEngine.exe"
 cp qemu-img.exe "$prefix/bin/"
+printf '1\n' > "$prefix/presentation-counter.txt"
 python "$root/packaging/brand_engine.py" "$prefix"
 # Keep optimization provenance with every engine; never use -march=native.
 # A runner-specific ISA would break older CPUs such as the user's Skylake.

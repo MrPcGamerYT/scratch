@@ -102,9 +102,9 @@ SettingsDialog::SettingsDialog(bool running, QWidget *parent) : QDialog(parent) 
     form->addRow("CPU execution", acceleration);
     note(form, "Software compatibility bypasses WHPX MMIO crashes, but can be extremely slow. There is no automatic fallback or compatibility guarantee. Restart player after changes.");
     form->addRow("Frame rate", unavailable("Guest controlled · no FPS limiter"));
-    showFps = new QCheckBox("Show live display FPS"); showFps->setObjectName("showFps"); form->addRow(showFps);
+    showFps = new QCheckBox("Show engine presentation FPS"); showFps->setObjectName("showFps"); form->addRow(showFps);
     hideBoot = new QCheckBox("Hide guest display until Android boot completes"); hideBoot->setObjectName("hideBoot"); form->addRow(hideBoot);
-    note(form, "Display FPS uses Android SurfaceFlinger timestamps, not game FPS. Unsupported or stale data shows N/A. FPS, per-app keymap detection and early boot-complete detection require local ADB forwarding and authorized guest debugging. Boot hiding defaults to on; without a usable status connection it falls back after three minutes. Boot hiding does not accelerate boot or skip setup. The display is revealed with a warning after three minutes without boot confirmation. Turning this option off reveals it during the current session; turning it on requires restart.");
+    note(form, "Engine FPS counts completed SDL 2D presentation calls in the instrumented engine, not game FPS or monitor scanout. It does not use ADB. Unsupported engines/OpenGL renderers show N/A. Native guest images provide app detection and boot status without ADB; older images require authorized debugging. Boot hiding defaults to on; without a usable status connection it falls back after three minutes. Boot hiding does not accelerate boot or skip setup. The display is revealed with a warning after three minutes without boot confirmation. Turning this option off reveals it during the current session; turning it on requires restart.");
     auto *display = addPage("Display", "Host cursor preferences and guest display capabilities.", &form);
     auto *resolution = new QComboBox(display); resolution->setObjectName("guestResolution");
     resolution->addItem("Android default", "reset");

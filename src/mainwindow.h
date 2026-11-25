@@ -10,6 +10,7 @@
 #endif
 #include <windows.h>
 class NativeGuestBridge;
+class EnginePresentation;
 class EmulatorView;
 class Qmp;
 class InputMapper;
@@ -77,6 +78,7 @@ private:
     QPushButton *shutdownButton;
     QLabel *vmStatus;
     NativeGuestBridge *nativeBridge;
+    EnginePresentation *enginePresentation;
     Qmp *qmp;
     InputMapper *mapper;
     MouseLock *mouseLock;
