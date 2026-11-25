@@ -36,6 +36,9 @@ def check_home(endpoint, output, provision=False):
         raise RuntimeError('No supported installed Home activity found; refusing guessed launcher')
     if provision:
         # Only used on a new, disposable CI template overlay with no accounts.
+        adb(endpoint, 'locksettings', 'set-disabled', 'true')
+        if adb(endpoint, 'locksettings', 'get-disabled').strip() != 'true':
+            raise RuntimeError('Clean template swipe-lock disable did not persist')
         for namespace, key in [('global', 'device_provisioned'), ('secure', 'user_setup_complete')]:
             adb(endpoint, 'settings', 'put', namespace, key, '1')
         result = adb(endpoint, 'cmd', 'package', 'set-home-activity', '--user', '0', component)
@@ -43,6 +46,7 @@ def check_home(endpoint, output, provision=False):
     # Do not keep rewriting setup state on the second boot: persistence must pass.
     if adb(endpoint, 'settings', 'get', 'global', 'device_provisioned').strip() != '1' or adb(endpoint, 'settings', 'get', 'secure', 'user_setup_complete').strip() != '1':
         raise RuntimeError('Guest setup completion did not persist')
+    adb(endpoint, 'wm', 'dismiss-keyguard')
     adb(endpoint, 'am', 'start', '-W', '-a', 'android.intent.action.MAIN', '-c', 'android.intent.category.HOME')
     focused = ''
     for _ in range(12):
@@ -78,7 +82,7 @@ def install_boot_branding(endpoint, animation):
         raise RuntimeError('Nexus boot asset upload failed: ' + result.stderr)
     adb(endpoint, 'chmod', '0644', '/data/local/bootanimation.zip')
     adb(endpoint, 'restorecon', '/data/local/bootanimation.zip')
-    adb(endpoint, 'rm', '-f', '/data/.nexus-provision')
+    adb(endpoint, 'rm', '-f', '/data/.nexus-provision', '/data/.nexus-provision-adb.pub', '/data/misc/adb/adb_keys')
     adb(endpoint, 'settings', 'put', 'global', 'device_name', 'Nexus Android 11')
     expected = hashlib.sha256(Path(animation).read_bytes()).hexdigest()
     actual = adb(endpoint, 'sha256sum', '/data/local/bootanimation.zip').split()[0]

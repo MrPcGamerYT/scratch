@@ -203,6 +203,8 @@ def run(args):
             try:
                 subprocess.run(['adb', 'connect', endpoint], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
                 probe = subprocess.run(['adb', '-s', endpoint, 'shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=4)
+                if probe.returncode:
+                    result['adb_last_error'] = probe.stderr.strip()[-1000:]
                 consecutive_complete = consecutive_complete + 1 if probe.returncode == 0 and probe.stdout.strip() == '1' else 0
             except subprocess.TimeoutExpired:
                 # An unavailable adbd is expected during boot, not a fatal probe error.

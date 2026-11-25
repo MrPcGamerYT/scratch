@@ -86,6 +86,10 @@ def build(args):
             g.mkdir('/android/data')
             if getattr(args, 'native_bridge', False):
                 g.write('/android/data/.nexus-provision', b'clean-ci-template-only\n')
+                key = getattr(args, 'provision_adb_key', '')
+                if not key:
+                    raise ValueError('Native CI provisioning requires an ephemeral authorized public key')
+                g.write('/android/data/.nexus-provision-adb.pub', Path(key).read_bytes())
             for name in names:
                 g.upload(str(tree / name), '/android/' + name)
             g.mkdir_p('/boot/efi')
@@ -125,4 +129,5 @@ if __name__ == '__main__':
     parser.add_argument('--profile', choices=['no-avx', 'drm-gbm', 'drm-gbm-no-avx'], required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--native-bridge', action='store_true')
+    parser.add_argument('--provision-adb-key', default='')
     build(parser.parse_args())

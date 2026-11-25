@@ -10,6 +10,8 @@ jobs:
   candidate:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      ADB_VENDOR_KEYS: ${{ github.workspace }}/candidate/ci-adbkey
     steps:
       - uses: actions/checkout@v4
       - name: Install isolated guest tools
@@ -75,7 +77,8 @@ jobs:
           dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
           musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
           /usr/bin/python3 guest-tools/install_bridge_tree.py --tree fixture --agent candidate/nexus-agent --evidence source-evidence 2>&1 | tee source-evidence/bridge-build.log
-          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
+          adb keygen candidate/ci-adbkey
+          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --provision-adb-key candidate/ci-adbkey.pub --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
           /usr/bin/python3 guest-tools/make_boot_animation.py candidate/nexus-bootanimation.zip
       - name: First boot, explicitly provision clean offline template and require Home without ANRs
         run: |
@@ -115,7 +118,7 @@ jobs:
           shutil.copyfile('guest-tools/install_bridge_ramdisk.py',out/'native-bridge-source/install_bridge_ramdisk.py')
           shutil.copytree(root/'evidence',out/'verification')
           shutil.copyfile('/usr/share/doc/ovmf/copyright',out/'OVMF-NOTICES.txt')
-          (out/'README.txt').write_text('NEXUS ANDROID 11 FOSS CANDIDATE - EXPERIMENTAL\nUpstream Bliss OS 14.10.3 FOSS Generic (2024-10-12). Android SDK 30 required by gates. Not an Android source build or fastest-engine certification. Original system payload/notices retained; user-data Nexus boot override needs visual review.\nNo GApps edition was selected; individual upstream component terms still apply. Source: https://sourceforge.net/projects/blissos-x86/files/Official/BlissOS14/FOSS/Generic/ and https://github.com/BlissOS .\nSetup was explicitly provisioned on a clean account-free CI template, not by bypassing Google login/FRP. New image, new instance only. Never overwrite an existing backing base. Back up your old Player/images AND user instance together. Extract this images folder beside the updated Player executable in a separate permanent folder. A different Player folder still shares per-user instance state: deliberate migration/new-instance isolation is required.\nNative v1 bridge gates require boot status, Home check, navigation command and clean shutdown without NIC or ADB on second boot. APK, active-app events, display geometry and engine FPS are NOT provided by this version. Linux TCG 2 CPU / 3072 MiB tests only. Windows, WHPX, physical GPU, games, sound/network and cursor alignment remain unverified. Older Android/security patch levels need review; do not use sensitive accounts. Home and clean shutdown gates are not full stability certification.\n')
+          (out/'README.txt').write_text('NEXUS ANDROID 11 FOSS CANDIDATE - EXPERIMENTAL\nUpstream Bliss OS 14.10.3 FOSS Generic (2024-10-12). Android SDK 30 required by gates. Not an Android source build or fastest-engine certification. Upstream notices/files retained; Nexus service/init files added and system.sfs repacked; user-data Nexus boot override needs visual review.\nNo GApps edition was selected; individual upstream component terms still apply. Source: https://sourceforge.net/projects/blissos-x86/files/Official/BlissOS14/FOSS/Generic/ and https://github.com/BlissOS .\nSetup was explicitly provisioned on a clean account-free CI template, not by bypassing Google login/FRP. New image, new instance only. Never overwrite an existing backing base. Back up your old Player/images AND user instance together. Extract this images folder beside the updated Player executable in a separate permanent folder. A different Player folder still shares per-user instance state: deliberate migration/new-instance isolation is required.\nNative v1 bridge gates require boot status, Home check, navigation command and clean shutdown without NIC or ADB on second boot. APK, active-app events, display geometry and engine FPS are NOT provided by this version. Linux TCG 2 CPU / 3072 MiB tests only. Windows, WHPX, physical GPU, games, sound/network and cursor alignment remain unverified. Older Android/security patch levels need review; do not use sensitive accounts. Home and clean shutdown gates are not full stability certification.\n')
           files=sorted(path for path in out.rglob('*') if path.is_file())
           lines=[]
           for path in files:
