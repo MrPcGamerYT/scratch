@@ -129,6 +129,9 @@ jobs:
           for path in Path('candidate/evidence').rglob('result.json'):
               text=path.read_text()
               print('::notice title='+str(path)+'::'+text[-6000:].replace('%','%25').replace('\n','%0A'))
+          for name in ['bridge-ramdisk.json','ramdisk-format.txt','payload-layout.txt']:
+              path=Path('source-evidence')/name
+              if path.exists(): print('::notice title='+name+'::'+path.read_text(errors='replace')[-5000:].replace('%','%25').replace('\n','%0A'))
           for path in Path('source-evidence').glob('SOURCE-SHA256.txt'):
               print('::notice title=Source fingerprint::'+path.read_text())
           PY
