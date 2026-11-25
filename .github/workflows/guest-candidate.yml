@@ -12,7 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install isolated image and verification tools
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs grub-efi-amd64-bin grub-common ovmf adb p7zip-full
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full
+          sudo chmod a+r /boot/vmlinuz*
       - name: Unit checks
         run: |
           /usr/bin/python3 tests/guest_builder_tests.py
