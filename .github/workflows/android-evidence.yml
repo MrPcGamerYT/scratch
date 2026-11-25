@@ -1,0 +1,47 @@
+name: Inspect Android boot evidence
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Android investigation run ID
+        required: true
+        default: '45558822347'
+  push:
+    paths:
+      - .github/workflows/android-evidence.yml
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bliss-live-virtio-evidence
+          path: evidence
+          run-id: ${{ inputs.run_id || '45558822347' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Expose inspectable thumbnail and selected logs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          def expose(title, text):
+              # GitHub annotations truncate messages at 4096 characters.
+              for offset in range(0, len(text), 2800):
+                  message = text[offset:offset+2800].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title={title}-{offset//2800:03}::{message}')
+          expose('SCREEN', base64.b64encode(Path('evidence/last-screen.jpg').read_bytes()).decode())
+          for name in ['result.json', 'serial.log']:
+              path = Path('evidence') / name
+              if path.exists():
+                  expose(name, path.read_text(errors='replace')[-12000:])
+          prop = Path('evidence/getprop.txt')
+          if prop.exists():
+              expose('Android-properties', '\n'.join(line for line in prop.read_text(errors='replace').splitlines() if any(key in line for key in ['boot_completed', 'init.svc.surfaceflinger', 'init.svc.bootanim', 'ro.hardware', 'ro.build.version', 'opengles', 'gralloc', 'hwcomposer'])))
+          log = Path('evidence/logcat.txt')
+          if log.exists():
+              expose('Graphics-log', '\n'.join(line for line in log.read_text(errors='replace').splitlines() if any(key in line.lower() for key in ['fatal', 'gralloc', 'hwcomposer', 'surfaceflinger', 'egl', 'renderer']))[-12000:])
+          PY
