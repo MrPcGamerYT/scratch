@@ -24,7 +24,9 @@ guest_port=None
 closed=False
 
 def command(args, **kwargs):
-    return subprocess.run([str(x) for x in args],check=True,capture_output=True,text=True,**kwargs).stdout
+    result=subprocess.run([str(x) for x in args],capture_output=True,text=True,**kwargs)
+    if result.returncode: raise RuntimeError(f'{Path(str(args[0])).name}: '+result.stderr[-2000:])
+    return result.stdout
 
 def port():
     with socket.socket() as s:

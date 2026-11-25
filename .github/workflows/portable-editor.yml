@@ -27,7 +27,14 @@ jobs:
             exit 1
           fi
       - name: Real isolated VM nested-image editing test
-        run: python3 -u tests/portable_appliance_test.py
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! python3 -u tests/portable_appliance_test.py 2>&1 | tee test-output.log; then
+            tail -25 test-output.log | while IFS= read -r line; do echo "::error::$line"; done
+            if [ -f appliance-test.log ]; then tail -25 appliance-test.log | while IFS= read -r line; do echo "::error::$line"; done; fi
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

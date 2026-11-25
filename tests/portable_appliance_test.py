@@ -18,7 +18,11 @@ with tempfile.TemporaryDirectory() as d:
     (dist/'appliance').symlink_to(Path('appliance').resolve(),target_is_directory=True)
     (dist/'qemu/bin').mkdir(parents=True); (dist/'qemu/share').mkdir()
     for name in ['qemu-system-x86_64','qemu-img']: (dist/'qemu/bin'/name).symlink_to(shutil.which(name))
-    (dist/'qemu/share/qemu').symlink_to('/usr/share/qemu',target_is_directory=True)
+    data=dist/'qemu/share/qemu'; data.mkdir()
+    for folder in ['/usr/share/qemu','/usr/share/seabios','/usr/share/ipxe/qemu']:
+        if Path(folder).is_dir():
+            for file in Path(folder).iterdir():
+                if not (data/file.name).exists(): (data/file.name).symlink_to(file)
     h.ROOT=dist
     tree=root/'sys'; (tree/'system/app/OldLauncher').mkdir(parents=True)
     old=tree/'system/app/OldLauncher/base.apk'; old.write_bytes(b'old-launcher'); old.chmod(0o640)
