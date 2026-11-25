@@ -691,7 +691,7 @@ void MainWindow::pollGuest() {
         task->setProperty("queried", true); timeout->start(8000);
         task->start(adb, {"-s", endpoint, "shell", guestTelemetryCommand(fps)});
     };
-    connect(task, &QProcess::finished, this, [this, task, timeout, startQuery](int code, QProcess::ExitStatus exit) {
+    connect(task, &QProcess::finished, this, [this, task, timeout, startQuery, fps](int code, QProcess::ExitStatus exit) {
         timeout->stop();
         if (!task->property("queried").toBool() && code == 0 && exit == QProcess::NormalExit) {
             const QString reply = QString::fromUtf8(task->readAllStandardOutput());
