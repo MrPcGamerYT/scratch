@@ -37,11 +37,20 @@ jobs:
           for name in ['result.json', 'serial.log']:
               path = Path('evidence') / name
               if path.exists():
-                  expose(name, path.read_text(errors='replace')[-12000:])
+                  expose(name, path.read_text(errors='replace')[-5600:])
+          PY
+      - name: Expose Android services and graphics logs separately
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def expose(title, text):
+              for offset in range(0, len(text), 2800):
+                  message = text[offset:offset+2800].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title={title}-{offset//2800:03}::{message}')
           prop = Path('evidence/getprop.txt')
           if prop.exists():
               expose('Android-properties', '\n'.join(line for line in prop.read_text(errors='replace').splitlines() if any(key in line for key in ['boot_completed', 'init.svc.surfaceflinger', 'init.svc.bootanim', 'ro.hardware', 'ro.build.version', 'opengles', 'gralloc', 'hwcomposer'])))
           log = Path('evidence/logcat.txt')
           if log.exists():
-              expose('Graphics-log', '\n'.join(line for line in log.read_text(errors='replace').splitlines() if any(key in line.lower() for key in ['fatal', 'gralloc', 'hwcomposer', 'surfaceflinger', 'egl', 'renderer']))[-12000:])
+              expose('Graphics-log', '\n'.join(line for line in log.read_text(errors='replace').splitlines() if any(key in line.lower() for key in ['fatal', 'gralloc', 'hwcomposer', 'surfaceflinger', 'egl', 'renderer']))[-8000:])
           PY
