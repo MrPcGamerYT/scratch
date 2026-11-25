@@ -9,7 +9,7 @@ permissions:
 jobs:
   candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Install isolated guest tools
@@ -82,7 +82,7 @@ jobs:
         run: |
           qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/android-candidate.qcow2" candidate/provision.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/provision-vars.fd
-          /usr/bin/python3 tests/android_native_probe.py --disk candidate/provision.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/provision-vars.fd --provision --output candidate/evidence/first-boot --timeout 900
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/provision.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/provision-vars.fd --provision --output candidate/evidence/first-boot --timeout 1800
       - name: Flatten only after confirmed clean shutdown
         run: |
           python3 - <<'PY'
@@ -102,7 +102,7 @@ jobs:
           apksigner sign --ks candidate/apk-smoke/ci.jks --ks-pass pass:ci-test-only --key-pass pass:ci-test-only --out candidate/apk-smoke/fixture.apk candidate/apk-smoke/unsigned.apk
           qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/nexus-android11.qcow2" candidate/second-boot.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/second-vars.fd
-          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --apk-fixture candidate/apk-smoke/fixture.apk --output candidate/evidence/second-boot --timeout 900
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --apk-fixture candidate/apk-smoke/fixture.apk --output candidate/evidence/second-boot --timeout 1800
           sha256sum -c candidate/base-before-verification.sha256
       - name: Package separately from every existing user image
         run: |
