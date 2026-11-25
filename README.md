@@ -367,7 +367,10 @@ uploaded. Evidence artifacts contain serial output, screenshots, launch argument
 and a structured result. Probe parser tests reject unsupported recipes rather
 than inventing boot parameters. Each boot has a 12-minute observation limit.
 
-Passing requires three successive ADB `sys.boot_completed=1` replies. If ADB is
+Framework detection requires three successive ADB `sys.boot_completed=1` replies.
+The readiness gate additionally requires SurfaceFlinger running, boot animation
+stopped, and no captured fatal renderer/compositor/setup-wizard signal. A final
+screenshot is captured after these checks; passing still requires visual review. If ADB is
 unavailable, the result remains unverified even if a desktop is visible; inspect
 the screenshots and logs. Boot completion does not prove correct colors, game
 performance, installed-disk reliability, Windows WHPX or compatibility on the

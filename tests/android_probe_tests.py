@@ -30,6 +30,13 @@ class RecipeTests(unittest.TestCase):
             (root / 'isolinux.cfg').write_text('label live\n kernel /kernel\n append initrd=/initrd.img root=/dev/ram0 quiet SRC= DATA=\nlabel install\n kernel /kernel\n append initrd=/initrd.img INSTALL=1\n')
             self.assertEqual(probe.boot_recipe(root)[2], 'root=/dev/ram0 SRC= DATA=')
 
+    def test_boot_complete_does_not_hide_renderer_crash(self):
+        props = '[sys.boot_completed]: [1]\n[init.svc.surfaceflinger]: [running]\n[init.svc.bootanim]: [stopped]'
+        crash = 'F libc : Fatal signal 11 (SIGSEGV) in tid 2222 (llvmpipe-0), pid 2170 (oid.setupwizard)'
+        self.assertFalse(probe.assess_ui(props, crash)[0])
+        self.assertTrue(probe.assess_ui(props, '')[0])
+        self.assertFalse(probe.assess_ui(props.replace('[stopped]', '[running]'), '')[0])
+
     def test_unknown_recipe_fails_instead_of_guessing(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(RuntimeError):

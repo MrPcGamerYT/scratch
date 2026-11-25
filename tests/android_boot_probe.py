@@ -44,6 +44,31 @@ def boot_recipe(tree):
     raise RuntimeError('No supported literal live-boot kernel/initrd recipe found in ISO; refusing to guess')
 
 
+def assess_ui(properties, logcat):
+    if re.search(r'Fatal signal[^\n]*(?:llvmpipe|surfaceflinger|setupwizard)', logcat, re.I):
+        return False, 'Renderer/compositor/setup-wizard fatal signal captured; framework boot completion is not a usable desktop'
+    required = ['[sys.boot_completed]: [1]', '[init.svc.surfaceflinger]: [running]', '[init.svc.bootanim]: [stopped]']
+    if not all(item in properties for item in required):
+        return False, 'Framework responded but compositor readiness/boot-animation stop was not established'
+    return True, 'Service readiness only; screenshots still require visual inspection'
+
+
+def capture_screen(port, filename):
+    with socket.create_connection(('127.0.0.1', port), timeout=5) as sock:
+        stream = sock.makefile('rwb', buffering=0)
+        def execute(payload):
+            stream.write((json.dumps(payload) + '\n').encode())
+            while True:
+                response = json.loads(stream.readline())
+                if 'error' in response:
+                    raise RuntimeError(str(response['error']))
+                if 'return' in response:
+                    return response
+        stream.readline()
+        execute({'execute': 'qmp_capabilities'})
+        execute({'execute': 'screendump', 'arguments': {'filename': str(filename)}})
+
+
 def run(args):
     output = pathlib.Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -84,18 +109,8 @@ def run(args):
             if time.monotonic() >= next_capture:
                 captures += 1
                 try:
-                    with socket.create_connection(('127.0.0.1', qmp_port), timeout=5) as sock:
-                        stream = sock.makefile('rwb', buffering=0)
-                        def execute(payload):
-                            stream.write((json.dumps(payload) + '\n').encode())
-                            while True:
-                                response = json.loads(stream.readline())
-                                if 'return' in response or 'error' in response:
-                                    return response
-                        stream.readline()
-                        execute({'execute': 'qmp_capabilities'})
-                        execute({'execute': 'screendump', 'arguments': {'filename': str(output / f'screen-{captures:02}.ppm')}})
-                except (OSError, ValueError) as error:
+                    capture_screen(qmp_port, output / f'screen-{captures:02}.ppm')
+                except (OSError, ValueError, RuntimeError) as error:
                     (output / 'probe.log').open('a').write(str(error) + '\n')
                 next_capture = time.monotonic() + 60
             try:
@@ -106,11 +121,23 @@ def run(args):
                 # An unavailable adbd is expected during boot, not a fatal probe error.
                 consecutive_complete = 0
             if consecutive_complete >= 3:
-                result['status'] = 'boot_completed'
+                result['framework_boot_completed'] = True
+                result['status'] = 'ui_unverified'
+                # Allow a bounded transition out of boot animation before collecting evidence.
+                for _ in range(9):
+                    animation = subprocess.run(['adb', '-s', endpoint, 'shell', 'getprop', 'init.svc.bootanim'], capture_output=True, text=True, timeout=10)
+                    if animation.returncode == 0 and animation.stdout.strip() == 'stopped':
+                        break
+                    time.sleep(10)
                 result['visual_validation'] = 'Screenshots require inspection; boot_completed does not prove correct graphics'
                 for name, command_args in [('getprop.txt', ['getprop']), ('logcat.txt', ['logcat', '-d', '-t', '2000'])]:
                     capture = subprocess.run(['adb', '-s', endpoint, 'shell', *command_args], capture_output=True, timeout=30)
                     (output / name).write_bytes(capture.stdout + capture.stderr)
+                ready, reason = assess_ui((output / 'getprop.txt').read_text(errors='replace'), (output / 'logcat.txt').read_text(errors='replace'))
+                result['ui_assessment'] = reason
+                if ready:
+                    result['status'] = 'framework_ready_visual_unverified'
+                capture_screen(qmp_port, output / 'screen-final.ppm')
                 break
             time.sleep(5)
         else:
@@ -128,7 +155,7 @@ def run(args):
         if serial_file:
             serial_file.close()
         (output / 'result.json').write_text(json.dumps(result, indent=2))
-    return 0 if result['status'] == 'boot_completed' else 1
+    return 0 if result['status'] == 'framework_ready_visual_unverified' else 1
 
 
 if __name__ == '__main__':

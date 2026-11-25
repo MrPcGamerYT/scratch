@@ -10,3 +10,6 @@
 # Python tools
 __pycache__/
 *.pyc
+
+# Local CI evidence and downloaded inspection files
+.cache/
