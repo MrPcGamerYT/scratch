@@ -143,6 +143,7 @@ def run(args):
         else:
             raise RuntimeError('Timed out without three confirmed Android boot-complete replies; ADB may be disabled/unavailable. Inspect serial and screenshots; this is not a diagnosis.')
     except Exception as error:
+        result['status'] = 'failed'
         result['error'] = str(error)
     finally:
         if process is not None and process.poll() is None:
