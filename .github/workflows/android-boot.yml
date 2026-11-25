@@ -1,6 +1,10 @@
 name: Real Bliss Android boot investigation
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - tests/android_boot_probe.py
+      - .github/workflows/android-boot.yml
 jobs:
   android:
     name: Bliss 16.9.7 live / ${{ matrix.graphics }} / Linux TCG
