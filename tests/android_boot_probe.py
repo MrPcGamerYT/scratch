@@ -98,9 +98,13 @@ def run(args):
                 except (OSError, ValueError) as error:
                     (output / 'probe.log').open('a').write(str(error) + '\n')
                 next_capture = time.monotonic() + 60
-            subprocess.run(['adb', 'connect', endpoint], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-            probe = subprocess.run(['adb', '-s', endpoint, 'shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=10)
-            consecutive_complete = consecutive_complete + 1 if probe.returncode == 0 and probe.stdout.strip() == '1' else 0
+            try:
+                subprocess.run(['adb', 'connect', endpoint], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+                probe = subprocess.run(['adb', '-s', endpoint, 'shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True, timeout=4)
+                consecutive_complete = consecutive_complete + 1 if probe.returncode == 0 and probe.stdout.strip() == '1' else 0
+            except subprocess.TimeoutExpired:
+                # An unavailable adbd is expected during boot, not a fatal probe error.
+                consecutive_complete = 0
             if consecutive_complete >= 3:
                 result['status'] = 'boot_completed'
                 result['visual_validation'] = 'Screenshots require inspection; boot_completed does not prove correct graphics'
