@@ -82,3 +82,31 @@ DirectX and Vulkan integration remains unimplemented. Do not market the new
 experimental setting as three working graphics APIs, game compatibility, or
 hardware acceleration on the user's PC. The downloaded 2D candidate remains
 unchanged; no need to replace it just to obtain a different UI label.
+
+## Installed-image comparison (2026-11-24)
+
+Run [45586328459](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45586328459)
+uses the actual downloadable guest from run 45575332515, verifies its checksums,
+and gives each renderer a fresh QCOW2 overlay and UEFI variables. No ISO boot or
+base-image modification. Linux distro QEMU, TCG 2 vCPU / 3072 MiB, reduced AVX,
+and forced software host GL: **not the bundled Windows Player or hardware GPU validation**.
+
+| Renderer | Result |
+| --- | --- |
+| Standard VGA | No three confirmed boot-complete replies within 721 seconds; failed. Cause not established. |
+| VirtIO 2D | Framework ready at 664 seconds, but Settings launch measurement failed. Inspected final image shows a black background and **System UI isn't responding** dialog. Not a usable-UI pass. |
+| OpenGL / VirGL | Framework ready and Settings workload completed; total 517 seconds. Actual GLES identity is VirGL backed by LLVMpipe. Inspected final image shows Settings **and System UI isn't responding**. Not a usable-UI pass. |
+
+VirGL returned only 10 eligible Settings frame samples: median 123.625 ms,
+p95 154.022 ms, all 10 over the 16.67 ms reference budget. This is a small app
+frame-processing sample, **not game FPS**, not comparative proof of a speedup,
+and not a prediction for Intel HD 530. VirtIO has no valid timing comparison.
+The green readiness jobs do not certify visuals: screenshot inspection exposed
+ANRs in both. Evidence inspection runs: 45588702836 (VirGL), 45588702701 (2D).
+
+**Conclusion:** the installed guest does not yet work well across renderers.
+Do not promote VirGL as stable, claim a smoothness fix, or silently fall back to
+Standard VGA. Next performance work needs ANR traces and CPU/renderer profiling,
+then repeated identical-workload tests with no ANRs; Windows hardware-virtualized
+and physical-GPU runs remain necessary before making hardware FPS claims.
+DirectX and Vulkan remain unimplemented, not alternative tested backends.
