@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - guest-tools/prepare_guest.py
+      - guest-tools/package_candidate.py
+      - guest-tools/Start-ExperimentalGuest.ps1
       - .github/workflows/guest-candidate.yml
 jobs:
   candidate:
@@ -19,6 +21,7 @@ jobs:
       - name: Unit checks
         run: |
           /usr/bin/python3 tests/guest_builder_tests.py
+          /usr/bin/python3 tests/guest_package_tests.py
           /usr/bin/python3 tests/android_probe_tests.py
       - uses: actions/cache/restore@v4
         with:
@@ -45,8 +48,9 @@ jobs:
           /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso bliss.iso --sha256 17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751 --profile drm-gbm-no-avx --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
       - name: Verify disk-only boot without installer ISO
         run: |
+          qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/android-candidate.qcow2" candidate/verification-overlay.qcow2
           cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/uefi-vars.fd
-          /usr/bin/python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics virtio --profile drm-gbm-no-avx --disk candidate/android-candidate.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/uefi-vars.fd --output candidate/evidence --timeout 720
+          /usr/bin/python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics virtio --profile drm-gbm-no-avx --disk candidate/verification-overlay.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/uefi-vars.fd --output candidate/evidence --timeout 720
       - name: Expose result without certifying the image
         if: always()
         run: |
@@ -68,5 +72,17 @@ jobs:
             candidate/*.json
             candidate/evidence/
           retention-days: 7
-      # Intentionally no image publication: desktop review, second boot,
-      # persistence, Windows compatibility and distribution review remain gates.
+      - name: Package pristine experimental download
+        if: success()
+        run: |
+          /usr/bin/python3 guest-tools/package_candidate.py --candidate candidate --output guest-download --firmware /usr/share/OVMF/OVMF_CODE_4M.fd --variables /usr/share/OVMF/OVMF_VARS_4M.fd --notices /usr/share/doc/ovmf/copyright
+          cd guest-download
+          sha256sum -c SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Nexus-Experimental-Android-Guest
+          path: guest-download/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
