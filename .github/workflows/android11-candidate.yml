@@ -63,11 +63,12 @@ jobs:
       - name: Build new standalone disk and original boot asset
         run: |
           set -o pipefail
+          trap 'echo "::error::Guest bridge build step failed at line $LINENO: $BASH_COMMAND"' ERR
           cp /usr/share/doc/musl/copyright source-evidence/MUSL-COPYRIGHT.txt
           dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
           musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
           file fixture/ramdisk.img | tee source-evidence/ramdisk-format.txt
-          /usr/bin/python3 guest-tools/install_bridge_ramdisk.py --ramdisk fixture/ramdisk.img --agent candidate/nexus-agent --output candidate/ramdisk-nexus.img | tee source-evidence/bridge-ramdisk.json
+          /usr/bin/python3 guest-tools/install_bridge_ramdisk.py --ramdisk fixture/ramdisk.img --agent candidate/nexus-agent --output candidate/ramdisk-nexus.img 2>&1 | tee source-evidence/bridge-ramdisk.json
           mv fixture/ramdisk.img source-evidence/upstream-ramdisk.img
           cp candidate/ramdisk-nexus.img fixture/ramdisk.img
           /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log

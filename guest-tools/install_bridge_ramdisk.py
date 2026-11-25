@@ -51,6 +51,8 @@ def patch(data, agent):
     output = bytearray()
     for name, fields, body in items:
         if name == names['init.rc']:
+            if not stat.S_ISREG(fields[1]):
+                raise ValueError('Root init.rc is not a regular file; refusing symlink corruption')
             body += b'\n# Nexus private guest integration\nimport /init.nexus.rc\n'
         output += record(name,fields,body)
     init = b'''service nexus-guest /nexus-agent
@@ -84,5 +86,12 @@ if __name__ == '__main__':
     source, output = Path(args.ramdisk),Path(args.output)
     if output.exists(): raise FileExistsError(output)
     original = source.read_bytes()
-    output.write_bytes(patch(original,Path(args.agent).read_bytes()))
+    try:
+        raw=gzip.decompress(original) if original.startswith(b'\x1f\x8b') else original
+        layout=[(name,oct(fields[1]),body[:160].decode(errors='replace') if name.lstrip('./')=='init.rc' else '') for name,fields,body in records(raw)]
+        print('::notice title=Ramdisk layout::'+json.dumps(layout[:70]).replace('%','%25'))
+        output.write_bytes(patch(original,Path(args.agent).read_bytes()))
+    except Exception as error:
+        print('::error::Ramdisk bridge installation failed: '+str(error))
+        raise
     print(json.dumps({'original_sha256':hashlib.sha256(original).hexdigest(),'patched_sha256':hashlib.sha256(output.read_bytes()).hexdigest(),'integration':'Nexus bridge v1; requires Android userdebug su domain and virtio-console driver; no SELinux disabling'},indent=2))
