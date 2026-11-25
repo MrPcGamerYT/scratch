@@ -94,6 +94,16 @@ jobs:
           tag="nexus-verified-${GUEST_RUN}-${WINDOWS_RUN}"
           printf 'Experimental matched guest and emulator. Guest build: %s. Windows build: %s. ZIP CRCs tested with Python, 7-Zip and unzip; guest payload SHA256 verified.\n\nUse a new isolated instance. Never overwrite an existing backing disk. Linux guest functional checks and Windows build tests are not hardware acceleration/game compatibility certification.\n' "$GUEST_RUN" "$WINDOWS_RUN" > release-notes.txt
           gh release create "$tag" --repo "$REPOSITORY" --target "$SOURCE_SHA" --prerelease --title "Nexus verified experimental downloads" --notes-file release-notes.txt downloads/*.zip downloads/SHA256SUMS.txt
+      - name: Download published release files again and check delivered bytes
+        run: |
+          set -euo pipefail
+          tag="nexus-verified-${GUEST_RUN}-${WINDOWS_RUN}"
+          gh release download "$tag" --repo "$REPOSITORY" --pattern '*.zip' --dir delivered
+          cp downloads/SHA256SUMS.txt delivered/
+          (cd delivered && sha256sum -c SHA256SUMS.txt)
+          7z t delivered/Nexus-Android11-Guest.zip
+          7z t delivered/Nexus-Windows-Player.zip
+          echo '::notice title=Delivery verified::Release ZIPs were downloaded again and passed exact SHA256 and 7-Zip tests.'
       - uses: actions/upload-artifact@v4
         if: success()
         with:
