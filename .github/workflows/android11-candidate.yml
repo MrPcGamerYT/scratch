@@ -133,6 +133,8 @@ jobs:
           for path in Path('candidate/evidence').rglob('result.json'):
               text=path.read_text()
               print('::notice title='+str(path)+'::'+text[-6000:].replace('%','%25').replace('\n','%0A'))
+          for path in Path('candidate/evidence').rglob('serial.log'):
+              print('::notice title='+str(path)+'::'+path.read_text(errors='replace')[-16000:].replace('%','%25').replace('\n','%0A'))
           for name in ['bridge-build.log','system-image-layout.json','squashfs-layout.txt','payload-layout.txt']:
               path=Path('source-evidence')/name
               if path.exists(): print('::notice title='+name+'::'+path.read_text(errors='replace')[-5000:].replace('%','%25').replace('\n','%0A'))

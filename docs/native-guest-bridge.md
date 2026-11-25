@@ -29,14 +29,15 @@ production distribution. Host and guest are mutually trusted by this prototype.
 
 ## Provisioning versus everyday controls
 
-The new clean CI base has a `/data/.nexus-provision` marker. Only while that marker
-exists does a one-shot provisioning service enable TCP adbd for the CI setup
-steps. Branding installation removes it before the base is flattened. The
-second boot has **no NIC and no ADB invocation**: it must report native boot
-readiness, verify saved setup/Home/no recorded ANR, execute Home and shut down
-cleanly through the virtio bridge. The original downloaded ISO remains unchanged;
-ramdisk original/modified hashes and original source ramdisk are retained.
-This must never be applied to a personal existing instance.
+The new clean CI base has a `/data/.nexus-provision` marker. A fixed
+`PROVISION_HOME` command only works while this marker exists; it persists setup,
+selects a supported installed launcher, disables the empty template's swipe lock,
+and removes the marker. It does not accept arbitrary shell text or paths.
+Both first provisioning and second persistence boots now run **without a NIC
+or ADB**. They require native readiness, launcher/SDK 30/no-ANR checks, Home and
+clean shutdown. The branding asset is installed offline in the copied system.
+Real CI has verified the VirtIO handshake/readiness and launcher provisioning;
+the latest gate still rejects a recorded ANR. No image has passed packaging.
 
 ## Not implemented in v1
 
