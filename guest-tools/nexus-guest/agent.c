@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -56,7 +57,19 @@ static int execute(const char *key) {
         if (nullfd >= 0) { dup2(nullfd,0); dup2(nullfd,1); dup2(nullfd,2); if (nullfd > 2) close(nullfd); }
         if (key && !strcmp(key,"PROVISION_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-provision-home.sh",R_OK)==0 ? "/nexus-provision-home.sh" : "/system/bin/nexus-provision-home.sh", (char *)NULL);
         else if (key && !strcmp(key,"CHECK_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
-        else if (key && !strcmp(key,"APK_INSTALL")) execl(NEXUS_SYSTEM_BIN "pm", "pm", "install", "-r", "--user", "0", apk_path, (char *)NULL);
+        else if (key && !strcmp(key,"APK_INSTALL")) {
+            // Feed the normal package installer through stdin. Do not ask
+            // system_server to reopen a private root-owned staging pathname.
+            int source=open(apk_path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+            struct stat info;
+            if (source<0 || fstat(source,&info) || info.st_size<=0 || (unsigned long long)info.st_size>MAX_APK) _exit(126);
+            if (dup2(source,0)<0) _exit(126);
+            if (source!=0) close(source);
+            int console=open("/dev/console",O_WRONLY|O_CLOEXEC);
+            if (console>=0) { dup2(console,1); dup2(console,2); if (console>2) close(console); }
+            char bytes[32]; snprintf(bytes,sizeof(bytes),"%lld",(long long)info.st_size);
+            execl(NEXUS_SYSTEM_BIN "pm", "pm", "install", "-r", "--user", "0", "-S", bytes, "-", (char *)NULL);
+        }
         else if (key) execl(NEXUS_SYSTEM_BIN "input", "input", "keyevent", key, (char *)NULL);
         else execl(NEXUS_SYSTEM_BIN "svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
