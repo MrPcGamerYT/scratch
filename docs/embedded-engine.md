@@ -54,3 +54,27 @@ to 500 million steps and five alternating samples per engine. The candidate
 Player ZIP was 83,086,323 bytes versus the preceding 108,083,378-byte Player ZIP
 (about 23% smaller); package size is not Android FPS. The engine is a candidate,
 not a certified faster replacement. Neither run certifies Android ANR fixes.
+
+### Longer comparison completed
+
+Run [45598944877](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45598944877)
+passed all Windows native/launcher/package checks with the newly built engine
+from source-build run 45595712726. Five alternating 500-million-step samples:
+
+| Engine | Median wall seconds (includes firmware) |
+| --- | ---: |
+| Previous bundled engine | 0.694892 |
+| LTO/O3 candidate | 0.691588 |
+
+The ratio is 1.0048 (about 0.5% shorter median time), effectively equal given
+shared-runner variation and sample size. **No meaningful CPU speedup or Android
+FPS improvement is established.** Guest arithmetic/completion passed for both.
+SDL regression: 497 rectangle uploads, 185 presents, 312 presents avoided versus
+one per rectangle. This patch was already in the baseline; it is not a new
+baseline-to-candidate improvement.
+
+Candidate Player artifact: 15015480341 (83,086,323 bytes), Developer artifact:
+15013509093. These are experimental engine packages, not a guest-image rebuild.
+Preserve existing images/instances and backups when testing; do not replace a
+backing base just to update the executable. Windows Android ANR/performance and
+hardware GPU/WHPX certification remain outstanding.
