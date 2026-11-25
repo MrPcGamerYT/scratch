@@ -30,6 +30,20 @@ jobs:
           7z x bliss.iso -ofixture > evidence/extraction.txt
       - name: Probe actual Android boot (not firmware smoke test)
         run: python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --output evidence --timeout 720
+      - name: Expose diagnostic summary through GitHub checks
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import json
+          result = Path('evidence/result.json')
+          if result.exists():
+              data = json.loads(result.read_text())
+              print('::notice title=Android probe result::' + json.dumps(data).replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          for config in sorted(Path('fixture').rglob('grub.cfg')) + sorted(Path('fixture').rglob('menu.lst')):
+              text = config.read_text(errors='replace')[:18000]
+              print('::notice title=ISO boot recipe::' + (str(config) + '\n' + text).replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          PYCODE
       - name: Convert screenshots for inspection
         if: always()
         run: |
