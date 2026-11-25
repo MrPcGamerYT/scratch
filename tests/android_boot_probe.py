@@ -85,6 +85,10 @@ def capture_screen(port, filename):
         execute({'execute': 'screendump', 'arguments': {'filename': str(filename)}})
 
 
+def PathEscape(path):
+    return str(pathlib.Path(path).resolve()).replace(',', ',,')
+
+
 def run(args):
     output = pathlib.Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -116,6 +120,16 @@ def run(args):
                    '-device', 'virtio-net-pci,netdev=net0',
                    '-qmp', f'tcp:127.0.0.1:{qmp_port},server=on,wait=off',
                    '-serial', 'stdio', '-no-reboot']
+        if args.disk:
+            if not args.uefi_code or not args.uefi_vars:
+                raise ValueError('Disk-only probe requires matching UEFI code and per-test writable variables')
+            for flag in ['-kernel', '-initrd', '-append', '-cdrom', '-boot']:
+                index = command.index(flag)
+                del command[index:index + 2]
+            command += ['-drive', f'file={PathEscape(args.disk)},format=qcow2',
+                        '-drive', f'if=pflash,format=raw,readonly=on,file={PathEscape(args.uefi_code)}',
+                        '-drive', f'if=pflash,format=raw,file={PathEscape(args.uefi_vars)}', '-boot', 'order=c']
+            result['scope'] = 'Linux TCG installed-disk UEFI boot; not Windows or persistence certification'
         command += ['-vga', 'std'] if args.graphics == 'std' else ['-vga', 'none', '-device', 'virtio-vga']
         result['command'] = command
         serial_file = (output / 'serial.log').open('wb')
@@ -203,6 +217,9 @@ if __name__ == '__main__':
     parser.add_argument('--tree', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--graphics', choices=['std', 'virtio'], required=True)
+    parser.add_argument('--disk', default='')
+    parser.add_argument('--uefi-code', default='')
+    parser.add_argument('--uefi-vars', default='')
     parser.add_argument('--profile', choices=list(PROFILES), default='baseline')
     parser.add_argument('--timeout', type=int, default=720)
     raise SystemExit(run(parser.parse_args()))

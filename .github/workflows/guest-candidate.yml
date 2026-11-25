@@ -1,0 +1,58 @@
+name: Prepare experimental Nexus guest disk
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - guest-tools/prepare_guest.py
+      - .github/workflows/guest-candidate.yml
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated image and verification tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs grub-efi-amd64-bin grub-common ovmf adb p7zip-full
+      - name: Unit checks
+        run: |
+          /usr/bin/python3 tests/guest_builder_tests.py
+          /usr/bin/python3 tests/android_probe_tests.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: bliss.iso
+          key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
+      - name: Verify and extract diagnostic source ISO
+        run: |
+          mkdir -p candidate/evidence fixture
+          if [ ! -f bliss.iso ]; then
+            curl --fail --location --retry 2 --retry-max-time 600 --max-time 600 'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS16/Gapps/Generic/Bliss-v16.9.7-x86_64-OFFICIAL-gapps-20241011.iso' -o bliss.iso
+          fi
+          echo '17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751  bliss.iso' | sha256sum -c -
+          7z x bliss.iso -ofixture > candidate/evidence/extract.log
+      - name: Build standalone experimental UEFI disk (not certified)
+        run: |
+          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso bliss.iso --sha256 17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751 --profile drm-gbm-no-avx --output candidate/android-candidate.qcow2
+      - name: Verify disk-only boot without installer ISO
+        run: |
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/uefi-vars.fd
+          /usr/bin/python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics virtio --profile drm-gbm-no-avx --disk candidate/android-candidate.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/uefi-vars.fd --output candidate/evidence --timeout 720
+      - name: Expose result without certifying the image
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['candidate/android-candidate.json', 'candidate/evidence/result.json']:
+              path = Path(name)
+              if path.exists():
+                  print('::notice title=Experimental candidate::' + path.read_text()[:3500].replace('%','%25').replace('\n','%0A'))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experimental-guest-build-evidence
+          path: |
+            candidate/*.json
+            candidate/evidence/
+          retention-days: 7
+      # Intentionally no image publication: desktop review, second boot,
+      # persistence, Windows compatibility and distribution review remain gates.
