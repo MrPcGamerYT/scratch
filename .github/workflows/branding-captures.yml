@@ -11,6 +11,9 @@ jobs:
   captures:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      matrix:
+        stage: [first-boot, second-boot]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -18,28 +21,29 @@ jobs:
           run-id: '45648355363'
           path: evidence
           github-token: ${{ github.token }}
-      - name: Expose actual framebuffer captures for review
+      - name: Expose actual final Home framebuffer for review
+        env:
+          STAGE: ${{ matrix.stage }}
         run: |
           python3 -m pip install Pillow
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
-          import io,base64,json
-          for stage in ['first-boot','second-boot']:
-              paths=sorted(Path('evidence').rglob(stage+'/screen-*.ppm'))
-              print('::notice title=FILES-'+stage+'::'+json.dumps([str(p) for p in paths]))
-              selected=paths[:4]+[p for p in paths if p.name=='screen-final.ppm']
-              for index,path in enumerate(dict.fromkeys(selected)):
-                  image=Image.open(path).convert('RGB'); image.thumbnail((800,500))
-                  quality=65
-                  while True:
-                      stream=io.BytesIO(); image.save(stream,format='JPEG',quality=quality)
-                      if stream.tell()<27000: break
-                      if quality>35: quality-=10
-                      else: image.thumbnail((image.width*4//5,image.height*4//5))
-                  encoded=base64.b64encode(stream.getvalue()).decode()
-                  name=stage+'-'+path.stem
-                  print('::notice title=INFO-'+name+'::'+json.dumps({'source':str(path),'width':image.width,'height':image.height,'bytes':stream.tell()}))
-                  for offset in range(0,len(encoded),2800):
-                      print(f'::notice title=IMG-{name}-{offset//2800:03}::{encoded[offset:offset+2800]}')
+          import io,base64,json,os
+          stage=os.environ['STAGE']
+          paths=list(Path('evidence').rglob(stage+'/screen-final.ppm'))
+          assert len(paths)==1,paths
+          path=paths[0]
+          image=Image.open(path).convert('RGB'); image.thumbnail((960,600))
+          quality=70
+          while True:
+              stream=io.BytesIO(); image.save(stream,format='JPEG',quality=quality)
+              if stream.tell()<40000: break
+              if quality>40: quality-=10
+              else: image.thumbnail((image.width*4//5,image.height*4//5))
+          encoded=base64.b64encode(stream.getvalue()).decode()
+          name=stage+'-'+path.stem
+          print('::notice title=INFO-'+name+'::'+json.dumps({'source':str(path),'width':image.width,'height':image.height,'bytes':stream.tell()}))
+          for offset in range(0,len(encoded),6000):
+              print(f'::notice title=IMG-{name}-{offset//6000:03}::{encoded[offset:offset+6000]}')
           PY
