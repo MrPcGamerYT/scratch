@@ -382,3 +382,11 @@ The Phase 1 guest-image build and publication gates are documented in
 [`docs/nexus-guest-contract.md`](docs/nexus-guest-contract.md). Current CI compares
 CPU-feature masking and DRM/GBM guest-renderer hypotheses; these do not change
 Player defaults or establish acceleration. No certified Nexus guest is uploaded yet.
+
+Experimental guest-disk construction now runs in `guest-candidate.yml`. It creates
+only an isolated virtual disk, copies the upstream Android payload into a fixed
+layout, adds a standalone EFI GRUB loader, and records a compatibility manifest.
+It then attempts real UEFI disk-only boot without the ISO. **This is not an Android
+source build, a validated Nexus image, a performance improvement, or a replacement
+for the current Image Studio workflow.** Candidate images remain unverified and
+are not uploaded for distribution; CI retains their diagnostic evidence only.

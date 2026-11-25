@@ -59,5 +59,12 @@ speed and is being tested solely as a crash-isolation hypothesis.
 
 Nothing needs to be reinstalled on the user's PC for this investigation. Keep
 existing workspaces as backups. GitHub runs the experiments and retains evidence.
-The image-building and Windows release gates above are not yet implemented as
-an unattended, certified production-image pipeline.
+`guest-tools/prepare_guest.py` and `guest-candidate.yml` now implement an
+experimental disk-construction path: fresh GPT QCOW2, EFI bootloader, ext4 Android
+payload and writable data directory, source/image hashes and compatibility
+manifest. A CI job attempts disk-only UEFI boot with no attached installer ISO.
+The chosen DRM/GBM + reduced-AVX combination is an unproven hypothesis, not a
+selected production default. The candidate remains `ready_for_player: false`.
+CI uploads build evidence, not a redistributable image. Desktop inspection,
+second boot/persistence, Windows validation and redistribution review remain
+required. This is not yet a certified production-image pipeline.
