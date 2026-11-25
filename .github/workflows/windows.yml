@@ -234,6 +234,28 @@ jobs:
             Write-Output "::error::$text"
             exit 1
           }
+      - name: Fetch isolated previous engine for reference comparison
+        if: ${{ inputs.qemu_run_id == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: QEMU-source-build
+          path: baseline-qemu
+          run-id: '45580334830'
+          github-token: ${{ github.token }}
+      - name: Compare real TCG engines without Android FPS claims
+        if: ${{ inputs.qemu_run_id == '' }}
+        shell: pwsh
+        run: |
+          python tests/tcg_engine_benchmark.py --baseline baseline-qemu --candidate package/qemu
+          if ($LASTEXITCODE -ne 0) { throw 'Actual TCG engine comparison failed.' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.qemu_run_id == '' }}
+        with:
+          name: Nexus-engine-reference-evidence
+          path: |
+            tcg-engine-results.json
+            package/qemu/ENGINE-BUILD.txt
+          if-no-files-found: warn
       - name: Package shell
         shell: pwsh
         run: |
