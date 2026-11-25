@@ -7,6 +7,7 @@ import socket
 import subprocess
 import time
 from android_frame_metrics import summarize
+from android_home_gate import check_home, install_boot_branding
 
 
 def boot_recipe(tree):
@@ -233,6 +234,12 @@ def run(args):
                             result['ui_frame_metrics'] = measure_settings(endpoint, output)
                         except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                             result['ui_frame_metrics'] = {'status': 'measurement_failed', 'error': str(error)}
+                if getattr(args, 'require_home', False):
+                    if not ready:
+                        raise RuntimeError('Service readiness failed before Home gate')
+                    result['home_gate'] = check_home(endpoint, output, getattr(args, 'prepare_home', False))
+                    if getattr(args, 'boot_animation', ''):
+                        result['boot_branding'] = install_boot_branding(endpoint, args.boot_animation)
                 if args.profile == 'virgl':
                     capture_adb_screen(endpoint, output / 'screen-final.png')
                 else:
@@ -260,6 +267,16 @@ def run(args):
                     capture_screen(qmp_port, output / 'screen-final.ppm')
                 except (OSError, ValueError, RuntimeError):
                     pass
+        if process is not None and process.poll() is None and getattr(args, 'require_home', False) and result.get('home_gate', {}).get('resumed_home'):
+            try:
+                subprocess.run(['adb', '-s', endpoint, 'shell', 'svc', 'power', 'shutdown'], capture_output=True, timeout=15)
+                process.wait(timeout=120)
+                if process.returncode != 0:
+                    raise RuntimeError('Engine exited abnormally during shutdown')
+                result['clean_shutdown'] = True
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                result['status'] = 'failed'
+                result['error'] = 'Clean template shutdown not established: ' + str(error)
         result['elapsed_seconds'] = round(time.monotonic() - started, 1)
         if process is not None and process.poll() is None:
             process.terminate()
@@ -281,6 +298,9 @@ if __name__ == '__main__':
     parser.add_argument('--output', required=True)
     parser.add_argument('--graphics', choices=['std', 'virtio'], required=True)
     parser.add_argument('--measure-ui', action='store_true')
+    parser.add_argument('--require-home', action='store_true')
+    parser.add_argument('--boot-animation', default='')
+    parser.add_argument('--prepare-home', action='store_true', help='Only for new clean CI template overlays, never personal instances')
     parser.add_argument('--disk', default='')
     parser.add_argument('--uefi-code', default='')
     parser.add_argument('--uefi-vars', default='')

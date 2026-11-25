@@ -61,6 +61,15 @@ class RecipeTests(unittest.TestCase):
         self.assertNotIn('fps', metrics)
         self.assertEqual(probe.summarize('no frame data')['frames'], 0)
 
+    def test_home_gate_rejects_setup_and_background_launcher(self):
+        from android_home_gate import choose_home, foreground_is_home
+        home = choose_home('com.android.setupwizard/.Setup\ncom.android.launcher3/.Launcher\n')
+        self.assertEqual(home, 'com.android.launcher3/.Launcher')
+        self.assertFalse(choose_home('com.android.setupwizard/.Setup'))
+        self.assertFalse(foreground_is_home('background com.android.launcher3/.Launcher', home))
+        self.assertTrue(foreground_is_home('mResumedActivity: ActivityRecord{ u0 com.android.launcher3/.Launcher t1}', home))
+        self.assertFalse(foreground_is_home('mResumedActivity: com.android.setupwizard/.Setup', home))
+
     def test_unknown_recipe_fails_instead_of_guessing(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(RuntimeError):
