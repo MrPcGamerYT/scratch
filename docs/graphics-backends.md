@@ -53,3 +53,32 @@ rebuilding only the host will enable all three API families.
   package (observed 1.3.0) and copies its MIT license.
 - google/gfxstream README describes graphics API streaming; its existence does
   not imply a drop-in QEMU/Bliss/Windows integration.
+
+## Recorded results for this integration
+
+- Windows source build and complete native/application/package suite passed:
+  https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45580334830
+- Earlier real GL run reached framework/service readiness but failed the QMP
+  screenshot gate (`no surface`). That was retained as a **failed** run:
+  https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45580335016
+- Its saved SurfaceFlinger dump was inspected through:
+  https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45584826931
+
+The actual guest renderer line was:
+
+```
+GLES: Mesa, virgl (LLVMPIPE (LLVM 20.1.2, 256 bits)), OpenGL ES 3.2 Mesa 24.0.8
+```
+
+This establishes that Android selected VirGL for its GLES compositor path in that
+run. LLVMpipe was explicitly forced on the Linux host: this is **not physical GPU
+acceleration**, an app conformance test, or a Windows result. QMP software-surface
+capture is inappropriate for that GL path, so the probe now requires a complete
+PNG from Android `screencap` instead. A subsequent stricter repeat run
+45582628910 timed out before boot completion; **repeatable startup is not solved**.
+No green result is claimed for the full Android GL test or for Windows Android GL.
+
+DirectX and Vulkan integration remains unimplemented. Do not market the new
+experimental setting as three working graphics APIs, game compatibility, or
+hardware acceleration on the user's PC. The downloaded 2D candidate remains
+unchanged; no need to replace it just to obtain a different UI label.

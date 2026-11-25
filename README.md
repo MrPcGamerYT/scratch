@@ -391,3 +391,14 @@ source build, a validated Nexus image, a performance improvement, or a replaceme
 for the current Image Studio workflow.** Candidate images remain experimental. A passing boot-readiness gate now retains
 a pristine-base download, firmware, launcher and checksums as a seven-day artifact.
 It is not a production release or a Windows compatibility certificate.
+
+### Experimental OpenGL backend integration
+
+The Player's experimental OpenGL/VirGL selection now requests an actual
+`virtio-vga-gl` device and SDL GL context from a newly GL-enabled Windows QEMU
+build; missing device support is a launch error, not silent software fallback.
+Windows compile/native/package tests passed. A Linux diagnostic guest reported
+OpenGL ES 3.2 through VirGL backed by host software LLVMpipe, but its screenshot
+gate failed and a stricter repeat boot timed out. **This is not reliable or
+Windows-Android-validated acceleration. DirectX/Vulkan are not implemented.**
+See [graphics-backends.md](docs/graphics-backends.md) for exact evidence and limits.
