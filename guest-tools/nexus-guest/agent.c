@@ -49,7 +49,7 @@ static int execute(const char *key) {
         else execl("/system/bin/svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
     }
-    int budget = key && !strcmp(key,"PROVISION_HOME") ? 1200 : (key && !strcmp(key,"CHECK_HOME") ? 600 : 150);
+    int budget = key && !strcmp(key,"PROVISION_HOME") ? 1200 : (key && !strcmp(key,"CHECK_HOME") ? 600 : 600);
     for (int i = 0; i < budget; ++i) {
         int status = 0;
         pid_t result = waitpid(child, &status, WNOHANG);
