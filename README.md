@@ -355,3 +355,22 @@ capture compositor pixels; review paths and host identifiers before sharing.
 When reporting corrupted output or a WHPX failure, include the report and a
 screenshot, plus any QEMU error shown in the Studio log. No reinstall is needed
 to collect a report from Resume.
+
+### Real Android investigation (separate from firmware smoke tests)
+
+`.github/workflows/android-boot.yml` downloads the exact Bliss 16.9.7 ISO used
+in the reported failure, checks its recorded SHA-256 fingerprint, extracts its
+own live-boot recipe, and runs independent Standard/VirtIO display probes on
+Linux TCG. The fingerprint identifies the diagnostic fixture; it is not an
+independently authenticated publisher signature. No VM disk or personal data is
+uploaded. Evidence artifacts contain serial output, screenshots, launch arguments
+and a structured result. Probe parser tests reject unsupported recipes rather
+than inventing boot parameters. Each boot has a 12-minute observation limit.
+
+Passing requires three successive ADB `sys.boot_completed=1` replies. If ADB is
+unavailable, the result remains unverified even if a desktop is visible; inspect
+the screenshots and logs. Boot completion does not prove correct colors, game
+performance, installed-disk reliability, Windows WHPX or compatibility on the
+user's physical PC. Direct kernel boot uses the ISO's own kernel/initrd and live
+arguments but bypasses its firmware/GRUB menu. This workflow investigates guest
+startup; it does not yet automate installation or certify an image for release.
