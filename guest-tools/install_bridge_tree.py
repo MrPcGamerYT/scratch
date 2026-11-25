@@ -9,7 +9,8 @@ import re
 import shutil
 import subprocess
 import tempfile
-from install_bridge_ramdisk import patch
+from install_bridge_ramdisk import patch, record, records
+import stat
 
 
 def install(tree, agent, evidence):
@@ -43,17 +44,35 @@ def install(tree, agent, evidence):
             layout={'root':g.ls('/'),'nested_system':g.ls('/system') if g.is_dir('/system') else []}
             (evidence/'system-image-layout.json').write_text(json.dumps(layout,indent=2))
             print('::notice title=Android 11 system layout::'+json.dumps(layout))
-            candidates=[path for path in ['/ramdisk.img','/system/ramdisk.img'] if g.is_file(path)]
-            if len(candidates)!=1: raise ValueError('Expected exactly one known nested ramdisk; refusing guessed init modification')
-            target=candidates[0]
-            original=work/'original-ramdisk.img'; g.download(target,str(original))
-            shutil.copyfile(original,evidence/'upstream-ramdisk.img')
-            modified=work/'nexus-ramdisk.img'; modified.write_bytes(patch(original.read_bytes(),agent.read_bytes()))
-            # Upload replaces the existing regular file; restore its mode/owner.
-            metadata=g.statns(target)
-            g.upload(str(modified),target)
-            g.chown(metadata['st_uid'],metadata['st_gid'],target)
-            g.chmod(metadata['st_mode'] & 0o7777,target)
+            # system-as-root may also expose /etc as a symlink to /system/etc.
+            init_roots=[prefix for prefix in ['/system', ''] if g.is_file(prefix+'/etc/init/hw/init.rc') and g.is_dir(prefix+'/etc/init')][:1]
+            if len(init_roots)==1:
+                prefix=init_roots[0]
+                # Android 11 init automatically imports /system/etc/init/*.rc.
+                # Reuse the exact reviewed payloads from the ramdisk recipe.
+                seed=record('init.rc',[0,stat.S_IFREG|0o644,0,0,1,0,0,0,0,0,0,0,0],b'')+record('TRAILER!!!',[0]*13,b'')
+                for name,fields,body in records(patch(seed,agent.read_bytes())):
+                    if name=='init.rc': continue
+                    if name=='init.nexus.rc':
+                        target=prefix+'/etc/init/nexus.rc'
+                        body=body.replace(b'/nexus-agent',b'/system/bin/nexus-agent').replace(b'/nexus-provision.sh',b'/system/bin/nexus-provision.sh')
+                    else: target=prefix+'/bin/'+name
+                    if g.exists(target): raise ValueError('Existing bridge file: '+target)
+                    g.write(target,body); g.chown(0,0,target); g.chmod(fields[1]&0o7777,target)
+                    label='u:object_r:system_file:s0'
+                    g.setxattr('security.selinux',label,len(label),target)
+                (evidence/'integration-method.txt').write_text('Recognized Android 11 system init directory; SELinux system_file labels retained for new files.\n')
+            else:
+                candidates=[path for path in ['/ramdisk.img','/system/ramdisk.img'] if g.is_file(path)]
+                if len(candidates)!=1: raise ValueError('No unique recognized system init directory or nested ramdisk; refusing guessed modification')
+                target=candidates[0]
+                original=work/'original-ramdisk.img'; g.download(target,str(original))
+                shutil.copyfile(original,evidence/'upstream-ramdisk.img')
+                modified=work/'nexus-ramdisk.img'; modified.write_bytes(patch(original.read_bytes(),agent.read_bytes()))
+                metadata=g.statns(target)
+                g.upload(str(modified),target)
+                g.chown(metadata['st_uid'],metadata['st_gid'],target)
+                g.chmod(metadata['st_mode'] & 0o7777,target)
             g.sync(); g.umount_all(); g.shutdown()
         finally:
             g.close()

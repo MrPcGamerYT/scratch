@@ -41,7 +41,7 @@ static int execute(const char *key) {
     if (!child) {
         int nullfd = open("/dev/null", O_RDWR);
         if (nullfd >= 0) { dup2(nullfd,0); dup2(nullfd,1); dup2(nullfd,2); if (nullfd > 2) close(nullfd); }
-        if (key && !strcmp(key,"CHECK_HOME")) execl("/system/bin/sh", "sh", "/nexus-home-check.sh", (char *)NULL);
+        if (key && !strcmp(key,"CHECK_HOME")) execl("/system/bin/sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
         else if (key) execl("/system/bin/input", "input", "keyevent", key, (char *)NULL);
         else execl("/system/bin/svc", "svc", "power", "shutdown", (char *)NULL);
         _exit(127);
