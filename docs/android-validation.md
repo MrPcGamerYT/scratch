@@ -1,6 +1,38 @@
 # Actual Bliss Android validation — investigation, not a release certificate
 
-## Evidence
+## Latest installed-disk result
+
+Candidate run [45571864477](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45571864477)
+**passed disk construction, QCOW2 checks and automated UEFI disk-only Android readiness checks**.
+Evidence inspection [45573884344](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45573884344)
+confirmed a readable Android **Hi there** Setup Wizard screen, not the earlier
+striped/tripled display or just a boot logo.
+
+![Actual installed-disk setup screen from CI](evidence/android-installed-setup.jpg)
+
+Configuration: Linux QEMU/TCG, q35, two vCPUs, 3072 MiB, VirtIO VGA,
+`max,avx=off,avx2=off,f16c=off,fma=off`, installed kernel arguments
+`root=/dev/ram0 SRC=/android HWC=drm GRALLOC=gbm`. The boot command had **no ISO,
+no direct -kernel/-initrd injection**, and booted the disk's own EFI GRUB.
+Captured properties: `sys.boot_completed=1`, SurfaceFlinger running, boot animation
+stopped, gralloc `gbm`, hwcomposer `drm`. No matching fatal renderer/setup-wizard
+signal was found in the captured log window. Mesa warnings remain: this does not
+prove acceleration or absence of all errors. Probe elapsed time including evidence
+collection was 637.9 seconds; do not market this as fast boot.
+
+The image used the ISO's **system.efs** EROFS payload. Its built pre-boot SHA-256
+was `4d4ab9e3029c6569c1834613929192359d9ec145b08e350fefccab46e0216a76`.
+This hash is not a post-boot disk hash or a download currently offered to users.
+The run retained evidence only, **not a downloadable guest disk**.
+
+**Still unverified:** completing Setup Wizard, launcher/game behavior, input/audio/
+network functionality, clean shutdown and second boot/persistence, bundled Windows
+backend, WHPX and the user's physical PC. The candidate remains experimental;
+Phase 1 is not fully complete and no ready-to-use Nexus guest is certified.
+
+## Earlier live-ISO investigation
+
+### Evidence
 
 - Android run: https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45558822347
 - Full existing application/packaging suite: https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45558861278
