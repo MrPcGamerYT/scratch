@@ -21,7 +21,7 @@ jobs:
           run-id: '45648355363'
           path: evidence
           github-token: ${{ github.token }}
-      - name: Expose actual final Home framebuffer for review
+      - name: Prepare actual final Home framebuffer for review
         env:
           STAGE: ${{ matrix.stage }}
         run: |
@@ -29,7 +29,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
-          import io,base64,json,os
+          import io,base64,json,os,hashlib
           stage=os.environ['STAGE']
           paths=list(Path('evidence').rglob(stage+'/screen-final.ppm'))
           assert len(paths)==1,paths
@@ -38,12 +38,20 @@ jobs:
           quality=70
           while True:
               stream=io.BytesIO(); image.save(stream,format='JPEG',quality=quality)
-              if stream.tell()<40000: break
+              if stream.tell()<60000: break
               if quality>40: quality-=10
-              else: image.thumbnail((image.width*4//5,image.height*4//5))
-          encoded=base64.b64encode(stream.getvalue()).decode()
+              else: image.thumbnail((image.width*9//10,image.height*9//10))
           name=stage+'-'+path.stem
-          print('::notice title=INFO-'+name+'::'+json.dumps({'source':str(path),'width':image.width,'height':image.height,'bytes':stream.tell()}))
-          for offset in range(0,len(encoded),6000):
-              print(f'::notice title=IMG-{name}-{offset//6000:03}::{encoded[offset:offset+6000]}')
+          encoded=base64.b64encode(stream.getvalue()).decode()
+          Path('capture.json').write_text(json.dumps({'name':name,'encoded':encoded}))
+          print('::notice title=INFO-'+name+'::'+json.dumps({'source':str(path),'width':image.width,'height':image.height,'bytes':stream.tell(),'sha256':hashlib.sha256(stream.getvalue()).hexdigest()}))
+          Path('emit.py').write_text("import json,sys\nd=json.load(open('capture.json')); s=d['encoded']; start=int(sys.argv[1])*8\nfor part in range(start,min(start+8,(len(s)+2799)//2800)):\n print(f\"::notice title=IMG-{d['name']}-{part:03}::{s[part*2800:(part+1)*2800]}\")\n")
           PY
+      - name: Capture data segment 1
+        run: python3 emit.py 0
+      - name: Capture data segment 2
+        run: python3 emit.py 1
+      - name: Capture data segment 3
+        run: python3 emit.py 2
+      - name: Capture data segment 4
+        run: python3 emit.py 3
