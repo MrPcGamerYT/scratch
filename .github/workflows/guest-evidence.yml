@@ -52,7 +52,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for name in ['serial.log', 'build.log']:
+          for name in ['serial.log', 'build.log', 'ramdisk-format.txt', 'payload-layout.txt', 'bridge-ramdisk.json']:
               paths = list(Path('evidence').rglob(name))
               if not paths:
                   continue
