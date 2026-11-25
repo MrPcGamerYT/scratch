@@ -17,7 +17,7 @@ $env:NEXUS_STUDIO_ROOT = $root
 $env:NEXUS_TEST_LOG = Join-Path $root 'args.log'
 New-Item -ItemType Directory -Path $root, (Join-Path $root 'player') | Out-Null
 try {
-    Copy-Item $Stub (Join-Path $root 'qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $root 'NexusEngine.exe')
     Copy-Item $Stub (Join-Path $root 'qemu-img.exe')
     Set-Content (Join-Path $root 'player/ProjectNexus.exe') 'player'
     Set-Content (Join-Path $root 'stock.iso') 'iso'
@@ -41,7 +41,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $player 'images/android-base.qcow2'))) { throw 'Resume contract failed.' }
     $engine = Join-Path $root 'engine/bin'; $share = Join-Path $root 'engine/share/qemu'; $blissPlayer = Join-Path $root 'bliss-player'
     New-Item -ItemType Directory -Path $engine, $share, $blissPlayer | Out-Null
-    Copy-Item $Stub (Join-Path $engine 'qemu-system-x86_64.exe'); Copy-Item $Stub (Join-Path $engine 'qemu-img.exe')
+    Copy-Item $Stub (Join-Path $engine 'NexusEngine.exe'); Copy-Item $Stub (Join-Path $engine 'qemu-img.exe')
     Set-Content (Join-Path $share 'edk2-x86_64-code.fd') 'UEFI code'; Set-Content (Join-Path $share 'edk2-i386-vars.fd') 'UEFI variables'
     Set-Content (Join-Path $blissPlayer 'ProjectNexus.exe') 'player'
     & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $PSCommandPath -Stub $Stub -Case bad-hash

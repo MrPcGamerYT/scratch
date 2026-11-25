@@ -51,6 +51,6 @@ if __name__ == '__main__':
     parser.add_argument('studio', type=Path)
     parser.add_argument('output', type=Path)
     args = parser.parse_args()
-    common = ['Qt6Core.dll', 'Qt6Widgets.dll', 'platforms/qwindows.dll', 'qemu/bin/qemu-system-x86_64.exe', 'qemu/bin/qemu-img.exe', 'qemu/share/qemu/bios-256k.bin', 'qemu/share/qemu/vgabios-stdvga.bin', 'qemu/share/qemu/vgabios-virtio.bin', 'qemu/share/qemu/kvmvapic.bin']
+    common = ['Qt6Core.dll', 'Qt6Widgets.dll', 'platforms/qwindows.dll', 'qemu/bin/NexusEngine.exe', 'qemu/bin/qemu-img.exe', 'qemu/share/qemu/bios-256k.bin', 'qemu/share/qemu/vgabios-stdvga.bin', 'qemu/share/qemu/vgabios-virtio.bin', 'qemu/share/qemu/kvmvapic.bin']
     build_archive(args.player, args.output / 'player/ProjectNexus-Windows.zip', common + ['ProjectNexus.exe'])
     build_archive(args.studio, args.output / 'studio/ProjectNexus-ImageStudio-Developer.zip', common + ['NexusImageStudio.exe', 'image-studio.ps1', 'prepare-android.ps1', 'launch.ps1', 'offline-files/offline_editor.py', 'qemu/share/qemu/edk2-x86_64-code.fd', 'qemu/share/qemu/edk2-i386-vars.fd'])

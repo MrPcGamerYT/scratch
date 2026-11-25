@@ -29,7 +29,7 @@ try {
         $codeFull = [IO.Path]::GetFullPath($UefiCodePath); $varsFull = [IO.Path]::GetFullPath($UefiVarsPath)
         if ($codeFull -ieq $varsFull -or $varsFull -ieq [IO.Path]::GetFullPath($DiskPath) -or ($IsoPath -and $varsFull -ieq [IO.Path]::GetFullPath($IsoPath))) { throw 'UEFI variables must be a separate file from code, disk and ISO.' }
     }
-    $qemu = Join-Path $QemuDir 'qemu-system-x86_64.exe'
+    $qemu = Join-Path $QemuDir 'NexusEngine.exe'
     $img = Join-Path $QemuDir 'qemu-img.exe'
     if (-not (Test-Path -LiteralPath $qemu -PathType Leaf)) { throw "QEMU not found: $qemu" }
     if ($Boot -eq 'iso' -and -not $IsoPath) { throw 'Specify -IsoPath when booting from ISO.' }

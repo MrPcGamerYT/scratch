@@ -1,3 +1,4 @@
+#include <QIcon>
 #include "windowchrome.h"
 #include "studiobrowse.h"
 #include <QSettings>
@@ -200,7 +201,7 @@ private:
 };
 
 int main(int argc, char **argv) {
-    QApplication app(argc,argv); app.setStyle("Fusion");
+    QApplication app(argc,argv); QApplication::setWindowIcon(QIcon(":/assets/nexus-engine.png")); app.setStyle("Fusion");
     app.setStyleSheet("QWidget{background:#0d111a;color:#d5dfee;font-family:'Segoe UI';font-size:13px;} QLineEdit,QComboBox,QPlainTextEdit{background:#141c2b;border:1px solid #303f58;border-radius:6px;padding:8px;} QPushButton{background:#203555;border:1px solid #365681;border-radius:6px;padding:9px 16px;} QPushButton:hover{background:#2b4b78;} QPushButton:disabled{color:#667085;background:#19202c;} QProgressBar{background:#151d2b;border:0;max-height:5px;} QProgressBar::chunk{background:#3b82f6;}");
     WindowChrome chrome; app.installEventFilter(&chrome);
     ImageStudio window;

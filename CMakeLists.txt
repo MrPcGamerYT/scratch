@@ -70,11 +70,16 @@ qt_add_executable(ProjectNexus WIN32
     src/keymapoverlay.cpp
     src/keymapoverlay.h
 )
-qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32 dxgi)
+qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png assets/nexus-engine.png)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32 shell32 dxgi)
 
 qt_add_executable(NexusImageStudio WIN32 src/imagestudio.cpp src/windowchrome.cpp src/windowchrome.h)
 target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
+
+configure_file(packaging/nexus.rc.in "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc" @ONLY)
+target_sources(ProjectNexus PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc")
+target_sources(NexusImageStudio PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc")
+qt_add_resources(NexusImageStudio "studio_assets" PREFIX "/" FILES assets/nexus-engine.png)
 
 include(CTest)
 if(BUILD_TESTING)

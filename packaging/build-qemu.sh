@@ -16,7 +16,9 @@ cd "$root/qemu-build"
   --disable-docs --disable-capstone --disable-install-blobs --disable-modules --disable-werror
 ninja -j 2 qemu-system-x86_64.exe qemu-img.exe
 mkdir -p "$prefix/bin"
-cp qemu-system-x86_64.exe qemu-img.exe "$prefix/bin/"
+cp qemu-system-x86_64.exe "$prefix/bin/NexusEngine.exe"
+cp qemu-img.exe "$prefix/bin/"
+python "$root/packaging/brand_engine.py" "$prefix"
 # Keep optimization provenance with every engine; never use -march=native.
 # A runner-specific ISA would break older CPUs such as the user's Skylake.
 {
@@ -35,7 +37,7 @@ for image in edk2-x86_64-code.fd edk2-i386-vars.fd; do
 done
 cp "$source/pc-bios/edk2-licenses.txt" "$prefix/licenses/"
 # Resolve runtime dependencies and copy their transitive DLLs next to the executables.
-for exe in "$prefix/bin/qemu-system-x86_64.exe" "$prefix/bin/qemu-img.exe"; do
+for exe in "$prefix/bin/NexusEngine.exe" "$prefix/bin/qemu-img.exe"; do
   ldd "$exe" | awk '/\/ucrt64\/bin\/.*\.dll/ {print $3}' | while read -r dll; do cp -n "$dll" "$prefix/bin/"; done
 done
 # ldd on MinGW prints transitive dependencies. Repeat against every copied DLL.

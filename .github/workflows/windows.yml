@@ -177,6 +177,15 @@ jobs:
           path: package/qemu
           run-id: ${{ inputs.qemu_run_id || github.run_id }}
           github-token: ${{ github.token }}
+      - name: Brand embedded engine including reused artifacts
+        shell: pwsh
+        run: |
+          python packaging/brand_engine.py package/qemu
+          if ($LASTEXITCODE -ne 0) { throw 'Engine branding failed.' }
+          $engine = Get-Item package/qemu/bin/NexusEngine.exe
+          if ($engine.VersionInfo.FileDescription -ne 'Nexus Engine') { throw 'Engine file description mismatch.' }
+          if ($engine.VersionInfo.ProductName -ne 'Nexus Engine (QEMU-based)') { throw 'Engine product attribution mismatch.' }
+          if (Test-Path package/qemu/bin/qemu-system-x86_64.exe) { throw 'Unbranded runtime executable remains.' }
       - uses: actions/checkout@v4
         with:
           repository: qemu/qemu
@@ -196,7 +205,7 @@ jobs:
         shell: pwsh
         run: |
           try {
-            $qemu = "$PWD/package/qemu/bin/qemu-system-x86_64.exe"
+            $qemu = "$PWD/package/qemu/bin/NexusEngine.exe"
             $img = "$PWD/package/qemu/bin/qemu-img.exe"
             $accels = & $qemu -accel help 2>&1
             if ($LASTEXITCODE -ne 0 -or ($accels -join "`n") -notmatch 'whpx') { throw "Bundled QEMU missing WHPX, exit $LASTEXITCODE : $accels" }

@@ -78,3 +78,21 @@ Candidate Player artifact: 15015480341 (83,086,323 bytes), Developer artifact:
 Preserve existing images/instances and backups when testing; do not replace a
 backing base just to update the executable. Windows Android ANR/performance and
 hardware GPU/WHPX certification remain outstanding.
+
+## Windows engine branding
+
+The runtime executable is now `qemu/bin/NexusEngine.exe`. Its PE file description
+is **Nexus Engine**, product is **Nexus Engine (QEMU-based)**, and executable and
+window icons use the Nexus N asset. Task Manager Details should show
+`NexusEngine.exe`; the Processes view can use the file description. Windows may
+cache icons or group child processes under the Player. This does not change
+performance or hide a process. QEMU licenses, trademarks and source attribution
+remain available. The separate `qemu-img.exe` maintenance tool keeps its upstream
+name; it may appear briefly during disk creation/checking.
+
+Player, Developer launcher, diagnostics, archive requirements and tests now use
+the new runtime name. Old packages are not updated just by changing the guest.
+The branding resource script can update a complete cached unsigned engine bundle
+before packaging, and verifies that the PE icon payload matches the Nexus asset.
+Patched engine sources and the branding recipe/assets remain bundled. Do not
+manually rename only the old executable: old launcher paths would then break.

@@ -53,7 +53,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $PlayerFolder 'ProjectNexus.exe') -PathType Leaf)) { throw 'PlayerFolder must contain ProjectNexus.exe.' }
     if (-not (Test-Path -LiteralPath $img -PathType Leaf)) { throw "qemu-img not found: $img" }
     Write-Host 'STAGE: Checking bundled QEMU tools before creating or booting any disk'
-    foreach ($tool in @('qemu-img.exe', 'qemu-system-x86_64.exe')) {
+    foreach ($tool in @('qemu-img.exe', 'NexusEngine.exe')) {
         $exe = Join-Path $QemuDir $tool
         if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Bundled tool missing: $exe. Extract the complete Developer package." }
         try { $version = & $exe --version 2>&1; $exitCode = $LASTEXITCODE }

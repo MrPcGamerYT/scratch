@@ -9,7 +9,7 @@ function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureNam
 if ($Case -eq 'missing-rom') {
     $broken = Join-Path $env:NEXUS_TEST_DIR 'broken-engine'
     New-Item -ItemType Directory -Path (Join-Path $broken 'bin'), (Join-Path $broken 'share/qemu') | Out-Null
-    Copy-Item $Stub (Join-Path $broken 'bin/qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $broken 'bin/NexusEngine.exe')
     Copy-Item $Stub (Join-Path $broken 'bin/qemu-img.exe')
     Set-Content (Join-Path $broken 'share/qemu/bios-256k.bin') 'fixture BIOS'
     Set-Content (Join-Path $broken 'share/qemu/vgabios-stdvga.bin') 'fixture VGA'
@@ -27,7 +27,7 @@ if ($Case -eq 'same-image') {
 $root = Join-Path $env:RUNNER_TEMP ('nexus tests ' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
-    Copy-Item $Stub (Join-Path $root 'qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $root 'NexusEngine.exe')
     Copy-Item $Stub (Join-Path $root 'qemu-img.exe')
     $env:NEXUS_TEST_DIR = $root
     $env:NEXUS_TEST_ISO = Join-Path $root 'stock image.iso'

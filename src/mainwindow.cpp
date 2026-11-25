@@ -263,7 +263,7 @@ void MainWindow::launch() {
     });
     const QString root = QCoreApplication::applicationDirPath();
     const QString base = root + "/images/android-base.qcow2";
-    const QString qemu = root + "/qemu/bin/qemu-system-x86_64.exe";
+    const QString qemu = root + "/qemu/bin/NexusEngine.exe";
     const QString img = root + "/qemu/bin/qemu-img.exe";
     for (const QString &rom : {QStringLiteral("bios-256k.bin"), QStringLiteral("vgabios-stdvga.bin"), QStringLiteral("kvmvapic.bin")}) {
         const QFileInfo file(root + "/qemu/share/qemu/" + rom);

@@ -14,6 +14,7 @@ class QTimer;
 class EmulatorView : public QWidget {
 public:
     explicit EmulatorView(QWidget *parent = nullptr);
+    ~EmulatorView() override;
     bool attach(HWND window);
     void clear();
     void setGuestVisible(bool visible);
@@ -27,6 +28,8 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    HICON engineLargeIcon = nullptr;
+    HICON engineSmallIcon = nullptr;
     HWND guestWindow = nullptr;
     bool guestVisible = true;
     QTimer *animation;

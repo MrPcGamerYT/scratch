@@ -4,14 +4,23 @@
 #include <QLinearGradient>
 #include <QTimer>
 #include <QFocusEvent>
+#include <QCoreApplication>
+#include <shellapi.h>
 
 EmulatorView::EmulatorView(QWidget *parent) : QWidget(parent) {
+    const auto engine = (QCoreApplication::applicationDirPath() + "/qemu/bin/NexusEngine.exe").toStdWString();
+    ExtractIconExW(engine.c_str(), 0, &engineLargeIcon, &engineSmallIcon, 1);
     animation = new QTimer(this); animation->setInterval(80);
     connect(animation, &QTimer::timeout, this, [this] { animationFrame = (animationFrame + 1) % 45; update(); });
     setAttribute(Qt::WA_NativeWindow);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(480, 320);
     setAttribute(Qt::WA_OpaquePaintEvent);
+}
+
+EmulatorView::~EmulatorView() {
+    if (engineLargeIcon) DestroyIcon(engineLargeIcon);
+    if (engineSmallIcon) DestroyIcon(engineSmallIcon);
 }
 
 bool EmulatorView::attach(HWND window) {
@@ -27,6 +36,9 @@ bool EmulatorView::attach(HWND window) {
     }
     if (guestVisible) { animation->stop(); starting = false; }
     guestWindow = window;
+    DWORD_PTR ignored = 0;
+    if (engineLargeIcon) SendMessageTimeoutW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(engineLargeIcon), SMTO_ABORTIFHUNG, 250, &ignored);
+    if (engineSmallIcon) SendMessageTimeoutW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(engineSmallIcon), SMTO_ABORTIFHUNG, 250, &ignored);
     SetWindowPos(window, nullptr, 0, 0, qRound(width() * devicePixelRatioF()), qRound(height() * devicePixelRatioF()),
                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ShowWindow(window, guestVisible ? SW_SHOW : SW_HIDE);

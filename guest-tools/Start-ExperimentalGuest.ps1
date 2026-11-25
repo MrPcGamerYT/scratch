@@ -6,8 +6,8 @@ try {
     if (-not $QemuExe) {
         Add-Type -AssemblyName System.Windows.Forms
         $picker = New-Object System.Windows.Forms.OpenFileDialog
-        $picker.Title = 'Select qemu-system-x86_64.exe from the complete Nexus Developer package'
-        $picker.Filter = 'QEMU system executable|qemu-system-x86_64.exe'
+        $picker.Title = 'Select NexusEngine.exe from the complete Nexus Developer package'
+        $picker.Filter = 'QEMU system executable|NexusEngine.exe'
         if ($picker.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
         $QemuExe = $picker.FileName
     }

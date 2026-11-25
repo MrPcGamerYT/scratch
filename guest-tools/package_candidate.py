@@ -60,7 +60,7 @@ an existing backing disk. Current Player defaults do not apply every tested CPU
 setting; this is not an automatic Player image update.
 
 On Windows run Start-ExperimentalGuest.ps1 with PowerShell and select
-qemu-system-x86_64.exe from your fully extracted Nexus Developer package.
+NexusEngine.exe from your fully extracted Nexus Developer package.
 The launcher uses TCG, 2 CPUs, 3072 MB, VirtIO VGA, supplied UEFI firmware and
 reduced AVX/FMA exposure. Guest compositor settings are in the disk bootloader.
 It creates a NEW retained instance under LOCALAPPDATA/ProjectNexus/experimental

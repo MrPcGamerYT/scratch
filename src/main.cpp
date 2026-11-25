@@ -1,3 +1,4 @@
+#include <QIcon>
 #include "mainwindow.h"
 #include "windowchrome.h"
 #include <QApplication>
@@ -29,6 +30,7 @@ LRESULT CALLBACK fullscreenHook(int code, WPARAM message, LPARAM data) {
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    QApplication::setWindowIcon(QIcon(":/assets/nexus-engine.png"));
     QApplication::setOrganizationName("ProjectNexus");
     QApplication::setApplicationName("Project Nexus");
     app.setStyle("Fusion");

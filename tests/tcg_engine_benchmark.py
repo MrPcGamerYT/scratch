@@ -51,7 +51,9 @@ def boot_sector(count):
 
 def measure(bundle, boot, repeats):
     bundle = pathlib.Path(bundle).resolve()
-    exe = bundle / 'bin/qemu-system-x86_64.exe'
+    exe = bundle / 'bin/NexusEngine.exe'
+    if not exe.is_file():  # Historical baseline artifact, never Player runtime fallback.
+        exe = bundle / 'bin/qemu-system-x86_64.exe'
     firmware = bundle / 'share/qemu'
     samples = []
     for _ in range(repeats):

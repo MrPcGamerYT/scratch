@@ -13,7 +13,7 @@ $env:NEXUS_ARCHIVE_ROOT = $root
 $env:NEXUS_TEST_LOG = Join-Path $root 'args.log'
 New-Item -ItemType Directory -Path $root, (Join-Path $root 'player') | Out-Null
 try {
-    Copy-Item $Stub (Join-Path $root 'qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $root 'NexusEngine.exe')
     Copy-Item $Stub (Join-Path $root 'qemu-img.exe')
     Set-Content (Join-Path $root 'player/ProjectNexus.exe') 'stub player'
     foreach ($name in @('archive','payload')) {
