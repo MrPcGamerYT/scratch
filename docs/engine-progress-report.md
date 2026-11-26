@@ -6,6 +6,26 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## Latest verified work: ext4, journal replay and larger RAM
+
+Code `b1e9d27` passed native Linux acceptance **45773550049**: three raw-block boots
+at 256/512/1024 MiB, three ext4 clean file+directory fsync/unmount/remount boots,
+and two ext4 fsynced unclean-VM-stop/recovery boots. The recovery boot requires
+actual ext4 journal-replay logging and exact file bytes; both source/base digests
+remain unchanged. An independent evidence gate verifies all five ext4 samples.
+Engine `dbef542` passed Windows/Ubuntu foundation **45773319762** and Linux
+**45773331591**. Full method and boundaries are in `native-virtio-mmio.md`.
+
+Kernel commands now allow explicit 128..3072 MiB RAM without overlapping the MMIO
+page; live tests reach 1024 MiB and planning tests cover 3072 MiB. No memory cleaner
+or speed claim is implied. Native-only fixture/docs changes no longer unnecessarily
+trigger legacy QEMU builds; the independent engine never invokes QEMU.
+
+**Overall completion remains false.** No Android Home/ANR/GPU acceptance or finished
+QEMU-free player release has been produced. The file editor and user disks remain
+untouched. No background agent is scheduled to finish the remaining engineering;
+CI evidence covers only the explicit tests above, not the full requested emulator.
+
 ## Latest: Linux VirtIO disk and separate-boot persistence
 
 Final tested engine/evidence code `e1ff387` passed foundation **45762223941**

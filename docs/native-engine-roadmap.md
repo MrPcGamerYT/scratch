@@ -265,3 +265,15 @@ unchanged. See [native-virtio-mmio.md](native-virtio-mmio.md) for exact scope,
 CLI and evidence. Earlier “no MMIO/IRQ/vda” milestone statements are historical.
 Next gates remain filesystem/crash testing, Android partition/init integration,
 app stability, player/GPU and approximately 100-second usable-Home validation.
+
+
+## Ext4 filesystem and unclean-VM acceptance
+
+Native acceptance **45773550049** (`b1e9d27`) verifies clean ext4 file/directory
+fsync, unmount, two read-only separate-VM remounts and a separate fsynced VM stop
+while mounted followed by ext4 journal replay and exact file recovery. Native
+Linux also boots at 256/512/1024 MiB. RAM planning permits 128..3072 MiB without
+MMIO overlap; Windows/Ubuntu foundation **45773319762** passed engine `dbef542`.
+See `native-virtio-mmio.md`. Earlier filesystem-not-tested statements are historical.
+This is not host-power-loss certification, Android boot, ANR remediation, GPU
+acceleration or completion of the roughly 100-second usable-Home target.

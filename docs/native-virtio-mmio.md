@@ -168,11 +168,57 @@ Creation and reopen are distinct; never overwrite a user's overlay. Supply the
 VirtIO discovery parameter above and a compatible guest kernel. The diagnostic
 boot loop remains bounded and stops at its PID1 readiness marker, not Android.
 
+## Ext4 filesystem and journal replay acceptance
+
+Final test/CI code `b1e9d27c7f249ea86ceda76fc751a20435ab7f30` passed Linux
+**45773550049**. Engine changes `dbef542` separately passed Windows/Ubuntu
+foundation **45773319762** and Linux **45773331591**. Kernel/image build
+**45772174051** enables EXT4_FS and creates a disposable 32 MiB ext4 image with
+standard e2fsprogs, checked by e2fsck and SHA256SUMS. Source test ext4 SHA256:
+`62f9301d9b3e7fbb8a043eb0c7aa814af9aa33c4e719d77de3ebb8aa53be58f7`.
+
+The latest acceptance run executes eight separate engine/VM boots:
+
+- Three raw-block persistence boots retained from the previous checkpoint, now
+  exercising 256, 512 and 1024 MiB guest RAM respectively.
+- Three clean filesystem boots: first mount ext4 read/write, create/truncate
+  `/mnt/probe.bin`, write and compare the patterned bytes, fsync the file and
+  parent directory, close and cleanly unmount. Two subsequent separate process/VM
+  boots reopen COW, mount read-only, open the existing file without create/truncate
+  or any write syscall, read/compare its bytes, close and unmount.
+- Two journal-recovery boots on a separate fresh image/overlay: first fsync file
+  and parent directory but **do not unmount** before the diagnostic marker causes
+  VM teardown. Next boot reopens that overlay, mounts read-only (Linux replays the
+  journal), requires `recovery complete` in the actual ext4 log, and reads/compares
+  the file before unmounting. This is abrupt **guest/VM termination while mounted**,
+  not host process kill, host power loss, or arbitrary mid-write crash injection.
+
+Every filesystem sample requires its operation-specific guest marker, successful
+engine exit, real IRQ5 delivery, diagnostic PID1 readiness, no ext4/IO error, and
+unchanged source ext4/ZLAG digests. Failure reports remain `verified:false`.
+A separate CI step requires all three clean and both recovery sample checks and
+emits `EXT4_ACCEPTANCE` with exact commit/hash and `android_ready:false`; it cannot
+silently count the raw-block-only regression as filesystem acceptance.
+
+Three local and CI structural/oracle tests verify ELF/newc layout, no write syscall
+in the read-only reboot fixtures, real buffer comparison, and no unmount syscall
+in the unclean-stop fixture. They are explicitly not substitutes for WHP execution.
+
+### Larger guest RAM
+
+Kernel boot commands accept a trailing `--ram-mib=N`, 128 through 3072 MiB.
+Default stays 256 MiB. Unit tests check the full range, E820, initrd limits and
+separation from MMIO at GPA `0xd0000000`; actual Linux regression covers 256/512/
+1024 MiB, not live 2/3 GiB or Android. More than 3 GiB needs discontiguous GPA RAM
+and matching E820/placement support; it is intentionally rejected. This is not a
+host/guest RAM cleaner, SMP support or a measured speed improvement.
+
 ## Remaining integration gates
 
-1. Filesystem create/mount/write/sync and separate-boot validation, plus crash and
-   failure-injection testing. Current Linux evidence is **raw block IO**, not a
-   filesystem or a guest-initiated reboot. It uses fresh VMs across process boots.
+1. Broader filesystem workloads, corruption/failure injection and host-crash/power-loss
+   testing. The clean ext4 and fsynced unclean-VM journal-replay gates above pass;
+   guest-initiated reboot, arbitrary interrupted writes and production durability
+   are not certified.
 2. Android system/vendor/data partition layout, init/fstab/AVB/encryption and
    SELinux integration; a usable Android Home and actual app-ANR diagnosis.
 3. Broader valid descriptor layouts and workloads. Current requests remain bounded
