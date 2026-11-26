@@ -1,0 +1,77 @@
+name: Native Linux kernel entry checkpoint
+on:
+  push:
+    paths:
+      - '.github/workflows/native-kernel.yml'
+      - 'tests/native_kernel_checkpoint.py'
+      - 'rust/nexus-engine/src/kernel.rs'
+      - 'rust/nexus-engine/src/uart.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ffc253263a1375a65fa6c9f62a893e9767fbebfa
+          path: kernel-source
+      - run: sudo apt-get update && sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev
+      - name: Build pinned tiny x86-64 Linux kernel, not an Android image
+        shell: bash
+        run: |
+          set -o pipefail
+          cd kernel-source
+          make tinyconfig
+          scripts/config -e 64BIT -e PRINTK -e TTY -e EARLY_PRINTK -e SERIAL_8250 -e SERIAL_8250_CONSOLE -e BINFMT_ELF -e BLK_DEV_INITRD -e RD_GZIP -e DEVTMPFS -e PROC_FS -e SYSFS -e DEBUG_KERNEL -d RANDOMIZE_BASE -d SMP -d HYPERV -d PARAVIRT -d X86_5LEVEL
+          make olddefconfig
+          if ! make -j4 bzImage 2>&1 | tee ../kernel-build.log; then
+            tail -8 ../kernel-build.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          mkdir -p ../kernel-artifact
+          cp arch/x86/boot/bzImage ../kernel-artifact/
+          cp .config ../kernel-artifact/kernel.config
+          cp COPYING ../kernel-artifact/
+          echo 'Linux v6.6 source: https://github.com/torvalds/linux/tree/ffc253263a1375a65fa6c9f62a893e9767fbebfa; tinyconfig + explicit flags in native-kernel.yml. TEST KERNEL ONLY; no Android certification.' > ../kernel-artifact/SOURCE.txt
+          cd ../kernel-artifact
+          sha256sum bzImage > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-test-linux-kernel
+          path: kernel-artifact/
+  early-entry:
+    needs: kernel
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-test-linux-kernel
+          path: kernel-artifact
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build independent native engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Real Linux early-entry checkpoint — NOT complete kernel boot
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_kernel_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-kernel-entry-evidence
+          path: |
+            kernel-serial.log
+            kernel-checkpoint.txt
+            native-engine-*.log
+            kernel-artifact/SHA256SUMS.txt
+            kernel-artifact/kernel.config
