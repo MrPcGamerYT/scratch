@@ -6,7 +6,8 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
 struct ApicDisk {device:crate::virtio_mmio::BlockMmio,backend:crate::overlay::Overlay,accesses:u64,completions:u64}
-struct ApicState {disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+type RamGate=std::sync::Arc<std::sync::RwLock<()>>;
+struct ApicState {ram_gate:RamGate,dma_rendezvous:u64,disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
 impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
 impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
@@ -17,7 +18,7 @@ struct StopApic(ApicFabric);
 impl Drop for StopApic {fn drop(&mut self) {
     let mut state=self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);state.stop=true;
 }}
-struct ApicContext {timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+struct ApicContext {ram_gate:RamGate,timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -40,6 +41,7 @@ extern "system" fn apic_set(ctx:*mut c_void,names:*const u32,count:u32,values:*c
 extern "system" fn apic_translate(ctx:*mut c_void,gva:u64,flags:u32,result:*mut u32,gpa:*mut u64)->i32 {
     apic_callback(ctx,|c| {
         if result.is_null()||gpa.is_null() {return Err("Invalid APIC translation callback".into());}
+        let _ram=c.ram_gate.read().map_err(|_|"RAM rendezvous poisoned")?;
         let mut translated=Translation{code:0,reserved:0};let mut address=0;
         unsafe {check(WHvTranslateGva(c.partition,c.index,gva,flags,&mut translated,&mut address),"APIC translate")?;*result=translated.code;*gpa=address;}Ok(())
     })
@@ -53,12 +55,12 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
         if end<=c.bytes as u64 {
             // Instruction-fetch bytes only. No host RAM mutation while an AP runs.
             if a.direction!=0 {return Err("Concurrent APIC emulator RAM write refused".into());}
+            let _ram=c.ram_gate.read().map_err(|_|"RAM rendezvous poisoned")?;
             unsafe {std::ptr::copy_nonoverlapping(c.ram.add(a.gpa as usize),a.data.as_mut_ptr(),n);}return Ok(());
         }
         if (MMIO_BASE..MMIO_BASE+4096).contains(&a.gpa) {
             if ![1,2,4].contains(&a.size)||end>MMIO_BASE+4096 {return Err("Invalid APIC-profile block MMIO shape".into());}
             let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
-            if state.len()!=1 {return Err("Block DMA requires the single-CPU APIC profile until quiescence is implemented".into());}
             let disk=state.disk.as_mut().ok_or("Unconfigured APIC block device")?;
             let offset=a.gpa-MMIO_BASE;
             if a.direction==0 {a.data[..n].copy_from_slice(&disk.device.read(offset,a.size)?.to_le_bytes()[..n]);}
@@ -144,7 +146,8 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
-    let mut ctx=ApicContext{timer_clock:std::time::Instant::now(),partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
+    let ram_gate=lapics.lock().map_err(|_|"LAPIC lock poisoned")?.ram_gate.clone();
+    let mut ctx=ApicContext{ram_gate,timer_clock:std::time::Instant::now(),partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let os=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?.os;
     let count=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?.len() as u32;
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(if os {30} else {5});
@@ -161,12 +164,15 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
             if fabric.stop {return Ok((0,halt_waits));}
             if let Some(observer)=observe.as_mut() {if observer(&mut fabric)? {fabric.stop=true;return Ok((0,halt_waits));}}
             if let Some(disk)=fabric.disk.as_mut() {if disk.device.work_pending() {
-                if count!=1 {return Err("Concurrent APIC block DMA refused".into());}
-                // Sole vCPU is stopped; emulator callbacks have returned. No AP
-                // can mutate RAM while the existing queue validator services DMA.
+                // Every vCPU holds a shared gate ONLY while inside WHP Run.
+                // Scheduling cancellation releases those guards; this exclusive
+                // guard prevents reentry and waits for all CPUs to be stopped.
+                // Callbacks never hold a gate while acquiring the fabric lock.
+                let _exclusive=ctx.ram_gate.write().map_err(|_|"RAM rendezvous poisoned")?;
                 let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
                 let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
                 disk.completions+=disk.device.service(&mut memory,&mut disk.backend,256)?.len() as u64;
+                fabric.dma_rendezvous+=1;
             }}
             let ApicState{cpus,io,platform,pit_edges,epoch,disk,..}=&mut *fabric;
             platform.tick(epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
@@ -189,7 +195,10 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
         let mut exit=ExitContext([0;224]);
-        unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
+        {
+            let _running=ctx.ram_gate.read().map_err(|_|"RAM rendezvous poisoned")?;
+            unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
+        }
         if handle_cpuid(ctx.partition,index,count,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
         if exit.reason()==0x1000 {
@@ -392,7 +401,7 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
     {let mut state=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         state.io.write(0,0)?;state.io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;}
     // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
@@ -463,9 +472,8 @@ fn smp_cycle()->Result<u64,String> {
 }
 
 fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,backend:Option<crate::overlay::Overlay>)->Result<(),String> {
-    if backend.is_some()&&partition.2!=1 {return Err("APIC disk profile currently requires one CPU".into());}
     let mut io=crate::ioapic::IoApic::new();io.write(0,0)?;io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;
-    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
+    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
     if let Some(backend)=backend {
         let device=crate::virtio_mmio::BlockMmio::new(backend.disk_bytes()/512,false)?;
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.disk=Some(ApicDisk{device,backend,accesses:0,completions:0});
@@ -526,7 +534,7 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     if trace.linux_userspace_ready_ms.is_none()||expired||reason!=0||state.io_accesses==0||state.injections==0||state.timer_injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
     if let Some(disk)=&state.disk {
         if disk.completions==0||disk.accesses==0||state.io.delivery_count(5)?==0 {return Err("APIC disk checkpoint completed without real block work".into());}
-        println!("NATIVE_APIC_DISK_OK completions={} mmio_accesses={} ioapic_gsi5_deliveries={}",disk.completions,disk.accesses,state.io.delivery_count(5)?);
+        println!("NATIVE_APIC_DISK_OK completions={} mmio_accesses={} ioapic_gsi5_deliveries={} dma_rendezvous={}",disk.completions,disk.accesses,state.io.delivery_count(5)?,state.dma_rendezvous);
     }
     println!("NATIVE_APIC_OS_PID1_OK cpus={} ram_bytes={} io_mmio={} injections={} lapic_timer_irqs={} pit_edges={}; not Android certification",partition.2,memory.bytes,state.io_accesses,state.injections,state.timer_injections,state.platform.pit0.edges);
     Ok(())

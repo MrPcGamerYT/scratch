@@ -539,7 +539,7 @@ mod windows {
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
-        if plan.apic_probe&&(plan.cpu_count!=1||plan.android_init_probe||plan.bridge_probe||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk currently requires one CPU, headless Linux, no Android/bridge/player".into());}
+        if plan.apic_probe&&(plan.android_init_probe||plan.bridge_probe||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk requires headless Linux, no Android/bridge/player".into());}
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
         load_kernel_plan(plan,|partition,memory,surface| {
             if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,Some(backend));}

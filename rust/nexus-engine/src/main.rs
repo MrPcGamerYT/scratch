@@ -65,7 +65,6 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let mut plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
             if apic_probe&&(command.starts_with("probe-android-")||live||surface.is_some()||bridge_probe||bridge_apk.is_some()) {return Err("--apic-probe supports headless Linux only, not Android/bridge/player".into());}
-            if apic_probe&&command!="boot-kernel"&&cpu_count.unwrap_or(1)!=1 {return Err("APIC disk currently requires --cpus=1 until DMA quiescence is implemented".into());}
             plan.apic_probe=apic_probe;plan.cpu_count=cpu_count.unwrap_or(1);
             plan.validate_regions()?;
             plan.bridge_probe=bridge_probe||bridge_apk.is_some();plan.bridge_apk=bridge_apk;
