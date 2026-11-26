@@ -31,6 +31,7 @@ def main():
                     decoded=json.loads(next(line.split('=',1)[1] for line in p.stdout.splitlines() if line.startswith('GRAPHICS_HOST_RENDER=')))
                     assert decoded['backend']==backend.capitalize()
                     sample['adapter']=decoded
+                    if index==0: print('::notice::HOST_GRAPHICS_ADAPTER='+json.dumps(decoded),flush=True)
                     if backend=='hardware': assert decoded['software_adapter'] is False
                     assert decoded['guest_acceleration_verified'] is False and decoded['android_graphics_verified'] is False
                     original=actual
