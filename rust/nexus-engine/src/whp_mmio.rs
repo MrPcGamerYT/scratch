@@ -71,6 +71,7 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
             if a.direction==0 {a.data[..n].copy_from_slice(ram);} else {ram.copy_from_slice(&a.data[..n]);}return Ok(());
         }
         if a.gpa<MMIO_BASE||end>MMIO_BASE+4096 {return Err("Emulator memory access outside RAM/device page".into());}
+        if ![1,2,4].contains(&a.size) {return Err("Unsupported MMIO register access width".into());}
         let offset=a.gpa-MMIO_BASE;
         if a.direction==0 {let value=ctx.device.read(offset,a.size)?.to_le_bytes();a.data[..n].copy_from_slice(&value[..n]);}
         else {
