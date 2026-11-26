@@ -7,7 +7,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
 }
 type ApicFabric=std::sync::Arc<std::sync::Mutex<Vec<crate::lapic::LocalApic>>>;
 enum StartupEvent {Init,Sipi(u8)}
-struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+struct ApicContext {timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -46,6 +46,9 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             unsafe {std::ptr::copy_nonoverlapping(c.ram.add(a.gpa as usize),a.data.as_mut_ptr(),n);}return Ok(());
         }
         if !(0xfee00000..0xfee01000).contains(&a.gpa)||a.size!=4||a.gpa%16!=0 {return Err(format!("Unsupported APIC MMIO address/width: cpu={} gpa=0x{:x} size={} direction={}",c.index,a.gpa,a.size,a.direction));}
+        let now=std::time::Instant::now();
+        c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?[c.index as usize].advance_ns(now.duration_since(c.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;
+        c.timer_clock=now;
         let offset=(a.gpa-0xfee00000) as u32;
         if offset==0x310 {
             if a.direction==0 {a.data[..4].copy_from_slice(&c.icr_high.to_le_bytes());}
@@ -85,9 +88,8 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
-    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
+    let mut ctx=ApicContext{timer_clock:std::time::Instant::now(),partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
-    let mut timer_clock=std::time::Instant::now();
     let mut halted=false;let mut halt_waits=0;
     for _ in 0..50000 {
         if std::time::Instant::now()>=deadline {
@@ -99,7 +101,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         let local=&mut fabric[index as usize];
         let now=std::time::Instant::now();
-        local.advance_ns(now.duration_since(timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;timer_clock=now;
+        local.advance_ns(now.duration_since(ctx.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;ctx.timer_clock=now;
         if let Some(vector)=local.pending() {
             let names=[0x11,0x80000001,0x80000000];let mut values=[Register::scalar(0);3];
             unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),3,values.as_mut_ptr()),"LAPIC interrupt window")?;}
