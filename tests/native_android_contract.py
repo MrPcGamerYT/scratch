@@ -53,8 +53,8 @@ def inspect(root):
             continue
         try:
             items,duplicates=archive(path.read_bytes())
-            scripts={key:body[:24000].decode(errors='replace') for key,(mode,body) in items.items()
-                     if key in ['init','init.rc','fstab.android_x86','fstab.android_x86_64'] and stat.S_ISREG(mode)}
+            scripts={key:body[:128*1024].decode(errors='replace') for key,(mode,body) in items.items()
+                     if key in ['init','init.rc','fstab.android_x86','fstab.android_x86_64','scripts/0-auto-detect','scripts/2-mount'] and stat.S_ISREG(mode)}
             result['ramdisks'][name]={'entries':list(items)[:200],'duplicate_names':duplicates[:100],'inspection_policy':'last record reported; no extraction or mutation','boot_scripts':scripts}
         except ValueError as error:
             result['ramdisks'][name]={'inspection_unavailable':str(error)}
@@ -66,5 +66,8 @@ if __name__=='__main__':
     Path('android-boot-contract.json').write_text(json.dumps(report,indent=2))
     print('::notice::ANDROID_DRIVER_CONTRACT='+json.dumps(report['driver_configuration']),flush=True)
     for name,data in report['ramdisks'].items():
-        text='ANDROID_RAMDISK_CONTRACT='+json.dumps({name:data})
-        print('::notice::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+        for script,body in data.get('boot_scripts',{}).items():
+            excerpt=body[-9000:] if script=='init' else body[:6000]
+            for at in range(0,len(excerpt),3000):
+                text=f'ANDROID_INIT_SCRIPT {name}/{script} chunk {at}: '+excerpt[at:at+3000]
+                print('::notice::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
