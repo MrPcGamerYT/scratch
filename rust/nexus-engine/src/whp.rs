@@ -582,6 +582,20 @@ mod windows {
     }
     pub fn cancel_smoke()->Result<(),String> {
         with_guest(&[0xeb,0xfe],|partition,memory| { // Deliberate no-exit infinite loop.
+            // Error and panic must disconnect/join both cancellation workers before
+            // this same partition can be reused or its handle can be destroyed.
+            let expected="injected lifecycle error";
+            if bounded::<()>(partition,1000,||Err(expected.into())).err().as_deref()!=Some(expected)
+                ||timer_pump::<()>(partition,||Err(expected.into())).err().as_deref()!=Some(expected) {
+                return Err("Cancellation worker error propagation failed".into());
+            }
+            for timer in [false,true] {
+                let panic=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if timer {let _=timer_pump::<()>(partition,||panic!("injected timer lifecycle panic"));}
+                    else {let _=bounded::<()>(partition,1000,||panic!("injected watchdog lifecycle panic"));}
+                }));
+                if panic.is_ok() {return Err("Cancellation worker panic gate did not execute".into());}
+            }
             let (context,canceled)=bounded(partition,250,||run_once(partition))?;
             if !canceled || context.reason()!=0x2001 {return Err(format!("Expected cancellation exit, got 0x{:x}",context.reason()));}
             // Prove cancellation did not destroy the vCPU: restart the SAME one.
