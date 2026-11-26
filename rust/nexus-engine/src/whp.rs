@@ -85,7 +85,7 @@ mod windows {
             let native=std::arch::x86_64::__cpuid(0);
             let clocks=crate::tsc::frequency_leaves(hz,[native.eax,native.ebx,native.ecx,native.edx])?;
             check(WHvSetPartitionProperty(partition.0,0x1004,clocks.as_ptr().cast(),(clocks.len()*32) as u32),"WHP TSC CPUID frequency contract")?;
-            let cpuid_exits=1u64;
+            let cpuid_exits=1u64|if apic {1<<6} else {0};
             check(WHvSetPartitionProperty(partition.0,1,(&cpuid_exits as *const u64).cast(),8),"WHP CPUID exits")?;
             let leaves=crate::topology::EXIT_LEAVES;
             check(WHvSetPartitionProperty(partition.0,0x1003,leaves.as_ptr().cast(),(leaves.len()*4) as u32),"WHP topology exit leaves")?;

@@ -96,3 +96,6 @@ static_assert(sizeof(WHV_X64_CPUID_ACCESS_CONTEXT) == 64);
 static_assert(sizeof(WHV_INTERRUPT_CONTROL) == 16);
 static_assert(offsetof(WHV_INTERRUPT_CONTROL, Destination) == 8);
 static_assert(offsetof(WHV_INTERRUPT_CONTROL, Vector) == 12);
+
+static_assert(WHvRunVpExitReasonX64ApicInitSipiTrap == 0x1006);
+static_assert(sizeof(WHV_X64_APIC_INIT_SIPI_CONTEXT) == 8);

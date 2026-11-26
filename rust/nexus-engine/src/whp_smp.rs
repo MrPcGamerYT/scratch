@@ -88,6 +88,15 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
+        if exit.reason()==0x1006 {
+            let icr=u64::from_le_bytes(exit.0[48..56].try_into().unwrap());
+            let upper=(icr>>32) as u32;let destination=if upper<=255 {upper} else if upper&0x00ffffff==0 {upper>>24} else {return Err(format!("Unsupported startup ICR 0x{icr:x}"));};
+            let kind=(icr>>8)&7;
+            if destination!=1||icr&(1<<11)!=0 {return Err(format!("Unsupported startup target ICR 0x{icr:x}"));}
+            let event=match kind {5=>StartupEvent::Init,6=>StartupEvent::Sipi(icr as u8),_=>return Err(format!("Invalid INIT/SIPI trap 0x{icr:x}"))};
+            ctx.startup.as_ref().ok_or("INIT/SIPI trap without startup router")?.send(event).map_err(|_|"AP startup worker disconnected")?;
+            continue;
+        }
         if exit.reason()!=1 {return Ok(exit.reason());}
         if step<8 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
