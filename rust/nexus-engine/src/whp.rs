@@ -4,6 +4,7 @@
 mod windows {
     use std::ffi::c_void;
     include!("whp_mmio.rs");
+    include!("whp_smp.rs");
     #[link(name = "WinHvPlatform")]
     extern "system" {
         fn WHvGetCapability(code:u32, buffer:*mut c_void, size:u32, written:*mut u32)->i32;
@@ -44,8 +45,8 @@ mod windows {
     struct ExitContext([u8;224]);
     struct Mapping<'a> { partition:&'a Partition, address:*mut c_void, bytes:usize,guest:u64 }
     impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,self.guest,self.bytes as u64); VirtualFree(self.address,0,0x8000); } } }
-    struct Processor<'a>(&'a Partition);
-    impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
+    struct Processor<'a>(&'a Partition,u32);
+    impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,self.1); } } }
     fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {allocate_at(partition,bytes,0)}
     fn allocate_at(partition:&Partition,bytes:usize,guest:u64)->Result<Mapping<'_>,String> {
         if guest%4096!=0||guest.checked_add(bytes as u64).is_none() {return Err("Invalid guest mapping address".into());}
@@ -60,16 +61,18 @@ mod windows {
     fn check(hr:i32, operation:&str)->Result<(),String> {
         if hr < 0 { Err(format!("{operation}: HRESULT 0x{:08x}",hr as u32)) } else { Ok(()) }
     }
-    struct Partition(*mut c_void,u64);
+    struct Partition(*mut c_void,u64,u32);
     impl Drop for Partition { fn drop(&mut self) { unsafe { WHvDeletePartition(self.0); } } }
-    fn create()->Result<Partition,String> {
+    fn create()->Result<Partition,String> {create_machine(1,false)}
+    fn create_machine(processors:u32,apic:bool)->Result<Partition,String> {
+        if !(1..=8).contains(&processors)||(!apic&&processors!=1) {return Err("Invalid CPU/APIC configuration".into());}
         let mut present=0u32; let mut written=0u32;
         // WHvCapabilityCodeHypervisorPresent = 0; output is Windows BOOL.
         unsafe { check(WHvGetCapability(0,(&mut present as *mut u32).cast(),4,&mut written),"WHvGetCapability")?; }
         if written!=4 || present==0 { return Err("Windows hypervisor unavailable; this is not an Android boot test".into()); }
         let mut handle=std::ptr::null_mut();
         unsafe { check(WHvCreatePartition(&mut handle),"WHvCreatePartition")?; }
-        let mut partition=Partition(handle,0); let processors=1u32;
+        let mut partition=Partition(handle,0,processors);
         // WHvPartitionPropertyCodeProcessorCount = 0x1fff (Windows SDK).
         unsafe {
             check(WHvSetPartitionProperty(partition.0,0x1fff,(&processors as *const u32).cast(),4),"WHvSetPartitionProperty")?;
@@ -82,6 +85,10 @@ mod windows {
             let native=std::arch::x86_64::__cpuid(0);
             let clocks=crate::tsc::frequency_leaves(hz,[native.eax,native.ebx,native.ecx,native.edx])?;
             check(WHvSetPartitionProperty(partition.0,0x1004,clocks.as_ptr().cast(),(clocks.len()*32) as u32),"WHP TSC CPUID frequency contract")?;
+            if apic {
+                let mode=1u32;
+                check(WHvSetPartitionProperty(partition.0,0x1005,(&mode as *const u32).cast(),4),"WHP xAPIC mode")?;
+            }
             check(WHvSetupPartition(partition.0),"WHvSetupPartition")?;
         }
         Ok(partition)
@@ -96,7 +103,7 @@ mod windows {
         let memory=allocate(&partition,ram_bytes)?;
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>().add(entry),code.len()); }
         unsafe { check(WHvCreateVirtualProcessor(partition.0,0,0),"WHvCreateVirtualProcessor")?; }
-        let _processor=Processor(&partition);
+        let _processor=Processor(&partition,0);
         let names=[0x1c,0x1e,0x1f,0x13,0x15,0x12,0x14,0x10,0x11,0x00];
         let values=[Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),Register::scalar(entry as u64),Register::scalar(2),Register::scalar(0)];
         set_registers(&partition,&names,&values)?;
@@ -128,14 +135,14 @@ mod windows {
     fn bounded<T>(partition:&Partition,millis:u64,action:impl FnOnce()->Result<T,String>)->Result<(T,bool),String> {
         use std::sync::{Arc,atomic::{AtomicBool,Ordering},mpsc};
         use std::time::Duration;
-        let handle=partition.0 as usize;
+        let handle=partition.0 as usize;let processors=partition.2;
         let canceled=Arc::new(AtomicBool::new(false));let flag=Arc::clone(&canceled);
         std::thread::scope(|scope| {
         let (tx,rx)=mpsc::channel();
         let watchdog=scope.spawn(move || {
             if matches!(rx.recv_timeout(Duration::from_millis(millis)),Err(mpsc::RecvTimeoutError::Timeout)) {
                 flag.store(true,Ordering::SeqCst);
-                unsafe { WHvCancelRunVirtualProcessor(handle as *mut c_void,0,0); }
+                for index in 0..processors {unsafe { WHvCancelRunVirtualProcessor(handle as *mut c_void,index,0); }}
                 if matches!(rx.recv_timeout(Duration::from_secs(5)),Err(mpsc::RecvTimeoutError::Timeout)) {
                     eprintln!("WHP guest deadline exceeded; terminating test process");
                     std::process::exit(2);
@@ -700,3 +707,8 @@ pub fn transition_smoke()->Result<(),String> {Err("Guest mode transition executi
 pub use windows::protection_smoke;
 #[cfg(not(windows))]
 pub fn protection_smoke()->Result<(),String> {Err("Guest page protection execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::smp_smoke;
+#[cfg(not(windows))]
+pub fn smp_smoke()->Result<(),String> {Err("SMP/APIC execution requires Windows x64 WHP".into())}

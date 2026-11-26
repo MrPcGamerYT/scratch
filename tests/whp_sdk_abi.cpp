@@ -81,3 +81,9 @@ static_assert(offsetof(WHV_X64_CPUID_RESULT, Eax) == 16);
 static_assert(offsetof(WHV_X64_CPUID_RESULT, Ebx) == 20);
 static_assert(offsetof(WHV_X64_CPUID_RESULT, Ecx) == 24);
 static_assert(offsetof(WHV_X64_CPUID_RESULT, Edx) == 28);
+
+static_assert(WHvPartitionPropertyCodeLocalApicEmulationMode == 0x1005);
+static_assert(WHvX64LocalApicEmulationModeXApic == 1);
+static_assert(WHvX64RegisterApicBase == 0x2003);
+static_assert(WHvRegisterInternalActivityState == 0x80000005);
+static_assert(sizeof(WHV_INTERNAL_ACTIVITY_REGISTER) == 8);
