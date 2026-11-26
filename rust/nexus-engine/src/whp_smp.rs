@@ -8,7 +8,7 @@ struct InterruptRequest {control:u64,destination:u32,vector:u32}
 #[link(name="WinHvPlatform")]
 extern "system" {fn WHvRequestInterrupt(partition:*mut c_void,control:*const InterruptRequest,size:u32)->i32;}
 enum StartupEvent {Init,Sipi(u8)}
-struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,spurious:u32,tpr:u32,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -47,16 +47,15 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             unsafe {std::ptr::copy_nonoverlapping(c.ram.add(a.gpa as usize),a.data.as_mut_ptr(),n);}return Ok(());
         }
         if !(0xfee00000..0xfee01000).contains(&a.gpa)||a.size!=4||a.gpa%16!=0 {return Err(format!("Unsupported APIC MMIO address/width: cpu={} gpa=0x{:x} size={} direction={}",c.index,a.gpa,a.size,a.direction));}
-        let offset=(a.gpa-0xfee00000) as u32;let name=0x3000+offset/16;
+        let offset=(a.gpa-0xfee00000) as u32;
         if offset==0x310 {
             if a.direction==0 {a.data[..4].copy_from_slice(&c.icr_high.to_le_bytes());}
             else {c.icr_high=u32::from_le_bytes(a.data[..4].try_into().unwrap());}
             return Ok(());
         }
         if a.direction==0 {
-            let mut value=Register::scalar(0);
-            unsafe {check(WHvGetVirtualProcessorRegisters(c.partition,c.index,&name,1,&mut value),"APIC MMIO read")?;}
-            a.data[..4].copy_from_slice(&value.0[..4]);
+            let value=match offset {0x20=>c.index<<24,0x30=>0x00050014,0x80=>c.tpr,0xf0=>c.spurious,_=>return Err(format!("APIC read 0x{offset:x} not implemented"))};
+            a.data[..4].copy_from_slice(&value.to_le_bytes());
         } else {
             let value=u32::from_le_bytes(a.data[..4].try_into().unwrap());
             if offset==0x300 {
@@ -71,8 +70,11 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                     tx.send(event).map_err(|_|"AP startup worker disconnected")?;
                 } else {unsafe {check(WHvRequestInterrupt(c.partition,&request,16),"APIC ICR delivery")?;}}
             } else {
-                let value=Register::scalar(u64::from(value));
-                unsafe {check(WHvSetVirtualProcessorRegisters(c.partition,c.index,&name,1,&value),"APIC MMIO write")?;}
+                match offset {
+                    0x80=>c.tpr=value&255,
+                    0xf0 if value&!0x1ff==0=>c.spurious=value,
+                    _=>return Err(format!("APIC write 0x{offset:x} not implemented")),
+                }
             }
         }Ok(())
     })
@@ -83,7 +85,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
-    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,error:None,startup};
+    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,spurious:255,tpr:0,error:None,startup};
     for step in 0..256 {
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
