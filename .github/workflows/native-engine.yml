@@ -5,6 +5,7 @@ on:
       - 'rust/nexus-engine/**'
       - 'tests/native_engine_cli_test.py'
       - 'tests/whp_sdk_abi.cpp'
+      - 'tests/build_native_engine.py'
       - '.github/workflows/native-engine.yml'
   workflow_dispatch:
 permissions:
@@ -36,17 +37,10 @@ jobs:
             exit $code
           }
       - name: Test library and build independent engine (zero QEMU dependencies)
+        shell: python
         run: |
-          set -o pipefail
-          if ! cargo test --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets 2>&1 | tee native-engine-test.log; then
-            tail -8 native-engine-test.log | while IFS= read -r line; do echo "::error::$line"; done
-            exit 1
-          fi
-          if ! cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings 2>&1 | tee native-engine-clippy.log; then
-            tail -30 native-engine-clippy.log | while IFS= read -r line; do echo "::error::$line"; done
-            exit 1
-          fi
-          cargo build --locked --release --manifest-path rust/nexus-engine/Cargo.toml
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
       - name: Independent CLI / disk-format reference checks
         run: |
           set -o pipefail
