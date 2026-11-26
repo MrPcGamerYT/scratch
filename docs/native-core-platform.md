@@ -215,3 +215,44 @@ LAPIC timers, NMI/ExtINT/cluster modes, production SMP scheduling/OS boot,
 firmware CPU enumeration, and physical Windows 10 certification. Unsupported
 operations fail explicitly. This supersedes only the earlier INIT/SIPI-only
 frontend limitation, not the remaining core-completion requirements.
+
+## Sequential blocker: LAPIC countdown timers (2026-11-24)
+
+The next increment adds one-shot and periodic countdown timers to the same
+explicit two-vCPU frontend. `lapic.rs` exposes LVT Timer (0x320), Initial Count
+(0x380), read-only Current Count (0x390), and Divide Configuration (0x3e0).
+The virtual APIC bus is 100 MHz, with all eight divide encodings (1..128).
+Host monotonic elapsed nanoseconds advance each CPU's timer at rendezvous and
+MMIO boundaries, including while the CPU is halted. Initial-count writes reload
+and zero cancels. Divider writes restart the fractional prescaler. Periodic
+expiry reloads with the elapsed remainder, not from the late host wake time;
+missed periods coalesce into one edge in IRR rather than creating an IRQ storm.
+LVT masking suppresses interrupt creation without stopping the countdown.
+TSC-deadline mode is explicitly rejected, not silently treated as one-shot.
+
+Deterministic model tests cover fractional countdown, all divide values,
+one-shot non-retrigger, periodic reload, masked expiry, APIC software disable,
+IRR coalescing while ISR blocks the priority class, reprogramming, zero-count
+stop, invalid mode and read-only Current Count. The existing interrupt arbiter
+continues to govern priority/IF deferral and acknowledgement.
+
+Native acceptance **45827049269** (code **cda39ad**) passed Ubuntu and Windows
+strict gates. The CLI repeats **48 two-vCPU cycles**, each requiring one guest
+one-shot timer IRQ and two periodic IRQs in addition to the existing two BSP
+self-IPIs and two remote AP physical/logical IPIs. The guest waits using
+CLI/check/STI/HLT; its vector-40 handler masks the periodic LVT at the exact
+expected count and EOIs. Guest code then writes zero to Initial Count. Host
+assertions require exact counters, restored stacks, empty IRR/ISR on both CPUs,
+and a masked/stopped BSP timer. The initial one-shot increment also passed
+**45826761863** before periodic coverage was added.
+
+Existing Linux entry regression **45827319947** passed after these changes,
+reusing kernel artifacts from **45814022595** (the kernel-build job is skipped
+on reuse; the early-entry acceptance job passed).
+
+Scope: this is a tested virtual countdown timer, **not OS LAPIC-timer/SMP
+acceptance**. Production Linux boot still uses the single-vCPU/PIC profile.
+Physical Windows 10 timing/stress, firmware enumeration, production SMP,
+IOAPIC/level EOI and actual OS LAPIC timer calibration remain required. This
+supersedes earlier statements that the explicit frontend has no timer; it does
+not complete Step 1 or authorize moving to graphics/Step 2.
