@@ -197,3 +197,14 @@ three entries beyond ports 0xA1 and 0x70; the next stop is PIT control **0x34**
 alarm/periodic interrupts remain unimplemented; register support is not IRQ
 support. Foundation run 45749694948 passed Ubuntu and Windows. Android boot,
 ANR fixes on the affected guest, image slimming and GPU integration are pending.
+
+
+## Latest milestone: real Linux diagnostic userspace
+
+The PIT0 blocker above is superseded by actual-kernel run **45751571983**:
+three real Linux6.6 boots executed PID1, two nanosleep calls and a diagnostic
+readiness marker. PIT0 -> PIC IRQ0 -> WHP external interrupt and HLT wake/EOI
+are tested; no QEMU involved. Foundation **45751571735** passed both platforms.
+See [engine-progress-report.md](engine-progress-report.md) for current status,
+verified evidence, guest stability changes and remaining Android/GPU/image work.
+Full Android launch to usable Home within roughly60seconds is still unverified.

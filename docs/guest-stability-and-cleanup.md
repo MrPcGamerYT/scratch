@@ -64,3 +64,25 @@ still required. The independent Rust engine currently stops during early Linux
 platform initialization; it cannot yet validate Android ANRs or the final
 60-second boot target. Continue interrupt-controller/CPU capability work in
 parallel, without claiming a completed Android emulator.
+
+
+## Latest safeguards
+
+The ADB CI Home gate now adds a 30-second bounded ANR/crash-log observation window
+and captures input/compositor state. A historical `am_crash` event fails the
+assessment; logs are never cleared to get a pass. This is not app interaction
+or a long soak test. The native image Home-check recipe now bounds launch and
+activity/ANR queries; rebuilding and validating a guest image is still needed.
+
+Inventory-only cleanup review (no changes or executable removal plan):
+
+```sh
+python guest-tools/plan_cleanup.py --packages-json PRIVATE_CAPTURE/packages.json \
+  --home-package ACTUAL.INSTALLED.HOME --file-editor-package ACTUAL.INSTALLED.EDITOR \
+  --output NEW_REVIEW.json
+```
+
+Replace the two IDs with inventory-proven installed packages. The planner refuses
+missing/invalid protected IDs and failed/unrecognized captures; it retains all
+unreviewed packages. No space or boot-time savings are asserted. See
+[engine-progress-report.md](engine-progress-report.md) for remaining work.

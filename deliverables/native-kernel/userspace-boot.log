@@ -1,0 +1,121 @@
+Linux version 6.6.0+ (runner@runnervm0j63q) (gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #1 Thu Nov 26 02:44:24 UTC 2026
+Command line: earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1
+unchecked MSR access error: RDMSR from 0xc0010140 at rIP: 0xffffffff8101ae1f (0xffffffff8101ae1f)
+Call Trace:
+ <TASK>
+ ? 0xffffffff81022ee1
+ ? 0xffffffff81023187
+ ? 0xffffffff816d0acc
+ ? 0xffffffff816c582f
+ ? 0xffffffff8101ae1f
+ ? 0xffffffff8101ae6f
+ ? 0xffffffff8101b112
+ ? 0xffffffff816ca114
+ ? 0xffffffff816c60c3
+ ? 0xffffffff816bf4c2
+ ? 0xffffffff816c5aac
+ ? 0xffffffff816c5b59
+ ? 0xffffffff81000164
+ </TASK>
+[Firmware Bug]: TSC doesn't count with P0 frequency!
+BIOS-provided physical RAM map:
+BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+BIOS-e820: [mem 0x000000000009fc00-0x00000000000fffff] reserved
+BIOS-e820: [mem 0x0000000000100000-0x000000000fffffff] usable
+printk: bootconsole [earlyser0] enabled
+NX (Execute Disable) protection: active
+APIC: Static calls initialized
+last_pfn = 0x10000 max_arch_pfn = 0x400000000
+x86/PAT: PAT support disabled because CONFIG_X86_PAT is disabled in the kernel.
+x86/PAT: Configuration [0-7]: WB  WT  UC- UC  WB  WT  UC- UC  
+Using GB pages for direct mapping
+RAMDISK: [mem 0x0ffff000-0x0fffffff]
+Zone ranges:
+  DMA32    [mem 0x0000000000001000-0x000000000fffffff]
+  Normal   empty
+Movable zone start for each node
+Early memory node ranges
+  node   0: [mem 0x0000000000001000-0x000000000009efff]
+  node   0: [mem 0x0000000000100000-0x000000000fffffff]
+Initmem setup node 0 [mem 0x0000000000001000-0x000000000fffffff]
+On node 0, zone DMA32: 1 pages in unavailable ranges
+On node 0, zone DMA32: 97 pages in unavailable ranges
+No local APIC present
+APIC: disable apic facility
+APIC: Switched APIC routing to: noop
+[mem 0x10000000-0xffffffff] available for PCI devices
+clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns
+Kernel command line: earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1
+Unknown kernel command line parameters "nokaslr acpi=off pci=off maxcpus=1", will be passed to user space.
+random: crng init done
+Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+Built 1 zonelists, mobility grouping on.  Total pages: 64256
+mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+Memory: 248088K/261752K available (4096K kernel code, 756K rwdata, 292K rodata, 516K init, 768K bss, 13408K reserved, 0K cma-reserved)
+SLUB: HWalign=64, Order=0-1, MinObjects=0, CPUs=1, Nodes=1
+NR_IRQS: 4352, nr_irqs: 24, preallocated irqs: 16
+Console: colour dummy device 80x25
+printk: console [ttyS0] enabled
+printk: console [ttyS0] enabled
+printk: bootconsole [earlyser0] disabled
+printk: bootconsole [earlyser0] disabled
+APIC disabled via kernel command line
+APIC: Keep in PIC mode(8259)
+tsc: Unable to calibrate against PIT
+tsc: No reference (HPET/PMTIMER) available
+tsc: Marking TSC unstable due to could not calculate TSC khz
+Calibrating delay loop... 28413.95 BogoMIPS (lpj=56827904)
+Last level iTLB entries: 4KB 512, 2MB 512, 4MB 256
+Last level dTLB entries: 4KB 3072, 2MB 3072, 4MB 1536, 1GB 0
+CPU: AMD EPYC 9V74 80-Core Processor (family: 0x19, model: 0x11, stepping: 0x1)
+Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+Spectre V2 : Kernel not compiled with retpoline; no mitigation available!
+Spectre V2 : Vulnerable
+Spectre V2 : Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch
+Speculative Store Bypass: Vulnerable
+Speculative Return Stack Overflow: IBPB-extending microcode not applied!
+Speculative Return Stack Overflow: WARNING: See https://kernel.org/doc/html/latest/admin-guide/hw-vuln/srso.html for mitigation options.
+Speculative Return Stack Overflow: WARNING: kernel not compiled with CPU_SRSO.
+x86/fpu: Supporting XSAVE feature 0x001: 'x87 floating point registers'
+x86/fpu: Supporting XSAVE feature 0x002: 'SSE registers'
+x86/fpu: Supporting XSAVE feature 0x004: 'AVX registers'
+x86/fpu: Supporting XSAVE feature 0x020: 'AVX-512 opmask'
+x86/fpu: Supporting XSAVE feature 0x040: 'AVX-512 Hi256'
+x86/fpu: Supporting XSAVE feature 0x080: 'AVX-512 ZMM_Hi256'
+x86/fpu: Supporting XSAVE feature 0x800: 'Control-flow User registers'
+x86/fpu: xstate_offset[2]:  576, xstate_sizes[2]:  256
+x86/fpu: xstate_offset[5]:  832, xstate_sizes[5]:   64
+x86/fpu: xstate_offset[6]:  896, xstate_sizes[6]:  512
+x86/fpu: xstate_offset[7]: 1408, xstate_sizes[7]: 1024
+x86/fpu: xstate_offset[11]: 2432, xstate_sizes[11]:   16
+x86/fpu: Enabled xstate features 0x8e7, context size is 2448 bytes, using 'compacted' format.
+pid_max: default: 4096 minimum: 301
+Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+Performance Events: 
+no APIC, boot with the "lapic" boot parameter to force-enable it.
+no hardware sampling interrupt available.
+Broken PMU hardware detected, using software events only.
+Failed to access perfctr msr (MSR c0010000 is ffffffffffffffff)
+signal: max sigframe size: 2960
+devtmpfs: initialized
+clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+clocksource: Switched to clocksource refined-jiffies
+platform rtc_cmos: registered platform RTC device (no PNP device found)
+Unpacking initramfs...
+Freeing initrd memory: 4K
+workingset: timestamp_bits=62 max_order=16 bucket_order=0
+Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+serial8250: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16450
+i8042: No controller found
+microcode: CPU0: patch_level=0xffffffff
+microcode: Microcode Update Driver: v2.2.
+Freeing unused kernel image (initmem) memory: 516K
+Write protecting the kernel read-only data: 6144k
+Freeing unused kernel image (rodata/data gap) memory: 1756K
+Run /init as init process
+NEXUS_USERSPACE_PID1
+NEXUS_USERSPACE_TICK
+NEXUS_USERSPACE_TICK
+NEXUS_USERSPACE_READY
