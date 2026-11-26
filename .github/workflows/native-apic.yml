@@ -1,0 +1,86 @@
+name: Native Linux APIC OS checkpoint
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_run:
+        description: 'Reuse native-apic-linux-kernel artifact from this run (optional)'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  kernel:
+    if: ${{ inputs.kernel_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ffc253263a1375a65fa6c9f62a893e9767fbebfa
+          path: kernel-source
+      - run: sudo apt-get update && sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev e2fsprogs
+      - name: Build pinned tiny x86-64 Linux kernel, not an Android image
+        shell: bash
+        run: |
+          set -o pipefail
+          cd kernel-source
+          make tinyconfig
+          scripts/config -e 64BIT -e PRINTK -e TTY -e EARLY_PRINTK -e SERIAL_8250 -e SERIAL_8250_CONSOLE -e BINFMT_ELF -e BLK_DEV_INITRD -e RD_GZIP -e DEVTMPFS -e PROC_FS -e SYSFS -e DEBUG_KERNEL -e BLOCK -e PARTITION_ADVANCED -e MSDOS_PARTITION -e VIRTIO_MENU -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_MMIO_CMDLINE_DEVICES -e VIRTIO_BLK -e EXT4_FS -e FB -e FB_SIMPLE -e SYSFB_SIMPLEFB -d RANDOMIZE_BASE -e SMP -e X86_MPPARSE -e X86_LOCAL_APIC -e X86_IO_APIC -d HYPERV -d PARAVIRT -d X86_5LEVEL
+          make olddefconfig
+          for setting in SMP X86_LOCAL_APIC X86_IO_APIC X86_MPPARSE BLOCK MSDOS_PARTITION VIRTIO VIRTIO_MMIO VIRTIO_MMIO_CMDLINE_DEVICES VIRTIO_BLK EXT4_FS FB FB_SIMPLE SYSFB_SIMPLEFB; do
+            grep -q "CONFIG_${setting}=y" .config || { echo "Missing $setting"; exit 1; }
+          done
+          if ! make -j4 bzImage 2>&1 | tee ../kernel-build.log; then
+            tail -8 ../kernel-build.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          mkdir -p ../apic-kernel-artifact
+          cp arch/x86/boot/bzImage ../apic-kernel-artifact/
+          cp .config ../apic-kernel-artifact/kernel.config
+          cp COPYING ../apic-kernel-artifact/
+          echo 'Linux v6.6 source: https://github.com/torvalds/linux/tree/ffc253263a1375a65fa6c9f62a893e9767fbebfa; tinyconfig + explicit flags in native-kernel.yml. TEST KERNEL ONLY; no Android certification.' > ../apic-kernel-artifact/SOURCE.txt
+          cd ../apic-kernel-artifact
+          truncate -s 32M filesystem.ext4
+          mkfs.ext4 -F -b 4096 -L NEXUSTEST -O ^64bit,^metadata_csum_seed,^orphan_file filesystem.ext4
+          e2fsck -fn filesystem.ext4
+          sha256sum bzImage filesystem.ext4 > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-apic-linux-kernel
+          path: apic-kernel-artifact/
+  apic-os:
+    needs: kernel
+    if: ${{ always() && (needs.kernel.result == 'success' || inputs.kernel_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-apic-linux-kernel
+          path: apic-kernel-artifact
+          run-id: ${{ inputs.kernel_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build strict native engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Real Linux APIC enumeration and PID1 clock checkpoint
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_apic_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-apic-os-evidence
+          path: |
+            apic-*.log
+            apic-*.json
+            apic-*.cpio
+            native-engine-*.log
