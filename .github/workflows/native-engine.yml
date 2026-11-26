@@ -4,6 +4,7 @@ on:
     paths:
       - 'rust/nexus-engine/**'
       - 'tests/native_engine_cli_test.py'
+      - 'tests/native_android*'
       - 'tests/whp_sdk_abi.cpp'
       - 'tests/build_native_engine.py'
       - '.github/workflows/native-engine.yml'
@@ -41,6 +42,8 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Android manifest and read-only boot-contract host tests
+        run: python tests/native_android_tools_tests.py
       - name: Independent CLI / disk-format reference checks
         run: |
           set -o pipefail

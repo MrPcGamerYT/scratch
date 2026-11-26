@@ -1,5 +1,5 @@
 //! Dual 8259 initialization/register subset for early PC bring-up.
-//! IRQ0 edge and dedicated IRQ5 edge/ELCR-level input. No slave IRQ sources,
+//! IRQ0/IRQ4 edge and dedicated IRQ5 edge/ELCR-level input. No slave IRQ sources,
 //! auto-EOI, rotation, poll or special-mask mode. Host ports never exposed.
 //! External CPU injection belongs to the WHP backend.
 #[derive(Default)]
@@ -117,6 +117,19 @@ mod tests {
         let mut p=PicPair::default();
         for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0)] {p.access(port,true,value).unwrap();}
         p
+    }
+    #[test] fn uart_edge_latches_while_masked_and_prioritizes_above_disk() {
+        let mut p=initialized();p.access(0x21,true,0x10).unwrap();
+        p.set_irq4(true);p.set_irq4(false);assert_eq!(p.pending_vector(),None);
+        p.set_irq5(true);p.access(0x21,true,0).unwrap();assert_eq!(p.pending_vector(),Some(0x24));
+        p.acknowledge().unwrap();assert_eq!(p.pending_vector(),None);
+        p.raise_irq0();assert_eq!(p.pending_vector(),Some(0x20));p.acknowledge_irq0().unwrap();
+        p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),None);
+        p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),Some(0x25));
+        p.acknowledge().unwrap();p.access(0x20,true,0x20).unwrap();
+        p.set_irq4(true);assert_eq!(p.pending_vector(),Some(0x24));p.acknowledge().unwrap();
+        p.access(0x20,true,0x20).unwrap();p.set_irq4(true);assert_eq!(p.pending_vector(),None);
+        p.set_irq4(false);p.set_irq4(true);assert_eq!(p.pending_vector(),Some(0x24));
     }
     #[test] fn dedicated_level_irq_mask_ack_eoi_reassert_and_deassert() {
         let mut p=initialized();p.access(0x4d0,true,0x20).unwrap();
