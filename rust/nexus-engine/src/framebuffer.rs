@@ -30,12 +30,16 @@ pub fn rgb(pixels:&[u8])->Result<Vec<u8>,String> {
     for pixel in pixels[..PIXEL_BYTES].chunks_exact(4) {bytes.extend_from_slice(&[pixel[2],pixel[1],pixel[0]]);}
     Ok(bytes)
 }
-pub fn capture(path:&Path,pixels:&[u8])->Result<(),String> {
+pub fn write_capture(file:&mut dyn Write,pixels:&[u8])->Result<(),String> {
     let rgb=rgb(pixels)?;
-    let mut file=OpenOptions::new().write(true).create_new(true).open(path).map_err(|e|e.to_string())?;
     write!(file,"P6\n{WIDTH} {HEIGHT}\n255\n").map_err(|e|e.to_string())?;
     file.write_all(&rgb).map_err(|e|e.to_string())?;
     file.flush().map_err(|e|e.to_string())
+}
+pub fn capture(path:&Path,pixels:&[u8])->Result<(),String> {
+    if pixels.len()!=MAPPED_BYTES {return Err("Invalid framebuffer mapping length".into());}
+    let mut file=OpenOptions::new().write(true).create_new(true).open(path).map_err(|e|e.to_string())?;
+    write_capture(&mut file,pixels)
 }
 #[cfg(test)]
 mod tests {

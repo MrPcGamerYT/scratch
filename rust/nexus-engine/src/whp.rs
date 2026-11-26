@@ -256,6 +256,8 @@ mod windows {
     fn load_kernel_plan<T>(plan:&crate::kernel::KernelPlan,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         use crate::kernel;
         plan.validate_regions()?;
+        // Claim the capture exclusively before starting a VM or allowing disk writes.
+        let mut output=plan.framebuffer_output.as_ref().map(|path|std::fs::OpenOptions::new().create_new(true).write(true).open(path).map_err(|e|e.to_string())).transpose()?;
         with_guest_at(&[],0,plan.ram_bytes,|partition,memory| {
             for region in &plan.regions {
                 unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
@@ -268,10 +270,10 @@ mod windows {
                 Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(kernel::BOOT_PARAMS as u64),Register::scalar(0)])?;
             let surface=if plan.framebuffer_output.is_some() {Some(allocate_at(partition,crate::framebuffer::MAPPED_BYTES,crate::framebuffer::GPA)?)} else {None};
             let result=action(partition,memory);
-            if let (Some(path),Some(surface))=(&plan.framebuffer_output,&surface) {
+            if let (Some(file),Some(surface))=(&mut output,&surface) {
                 // Run returned; no vCPU or worker is accessing the framebuffer during capture.
                 let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
-                let capture=crate::framebuffer::capture(path,pixels);
+                let capture=crate::framebuffer::write_capture(file,pixels);
                 if result.is_ok() {capture?;}
             }
             result
