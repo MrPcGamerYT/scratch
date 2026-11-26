@@ -131,10 +131,10 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         let now=std::time::Instant::now();
         local.advance_ns(now.duration_since(ctx.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;ctx.timer_clock=now;
         if let Some(vector)=local.pending() {
-            let names=[0x11,0x80000001,0x80000000];let mut values=[Register::scalar(0);3];
-            unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),3,values.as_mut_ptr()),"LAPIC interrupt window")?;}
+            let names=[0x11,0x80000001,0x80000000,0x80000002];let mut values=[Register::scalar(0);4];
+            unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),4,values.as_mut_ptr()),"LAPIC interrupt window")?;}
             let scalar=|n:usize|u64::from_le_bytes(values[n].0[..8].try_into().unwrap());
-            if scalar(0)&0x200!=0&&scalar(1)&1==0&&scalar(2)&1==0 {
+            if scalar(0)&0x200!=0&&scalar(1)&1==0&&scalar(2)&1==0&&scalar(3)&1==0 {
                 let name=0x80000000;let value=Register::scalar(1|(u64::from(vector)<<16));
                 unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"LAPIC fixed interrupt injection")?;}
                 local.acknowledge(vector)?;halted=false;fabric.injections+=1;
@@ -149,7 +149,13 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         if exit.reason()==0x1000 {
             let word=|at|u32::from_le_bytes(exit.0[at..at+4].try_into().unwrap());
             let msr=word(52);let write=word(48)&1!=0;
-            if msr!=0x1b {return Err(format!("Unsupported APIC-profile MSR 0x{msr:x} write={write}"));}
+            if msr!=0x1b {
+                // Unsupported RDMSR/WRMSR architecturally faults at the current RIP.
+                // Linux rdmsr_safe probes rely on #GP fixups, not invented values.
+                let name=0x80000002;let value=Register::scalar(1|(1<<8)|(13<<16));
+                unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"Unsupported MSR #GP(0)")?;}
+                continue;
+            }
             let base=0xfee00800u64|if index==0 {0x100} else {0};
             if write {
                 let value=u64::from(word(56))|(u64::from(word(64))<<32);
