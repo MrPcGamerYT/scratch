@@ -1,0 +1,31 @@
+{
+  "tested_commit": "899e8437d765171d2f5f4e66e4637e6d2ad6ae1b",
+  "run": "https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956761",
+  "scope": "Repeated Linux diagnostic PID1 only, not Android Home or Android disk integration",
+  "metrics_first_sample": {
+    "schema": 1,
+    "clock": "host_monotonic",
+    "origin": "engine_main_including_input_load",
+    "android_home_target_ms": 100000,
+    "android_home_ready_ms": null,
+    "total_boot_verified": false,
+    "target_met": null,
+    "header_validated_ms": 0,
+    "vm_ready_ms": 10,
+    "vcpu_run_requested_ms": 10,
+    "linux_banner_ms": 139,
+    "linux_userspace_ready_ms": 666,
+    "stopped_ms": 670,
+    "vcpu_exits": 14903,
+    "pit_channel2_programs": 4,
+    "pit_accesses": 2257,
+    "pic_accesses": 253,
+    "pic_initializations": 2,
+    "pit0_programs": 1,
+    "pit0_edges": 102,
+    "irq0_injections": 59,
+    "halt_waits": 50,
+    "serial_bytes": 5955,
+    "stop_reason": "Linux diagnostic userspace checkpoint reached; Android boot not implemented"
+  }
+}

@@ -6,6 +6,10 @@ a direct Linux **loader**, not a new Linux kernel written from scratch.
 
 ## Current result: diagnostic userspace
 
+The user has revised the Android launch-to-usable-Home goal to approximately
+**100 seconds**. Historical sections and archived timing JSON below retain the
+original 60-second target as evidence; new runtime reports use 100000 ms.
+
 Actual-kernel run **45751571983** at `ca99d3b` passed three boots to a real
 Linux diagnostic PID1, including two successful nanosleep returns. PIT0/PIC
 IRQ0 and WHP external interrupt injection now support this test. Foundation
@@ -13,7 +17,7 @@ IRQ0 and WHP external interrupt injection now support this test. Foundation
 [the current progress/remaining-work report](engine-progress-report.md) and
 `deliverables/native-kernel/userspace-*` for exact evidence and limitations.
 This is not Android, a general Linux distribution, GPU certification or a
-60-second Android Home benchmark. Earlier blockers below are historical.
+100-second Android Home benchmark. Earlier blockers below are historical.
 
 ## Historical early-entry result
 

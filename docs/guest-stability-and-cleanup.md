@@ -53,7 +53,7 @@ or graphics-performance certification. CPU/IO/memory errors remain listed in
    disk stalls must be fixed at their source, not attributed to “bloat” without
    evidence.
 6. Measure process launch through usable Home and post-boot responsiveness
-   separately. Approximately 60 seconds total Android boot remains a target,
+   separately. Approximately 100 seconds total Android boot remains a target,
    not a verified result for the independent engine.
 
 ## Remaining work
@@ -62,7 +62,7 @@ No packages have been removed by this change and no new guest image has been
 published. A real affected-guest run and repeated app-interaction/soak tests are
 still required. The independent Rust engine currently stops during early Linux
 platform initialization; it cannot yet validate Android ANRs or the final
-60-second boot target. Continue interrupt-controller/CPU capability work in
+100-second boot target. Continue interrupt-controller/CPU capability work in
 parallel, without claiming a completed Android emulator.
 
 

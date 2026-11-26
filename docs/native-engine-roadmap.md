@@ -207,4 +207,19 @@ readiness marker. PIT0 -> PIC IRQ0 -> WHP external interrupt and HLT wake/EOI
 are tested; no QEMU involved. Foundation **45751571735** passed both platforms.
 See [engine-progress-report.md](engine-progress-report.md) for current status,
 verified evidence, guest stability changes and remaining Android/GPU/image work.
-Full Android launch to usable Home within roughly60seconds is still unverified.
+Full Android launch to usable Home within roughly 100 seconds is still unverified.
+
+
+## Latest storage milestone and revised boot goal
+
+The Android Home goal is now approximately **100 seconds**, not the earlier
+60-second goal. New JSON reports use 100000 ms, with readiness/target-met still
+null. Archived measurements are not rewritten.
+
+At `899e843`, [foundation 45753956772](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956772)
+verified a ZLAG-backed ATA primary-master PIO read-only device: real guest
+IDENTIFY and exact sector reads, write-command ABRT, three repetitions and source
+SHA preservation. Linux diagnostic PID1 regression run **45753956761** passed.
+See [native-ata-storage.md](native-ata-storage.md). No writable Android data,
+IRQ14, DMA, block-driver mount, player connection or accelerated graphics is
+implied. The ATA device is currently attached only by its explicit live fixture.

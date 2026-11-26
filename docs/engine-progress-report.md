@@ -6,6 +6,28 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## Latest update: storage bring-up and revised target
+
+The user has revised the goal to **approximately 100 seconds from launch to
+usable Android Home**. New runtime/test reports use `android_home_target_ms:
+100000`; archived 60-second reports are preserved as historical evidence.
+Android readiness and target-met fields remain null.
+
+Added a verified ZLAG-backed primary-master ATA LBA28 PIO read-only device and a
+live guest test. Guest code issued IDENTIFY and a sector read, placed exact disk
+bytes in guest RAM, and received an error for a prohibited write. Three Windows
+WHP repetitions and source-integrity checks passed in
+[foundation 45753956772](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956772).
+Repeated Linux diagnostic PID1 boots also passed with the new target in
+[checkpoint 45753956761](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956761).
+
+This is polled read-only bring-up, **not** writable Android storage, Linux
+filesystem mounting or player integration. No IRQ14/DMA/persistent overlay is
+implemented. The normal Linux boot still uses the initramfs and has no ATA disk
+attached. See [native-ata-storage.md](native-ata-storage.md) for the exact contract
+and limitations. New-target evidence is in
+`deliverables/native-kernel/100s-target-checkpoint.json`.
+
 ## Implemented and verified in this work
 
 ### 1. Linux timer, interrupts and userspace
@@ -82,7 +104,7 @@ from engine main, including input loading. It recorded 59 IRQ0 injections and
 it is not Android, a cold-cache benchmark, the Qt player's startup time or a
 physical Windows 10 result. Host CPU/MSR and TSC calibration warnings remain.
 
-The approximately **60-second launch-to-usable-Android-Home target is unverified**.
+The approximately **100-second launch-to-usable-Android-Home target is unverified**.
 Android Home readiness and target-met fields deliberately remain null. This work
 does not establish real-time timer accuracy, GPU speed or Android boot speed.
 
@@ -92,14 +114,14 @@ does not establish real-time timer accuracy, GPU speed or Android boot speed.
 |---|---|
 | Linux platform | Broader CPU/MSR capability contract and clock calibration; APIC/SMP and additional interrupts/devices; sustained userspace tests. Current support is one vCPU and a tiny initramfs, not a general Linux distribution. |
 | Android boot | Android-compatible kernel/device contract, system/vendor/data and init integration, usable storage device path, Android framework/services and repeatable Home readiness. |
-| `gustimg.zlag` | Runtime guest storage integration, safe writes/overlays and full Android disk lifecycle. Format validation/first-sector execution is not a working Android disk device. |
+| `gustimg.zlag` | A read-only ATA PIO device now passes a live guest test; normal Linux/player attachment, writable data/overlays, guest block-driver integration and the Android disk lifecycle remain unfinished. |
 | App freezes | Capture and reproduce on the affected guest/player, correlate ANR traces with CPU/memory/IO/compositor behavior, apply a demonstrated root-cause fix and test sustained app interactions. No confirmed ANR fix yet. |
 | Slim guest | Inventory the exact candidate, review dependencies, test changes on a new overlay/image, retain file editor/launcher/core Android services and validate two boots plus applications. |
 | Graphics/GPU | Real virtual graphics device, matching Android drivers, host GPU-backed renderer and measured DirectX/OpenGL/Vulkan integration. No accelerated graphics was added in this work. |
 | Player/devices | Wire the new engine into the existing player; display, input, native controls, cursor alignment, audio/network and portable Windows packaging. Existing editor/player files are preserved, not migrated. |
 | Performance | Measure complete player launch through usable Android Home and post-boot responsiveness on representative low/high-end Windows 10 PCs. Optimize from those measurements, not the diagnostic PID1 number. |
 
-**Next dependency:** an Android-capable storage/device/CPU platform, followed by
+**Next dependency:** writable, interrupt-capable/batched Android storage plus the device/CPU platform, followed by
 Android init and Home. GPU/device and affected-guest stability work remain major
 engineering tasks; this report does not imply they can be completed by simply
 removing more applications.
