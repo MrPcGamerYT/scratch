@@ -7,6 +7,8 @@ on:
       - 'tests/native_initramfs.py'
       - 'rust/nexus-engine/src/kernel.rs'
       - 'rust/nexus-engine/src/uart.rs'
+      - 'rust/nexus-engine/src/ata.rs'
+      - 'rust/nexus-engine/src/overlay.rs'
       - 'rust/nexus-engine/src/pit.rs'
       - 'rust/nexus-engine/src/pit0.rs'
       - 'rust/nexus-engine/src/whp.rs'

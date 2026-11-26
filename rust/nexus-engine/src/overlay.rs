@@ -137,6 +137,18 @@ mod tests {
         let mut bad=good.clone();bad[HEADER+20]^=1;std::fs::write(&t.cow,&bad).unwrap();
         assert!(Overlay::recover_incomplete_tail(&t.base,&t.cow).is_err());assert_eq!(std::fs::read(&t.cow).unwrap(),bad);
     }
+    #[test] fn host_write_failure_poisoning_preserves_committed_data() {
+        let t=Temp::new();let original=std::fs::read(&t.base).unwrap();
+        let mut o=Overlay::create(&t.base,&t.cow).unwrap();o.write_sectors(0,&[3;512]).unwrap();
+        let committed=std::fs::read(&t.cow).unwrap();
+        // Substitute a read-only handle to deterministically inject a host write error.
+        o.file=File::open(&t.cow).unwrap();assert!(o.write_sectors(1,&[9;512]).is_err());
+        assert!(o.write_sectors(2,&[8;512]).is_err());assert!(o.flush().is_err());
+        assert!(o.read_sectors(0,&mut [0;512]).is_err());drop(o);
+        assert_eq!(std::fs::read(&t.cow).unwrap(),committed);
+        let mut reopened=Overlay::open(&t.base,&t.cow).unwrap();let mut sector=[0;512];reopened.read_sectors(0,&mut sector).unwrap();assert_eq!(sector,[3;512]);
+        assert_eq!(std::fs::read(&t.base).unwrap(),original);
+    }
     #[test] fn wrong_base_and_header_refused_without_mutating_overlay() {
         let t=Temp::new();drop(Overlay::create(&t.base,&t.cow).unwrap());let original=std::fs::read(&t.cow).unwrap();
         let other=t.root.join("other.raw");let other_z=t.root.join("other.zlag");std::fs::write(&other,[8;2048]).unwrap();image::import_raw(&other,&other_z).unwrap();
