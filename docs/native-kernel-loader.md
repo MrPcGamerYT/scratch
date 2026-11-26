@@ -118,3 +118,40 @@ Android kernel/drivers, a bootable Android `gustimg.zlag` contract, safe disk
 persistence, GPU transport plus DirectX/OpenGL/Vulkan rendering, audio, input,
 networking and measured Windows 10 performance all remain on the roadmap.
 The old player, existing guest bases and personal instance overlays are untouched.
+
+## PIT progress and 60-second boot target
+
+Commit `6d92774`, real-kernel run **45746596939**, passed three actual
+Linux 6.6 early-entry checkpoints with a clock-driven PIT channel 2, binary
+mode 0, ports 0x42/0x43/0x61. It uses elapsed monotonic nanoseconds, not an
+I/O-count shortcut or constant-ready status. Unsupported PIT modes remain errors.
+Linux progressed beyond the previous port 0x61 blocker and stopped at an
+unsupported **write to interrupt-controller port 0xA1**, RIP
+`0xffffffff81011538`. This is not full Linux or Android boot.
+
+The three engine-main-to-Linux-banner samples were **188, 176, 179 ms**;
+engine-main-to-stop samples were **339, 335, 329 ms**. These are hosted
+Windows Server 2022 early-kernel measurements, with uncontrolled host caches,
+not cold-boot measurements or Windows 10 performance certification. Captured
+output also shows `Fast TSC calibration failed`; one sample includes an
+unsupported host-derived AMD MSR warning. CPU feature exposure and clock
+calibration require additional platform work; clearing port 0x61 does not
+certify timing correctness for Android.
+
+The user's approximately **60-second total boot** requirement means emulator
+launch to verified usable Android Home. It is a pending engineering target,
+not achieved by reaching a Linux banner. Each boot writes a create-new
+`<serial-log>.timing.json` with header, VM creation, first vCPU request,
+Linux banner, stop, VM exits and PIT counters. The external checkpoint also
+measures process launch through exit. Android readiness and target-met values
+are deliberately null and `total_boot_verified` is false until real Android
+Home readiness exists. Current launch measurement excludes a future player
+startup and image-preparation phase, which must be included in the final
+end-to-end benchmark.
+
+Evidence: https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45746596939
+Next platform work: interrupt-controller initialization and safe advertised
+CPU/MSR capabilities, followed by clock/interrupt delivery and userspace.
+
+Foundation run **45746596905** also passed Ubuntu and Windows unit tests,
+strict Clippy, release builds and repeated Windows WHP contract checks.
