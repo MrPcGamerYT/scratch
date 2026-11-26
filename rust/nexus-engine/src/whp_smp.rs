@@ -1,6 +1,6 @@
 // Included inside whp::windows. Experimental two-vCPU startup frontend.
 // Guest INIT/SIPI commands drive architectural AP startup; markers are guest stores.
-// This is not the production Linux SMP scheduler or a complete LAPIC/IOAPIC.
+// Exercises fixed IPI routing, not the production Linux SMP scheduler or full LAPIC/IOAPIC.
 fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])->Result<(),String> {
     if index>=partition.2||names.len()!=values.len() {return Err("Invalid indexed register access".into());}
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
@@ -87,7 +87,6 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
-    let mut mmio_count=0;
     for _ in 0..50000 {
         if std::time::Instant::now()>=deadline {
             let names=[0x10,0x11];let mut state=[Register::scalar(0);2];
@@ -110,12 +109,9 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
-        if index==1&&exit.reason()!=0x2001&&mmio_count<4 {eprintln!("AP_EXIT reason=0x{:x} rip=0x{:x} CSbase=0x{:x}",exit.reason(),u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[16..24].try_into().unwrap()));}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
-        if exit.reason()!=1 {eprintln!("SMP_STOP cpu={index} reason=0x{:x} RIP=0x{:x}",exit.reason(),u64::from_le_bytes(exit.0[32..40].try_into().unwrap()));return Ok(exit.reason());}
-        mmio_count+=1;
-        if mmio_count<=16 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
+        if exit.reason()!=1 {return Ok(exit.reason());}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
         let hr=unsafe {WHvEmulatorTryMmioEmulation(emulator.handle,(&mut ctx as *mut ApicContext).cast(),exit.0[8..].as_ptr(),access.0.as_ptr(),&mut status)};
         if let Some(e)=ctx.error.take() {return Err(format!("{e}; RIP=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap())));}check(hr,"APIC emulate")?;
@@ -154,6 +150,9 @@ fn smp_cycle()->Result<(),String> {
         0xa1,0x20,0x01,0xe0,0xfe,0xa3,0x3c,0xa0,0,0,
         0xc7,0x05,0x80,0,0xe0,0xfe,0,0,0,0,
         0xa1,0x20,0x01,0xe0,0xfe,0xa3,0x34,0xa0,0,0,
+        0xfa, // queue another self IPI with IF=0, then open IF without MMIO exits
+        0xc7,0x05,0,3,0xe0,0xfe,0x40,0,4,0,
+        0xfb,0x90,0x83,0x3d,0x30,0xa0,0,0,2,0x75,0xf7,
         0xc7,0x05,0x10,0x03,0xe0,0xfe,0,0,0,1,
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x41,0,0,0,
         0x66,0x83,0x3d,0x40,0xa0,0,0,1,0x75,0xf6,
@@ -212,9 +211,6 @@ fn smp_cycle()->Result<(),String> {
                         cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
                         let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
                         unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),2,values.as_ptr()),"Guest-requested SIPI entry")?;}
-                        let names=[0x13,0x10,0x1c];let mut state=[Register::scalar(0);3];
-                        unsafe {check(WHvGetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),3,state.as_mut_ptr()),"AP startup state readback")?;}
-                        eprintln!("AP_ENTRY CSbase=0x{:x} RIP=0x{:x} CR0=0x{:x}",u64::from_le_bytes(state[0].0[..8].try_into().unwrap()),u64::from_le_bytes(state[1].0[..8].try_into().unwrap()),u64::from_le_bytes(state[2].0[..8].try_into().unwrap()));
                         return run_index(handle,1,ram,bytes,None,ap_lapics);
                     }
                     StartupEvent::Sipi(_)=>return Err("SIPI received before INIT".into()),
@@ -232,7 +228,7 @@ fn smp_cycle()->Result<(),String> {
     let marker=unsafe {*memory.address.cast::<u8>().add(0xa000)};
     if marker!=0x5a {return Err("AP startup marker missing".into());}
     let word=|at:usize|unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(at).cast::<u32>())};
-    if word(0xa030)!=1||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
+    if word(0xa030)!=2||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
         return Err("Local fixed IPI handler/EOI/restored stack verification failed".into());
     }
     if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
