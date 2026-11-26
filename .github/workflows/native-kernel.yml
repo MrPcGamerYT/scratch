@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/native-kernel.yml'
       - 'tests/native_kernel_checkpoint.py'
+      - 'tests/native_initramfs.py'
       - 'rust/nexus-engine/src/kernel.rs'
       - 'rust/nexus-engine/src/uart.rs'
       - 'rust/nexus-engine/src/pit.rs'
@@ -89,6 +90,7 @@ jobs:
           path: |
             kernel-serial*.log
             kernel-serial*.timing.json
+            diagnostic-initramfs.cpio
             boot-timing-summary.json
             kernel-checkpoint.txt
             native-engine-*.log

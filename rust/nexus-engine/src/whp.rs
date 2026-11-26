@@ -347,6 +347,7 @@ mod windows {
                             }
                             if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
                             else {set_registers(partition,&[0x10],&[rip])?;}
+                            if !fixture&&trace.linux_userspace_ready_ms.is_some() {return Ok(Ok(()));}
                         }
                         reason=>{
                             let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());

@@ -36,7 +36,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             eprintln!("Starting experimental Linux entry at 0x{:x}; polled serial log: {}. Full kernel/platform boot is NOT implemented.",plan.entry,args[3]);
             let result=whp::boot_kernel(&plan,&mut log,&mut trace,start);
             trace.stopped_ms=Some(start.elapsed().as_millis() as u64);
-            trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||"No completed-boot protocol implemented".into());
+            trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||"Linux diagnostic userspace checkpoint reached; Android boot not implemented".into());
             timings.write_all(trace.json().as_bytes()).map_err(|e|e.to_string())?;
             timings.flush().map_err(|e|e.to_string())?;
             result

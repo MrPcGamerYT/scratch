@@ -7,6 +7,9 @@ import statistics
 import subprocess
 import time
 import traceback
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from native_initramfs import initramfs
 
 
 def notice(text):
@@ -21,11 +24,14 @@ def main():
     inspected=subprocess.run([exe,'inspect-kernel',str(kernel)],capture_output=True,text=True,timeout=20)
     assert inspected.returncode==0,inspected.stderr
     cmd='earlyprintk=serial,ttyS0,115200,keep earlycon=uart8250,io,0x3f8,115200n8 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1'
+    rd=Path("diagnostic-initramfs.cpio")
+    rd.write_bytes(initramfs())
+    rd_sha=hashlib.sha256(rd.read_bytes()).hexdigest()
     samples=[]
     for index in range(3):
         log=Path('kernel-serial.log' if index==0 else f'kernel-serial-{index+1}.log')
         start=time.perf_counter_ns()
-        p=subprocess.run([exe,'boot-kernel',str(kernel),str(log),cmd],capture_output=True,text=True,timeout=45)
+        p=subprocess.run([exe,'boot-kernel',str(kernel),str(log),cmd,str(rd)],capture_output=True,text=True,timeout=45)
         launch_to_exit_ms=(time.perf_counter_ns()-start)/1_000_000
         raw=log.read_bytes() if log.exists() else b''
         serial=raw.decode(errors='replace')
@@ -34,7 +40,7 @@ def main():
         sample={'sample':index+1,'kind':'first_process_launch' if index==0 else 'repeat_process_launch',
             'host_cache_state':'uncontrolled; NOT a cold-cache measurement','engine_exit':p.returncode,
             'launch_to_engine_exit_ms':launch_to_exit_ms,'full_boot_verified':False,
-            'kernel_sha256':expected,'serial_sha256':hashlib.sha256(raw).hexdigest(),'serial_bytes':len(raw),
+            'kernel_sha256':expected,'initramfs_sha256':rd_sha,'serial_sha256':hashlib.sha256(raw).hexdigest(),'serial_bytes':len(raw),
             'stderr':p.stderr,'metrics':metrics}
         samples.append(sample)
         Path('kernel-checkpoint.txt').write_text(json.dumps(samples,indent=2),encoding='utf-8')
@@ -57,8 +63,13 @@ def main():
         assert metrics['serial_bytes']==len(raw)
         assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
         if index==0:
-            notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-5000:]).decode())
+            notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-2048:]).decode())
             notice('NATIVE_TIMING='+json.dumps(metrics))
+        if metrics.get('linux_userspace_ready_ms') is not None:
+            assert p.returncode==0 and 'NEXUS_USERSPACE_PID1' in serial,serial[-1800:]
+            assert serial.count('NEXUS_USERSPACE_TICK')==2,serial[-1800:]
+            notice('Linux diagnostic PID1 and two nanosleep returns verified; Android boot remains false')
+        if index==0:
             notice('KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw[:2048]).decode())
             notice(f'KERNEL_SHA256={expected}; SERIAL_SHA256={hashlib.sha256(raw).hexdigest()}; SERIAL_BYTES={len(raw)}')
         notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; PIT programs={metrics["pit_channel2_programs"]}; stopped={metrics["stopped_ms"]} ms; FULL BOOT=false; blocker: '+p.stderr[-1300:])
