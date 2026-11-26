@@ -35,7 +35,10 @@ with tempfile.TemporaryDirectory() as folder:
     print('::notice::'+observation.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
     if sys.platform=='win32':
         assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
-        for _ in range(3): run('cpu-smoke')
+        for _ in range(3):
+            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
-    else: run('cpu-smoke',ok=False)
+        print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
+    else:
+        for cmd in ['cpu-smoke','io-smoke','cancel-smoke']: run(cmd,ok=False)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)

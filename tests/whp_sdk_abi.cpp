@@ -16,3 +16,12 @@ static_assert(WHvX64RegisterEs == 0x12 && WHvX64RegisterSs == 0x14 && WHvX64Regi
 static_assert(WHvX64RegisterCr0 == 0x1c && WHvX64RegisterCr3 == 0x1e && WHvX64RegisterCr4 == 0x1f);
 static_assert(WHvRunVpExitReasonX64Halt == 8);
 static_assert((WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute) == 7);
+
+static_assert(WHvRunVpExitReasonCanceled == 0x2001);
+static_assert(WHvRunVpExitReasonX64IoPortAccess == 2);
+static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, VpContext) == 8);
+static_assert(offsetof(WHV_VP_EXIT_CONTEXT, Rip) == 24);
+static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, IoPortAccess) == 48);
+static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, AccessInfo) == 20);
+static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, PortNumber) == 24);
+static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, Rax) == 32);
