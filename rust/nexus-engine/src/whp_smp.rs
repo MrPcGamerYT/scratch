@@ -138,11 +138,10 @@ pub fn smp_smoke()->Result<(),String> {
     f.ram[0x9000..0x9000+ap.len()].copy_from_slice(&ap);
     unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
     configure_fixture(&partition,&f)?;
-    registers_at(&partition,0,&[0x2003],&[Register::scalar(0xfee00900)])?;
-    registers_at(&partition,1,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x10,0x11,0x2003,0x80000005],&[
+    registers_at(&partition,1,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x10,0x11],&[
         Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::scalar(0),
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
-        Register::scalar(0),Register::scalar(2),Register::scalar(0xfee00800),Register::scalar(1)])?;
+        Register::scalar(0),Register::scalar(2)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
     let ((bsp,ap),expired)=bounded(&partition,5000,||std::thread::scope(|scope| {
         let (tx,rx)=std::sync::mpsc::channel();
@@ -155,8 +154,8 @@ pub fn smp_smoke()->Result<(),String> {
                         let mut cs=Register::segment(0x9b);
                         cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
                         cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
-                        let names=[0x13,0x10,0x80000005];let values=[cs,Register::scalar(0),Register::scalar(0)];
-                        unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),3,values.as_ptr()),"Guest-requested SIPI entry")?;}
+                        let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
+                        unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),2,values.as_ptr()),"Guest-requested SIPI entry")?;}
                         return run_index(handle,1,ram,bytes,None);
                     }
                     StartupEvent::Sipi(_)=>return Err("SIPI received before INIT".into()),
