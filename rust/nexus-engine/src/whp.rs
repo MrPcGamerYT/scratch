@@ -576,6 +576,9 @@ mod windows {
         })
     }
     pub fn timer_irq_smoke()->Result<(),String> {
+        timer_irq_mode(0x30)?;timer_irq_mode(0x38)
+    }
+    fn timer_irq_mode(control:u8)->Result<(),String> {
         use crate::cpu;
         let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
         f.idt_limit=0x107;
@@ -590,7 +593,7 @@ mod windows {
             let mut platform=crate::platform::EarlyPlatform::default();
             for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0xfe)] {platform.pic.access(port,true,value)?;}
             // Long enough to exercise HLT wait, short enough for deterministic CI budgets.
-            platform.pit0.access(0x43,true,0x30,0)?;
+            platform.pit0.access(0x43,true,control,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
             run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None)?;
