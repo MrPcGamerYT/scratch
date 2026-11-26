@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from native_initramfs import initramfs
 
 exe=str(Path('rust/nexus-engine/target/release/nexus-engine.exe').resolve())
