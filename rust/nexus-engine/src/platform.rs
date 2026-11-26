@@ -4,6 +4,7 @@ use crate::{ata::AtaPio,io::IoExit,pit::Pit2,pit0::Pit0,pic::PicPair,rtc::Rtc,ua
 pub struct EarlyPlatform {pub pci:crate::pci::EmptyPci,pub uart:EarlyUart,pub pit:Pit2,pub pit0:Pit0,pub pic:PicPair,pub rtc:Rtc,pub ata:Option<AtaPio>}
 impl EarlyPlatform {
     pub fn tick(&mut self,now_ns:u64) {
+        self.pic.set_irq4(self.uart.irq_asserted());
         if self.pit0.poll(now_ns) {self.pic.raise_irq0();}
     }
     pub fn access(&mut self,io:IoExit,now_ns:u64)->Result<Option<u64>,String> {

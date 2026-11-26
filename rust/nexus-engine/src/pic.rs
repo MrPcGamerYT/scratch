@@ -42,13 +42,14 @@ impl Controller {
     }
 }
 
-pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,elcr:u8}
+pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,irq4_high:bool,elcr:u8}
 impl Default for PicPair {
     fn default()->Self {
-        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,elcr:0}
+        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,irq4_high:false,elcr:0}
     }
 }
 impl PicPair {
+    pub fn set_irq4(&mut self,high:bool) {if high&&!self.irq4_high {self.master.irr|=0x10;}self.irq4_high=high;}
     pub fn raise_irq0(&mut self) {self.master.irr|=1;}
     /// Device line input. ELCR bit 5 selects level mode; otherwise only rising edges latch.
     pub fn set_irq5(&mut self,high:bool) {
@@ -60,7 +61,7 @@ impl PicPair {
     fn pending_irq(&self)->Option<u8> {
         let m=&self.master;
         if !m.initialized||m.step!=0 {return None;}
-        let pending=m.irr&!m.mask&0x21;
+        let pending=m.irr&!m.mask&0x31;
         if pending==0 {return None;}
         let irq=pending.trailing_zeros() as u8;
         if m.isr!=0&&u32::from(irq)>=m.isr.trailing_zeros() {return None;}

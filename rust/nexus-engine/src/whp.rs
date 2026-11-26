@@ -322,19 +322,20 @@ mod windows {
         let fixture=goal==RunGoal::TimerFixture;
         let limit=if goal==RunGoal::AndroidInit {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        let mut halted=false;let mut last=(0u32,0u64,0u16);
+        let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
             let (result,timed_out)=bounded(partition,limit,|| {
-                for _ in 0..250000 {
+                loop {
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
-                    if let Some(vector)=queue_interrupt(partition,platform)? {if vector&7==0 {trace.irq0_injections+=1;} else {trace.irq5_injections+=1;}halted=false;}
+                    if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
+                    if runs>=250000 {break;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
-                    let context=run_once(partition)?;trace.exits+=1;
+                    let context=run_once(partition)?;trace.exits+=1;runs+=1;
                     last.0=context.reason();last.1=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
                     match context.reason() {
                         1=>{
