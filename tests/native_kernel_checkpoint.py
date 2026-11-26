@@ -43,6 +43,7 @@ def main():
         assert metrics,'No native monotonic timing report'
         assert metrics['pit_channel2_programs']>0 and metrics['pit_accesses']>0,metrics
         assert 'Unsupported kernel port 0x61' not in p.stderr,p.stderr
+        assert not any(word in metrics['stop_reason'].lower() for word in ['deadline','exit budget']),metrics
         assert metrics['total_boot_verified'] is False
         assert metrics['target_met'] is None and metrics['android_home_ready_ms'] is None
         assert metrics['android_home_target_ms']==60000

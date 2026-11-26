@@ -12,6 +12,8 @@ fn quote(text:&str)->String {
     result.push('"');result
 }
 impl BootTrace {
+    pub fn after_header(elapsed_ms:u64)->Self {Self{header_validated_ms:Some(elapsed_ms),..Self::default()}}
+
     pub fn observe_serial(&mut self,bytes:&[u8],elapsed_ms:u64) {
         self.serial_bytes+=bytes.len() as u64;
         const MARKER:&[u8]=b"Linux version ";

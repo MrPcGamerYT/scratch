@@ -29,7 +29,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let initrd=if args.len()==6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],kernel::DEFAULT_RAM)?;
             use std::io::Write;
-            let mut trace=nexus_engine::timing::BootTrace {header_validated_ms:Some(start.elapsed().as_millis() as u64),..Default::default()};
+            let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);
             let mut log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
             let mut timings=std::fs::OpenOptions::new().create_new(true).write(true).open(format!("{}.timing.json",args[3])).map_err(|e|e.to_string())?;
             eprintln!("Starting experimental Linux entry at 0x{:x}; polled serial log: {}. Full kernel/platform boot is NOT implemented.",plan.entry,args[3]);
