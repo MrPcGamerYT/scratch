@@ -1,4 +1,4 @@
-//! Modern VirtIO-MMIO block register/service model. No WHP MMIO interception or IRQ wiring yet.
+//! Modern VirtIO-MMIO block register/service model; WHP adapter/IRQ wiring lives in whp_mmio.rs.
 //! Synchronous service with all guest CPUs/workers stopped; one direct split queue.
 use crate::{guest_memory::GuestMemory,virtqueue::{SplitQueue,MAX_QUEUE,MAX_TRANSFER},virtio_block::{BlockBackend,Completion,process_one_negotiated}};
 const VERSION_1:u64=1<<32;

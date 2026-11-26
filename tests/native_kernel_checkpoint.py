@@ -53,6 +53,7 @@ def main():
         metrics=json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
         sample={'sample':index+1,'kind':'first_process_launch' if index==0 else 'repeat_process_launch',
             'host_cache_state':'uncontrolled; NOT a cold-cache measurement','engine_exit':p.returncode,
+            'virtio_disk_enabled':disk_enabled,'virtio_expected_operation':('write_fsync_read' if index==0 else 'separate_boot_read') if disk_enabled else None,
             'launch_to_engine_exit_ms':launch_to_exit_ms,'full_boot_verified':False,
             'kernel_sha256':expected,'initramfs_sha256':rd_sha,'serial_sha256':hashlib.sha256(raw).hexdigest(),'serial_bytes':len(raw),
             'stderr':p.stderr,'metrics':metrics}
@@ -103,11 +104,13 @@ def main():
         'target_ms':100000,'target_verified':False,'android_home_ready_ms':None,
         'scope':'hosted Windows Server 2022, tiny Linux diagnostic PID1 only; no general Linux distribution; NOT Windows 10/Android boot performance',
         'linux_userspace_checkpoint_verified':True,
+        'virtio_linux_block_persistence_verified':disk_enabled,
+        'virtio_scope':'raw block device IO and separate engine/guest boots; no filesystem, crash or Android certification' if disk_enabled else 'legacy kernel regression only; VirtIO drivers absent',
         'linux_userspace_median_ms':statistics.median(s['metrics']['linux_userspace_ready_ms'] for s in samples),
         'linux_banner_median_ms':statistics.median(s['metrics']['linux_banner_ms'] for s in samples),
         'samples':samples}
     Path('boot-timing-summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
-    notice('Three actual Linux PID1/timer/userspace checkpoints passed. Android total-boot target remains UNVERIFIED; no full boot/GPU/FPS claim.')
+    notice('Three actual Linux PID1/timer/userspace checkpoints passed; VirtIO block persistence verified='+str(disk_enabled)+'. Android total-boot target remains UNVERIFIED; no full boot/GPU/FPS claim.')
 
 
 if __name__=='__main__':

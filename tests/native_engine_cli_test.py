@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory() as folder:
         for _ in range(3):
             run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
             run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke'); run('mmio-smoke')
-        print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, forced instruction fetch through nonidentity guest paging, guest-notified write/flush/read DMA, used-ring/status and IRQ latch/ACK, COW reopen persistence/base integrity; three repetitions; fixture-seeded rings, not Linux VirtIO disk discovery or IRQ delivery',flush=True)
+        print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, forced instruction fetch through nonidentity guest paging, guest-notified write/flush/read DMA, used-ring/status and IRQ latch/ACK, COW reopen persistence/base integrity; three repetitions; protected32 external IRQ5 handler captures status, ACKs device, EOIs PIC and IRETD restores stack; fixture-seeded rings, not Linux discovery',flush=True)
         print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
         print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
