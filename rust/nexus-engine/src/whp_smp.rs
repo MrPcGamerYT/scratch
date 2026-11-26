@@ -69,7 +69,10 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 let readonly=[0,4,8,0xc,0x10,0x34,0x60,0xfc].contains(&offset)&&a.size==4&&offset%4==0;
                 if !config&&!readonly {disk.device.write(offset,a.size,u32::from_le_bytes(a.data[..4].try_into().unwrap()))?;}
             }
-            disk.accesses+=1;return Ok(());
+            disk.accesses+=1;let irq=disk.device.irq_asserted();
+            // Preserve ACK deassertion before another CPU can complete more work.
+            // Sampling only at the next run-loop tick can lose an edge on ISA GSI5.
+            state.io.set_line(5,irq)?;return Ok(());
         }
         if (0xfec00000..0xfec00020).contains(&a.gpa) {
             if a.size!=4 {return Err("IOAPIC requires 32-bit MMIO".into());}
@@ -259,7 +262,11 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
             let response={
                 let mut state=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
                 let now=state.epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-                state.platform.access(io,now)?
+                let response=state.platform.access(io,now)?;
+                let block_irq=state.disk.as_ref().is_some_and(|d|d.device.irq_asserted());
+                let ApicState{platform,io,pit_edges,..}=&mut *state;
+                platform.route_ioapic(io,pit_edges,block_irq)?;
+                response
             };
             let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
             if let Some(rax)=response {

@@ -174,7 +174,7 @@ for cpus in (4,8):
         sample={'cpus':cpus,'mode':mode,'checks':checks,'stdout':p.stdout,'stderr':p.stderr,'serial_tail':text[-7000:]}
         stress_results.append(sample);Path('apic-stress-checkpoint.json').write_text(json.dumps({'verified':False,'samples':stress_results},indent=2))
         if not all(checks.values()):
-            print('::error::APIC_STRESS_FAILURE='+json.dumps(sample).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+            print('::error::APIC_STRESS_FAILURE='+json.dumps({**sample,'serial_tail':text[-2200:]}).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
         assert all(checks.values()),checks
 Path('apic-stress-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'4/8 concurrent CPU-pinned processes, 16 O_DIRECT write/fsync/read iterations each, fresh-VM direct-read comparison; not exhaustive stress','samples':stress_results},indent=2))
 print('::notice::APIC_STRESS_ACCEPTANCE concurrent pinned O_DIRECT IO on 4/8 CPUs plus fresh-VM persisted pattern checks PASS',flush=True)
