@@ -256,3 +256,48 @@ Physical Windows 10 timing/stress, firmware enumeration, production SMP,
 IOAPIC/level EOI and actual OS LAPIC timer calibration remain required. This
 supersedes earlier statements that the explicit frontend has no timer; it does
 not complete Step 1 or authorize moving to graphics/Step 2.
+
+## Sequential blocker: IOAPIC fixed routes and level EOI (2026-11-24)
+
+`src/ioapic.rs` now models a 24-input IOAPIC with IOREGSEL/IOWIN, ID/version,
+masked reset redirection entries, fixed physical and flat-logical destinations,
+input polarity, edge latching, level assertion and remote IRR. Unsupported
+lowest-priority/NMI/ExtINT modes are rejected rather than silently rerouted.
+A level request cannot be reissued while remote IRR is set. LAPIC acknowledgement
+tracks the incoming edge/level trigger separately from queued requests and
+exposes in-service trigger bits. Only a level interrupt's guest EOI is broadcast
+to IOAPIC; edge IPIs and timer EOIs must not clear remote IRR. The broadcast
+matches the vector captured at delivery, even if the route was reprogrammed
+before EOI. A still-active unmasked source then reasserts; masking stops further
+delivery, and deassertion before EOI prevents reassertion.
+
+The two-vCPU frontend now emulates IOAPIC MMIO at FEC00000/FEC00010 under the
+same lock as the LAPIC fabric. Its **test-only synthetic device source** holds
+input 0 high, initially masked. Guest BSP programs its own vector-42 IDT gate
+and unmasks the fixed level route through real MMIO. Its handler must run twice:
+the first EOI permits the held-level source to reassert; on the second entry
+the guest masks the route and EOIs. Exact guest RAM count, restored stack,
+empty IRR/ISR and cleared remote IRR with a masked route are mandatory. This is
+not a claim that an existing production device has been migrated to IOAPIC.
+
+Pure tests additionally cover physical targeting of AP1, logical edge routing,
+active-low input, wrong-vector EOI, deassertion before EOI, masked/unmasked
+level input, route reprogramming while in flight, nested edge/level LAPIC
+metadata, and register/vector validation.
+
+Verification: model **45829439500** passed both platforms; first native held-
+level gate **45829745163** passed; final code **6ccdd44**, foundation
+**45830093440**, passed Windows/Ubuntu strict gates and **48 native two-vCPU
+cycles** retaining prior startup/topology/IPI/timer coverage. Linux regression
+**45830321717** passed its early-entry acceptance job, reusing kernel artifacts
+**45814022595** (kernel build skipped, not rebuilt).
+
+Remaining Step 1 scope: production interrupt-source integration, firmware/CPU
+and interrupt-controller enumeration, OS LAPIC timer calibration and IOAPIC
+acceptance, production SMP scheduling/boot, reset/failure stress and physical
+Windows 10 certification. The production OS profile is still single-vCPU/PIC.
+Logical IOAPIC edge routing and AP physical routing are model tests; the native
+IOAPIC fixture specifically proves BSP physical **level** routing. Do not
+interpret the bounded fixture as full APIC/OS SMP completion. This section
+supersedes the earlier absence of an IOAPIC model/frontend, not those remaining
+acceptance requirements. No Step 2 work was started in this increment.
