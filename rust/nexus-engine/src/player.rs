@@ -1,9 +1,9 @@
 //! Native software presentation. UI reads owned snapshots, never live guest RAM.
 use std::sync::{atomic::{AtomicBool,AtomicU64,Ordering},Arc,Mutex};
 #[derive(Debug)]
-pub struct Session {pub stop:AtomicBool,frame:Mutex<Vec<u8>>,pub presents:AtomicU64}
+pub struct Session {pub stop:AtomicBool,frame:Mutex<Vec<u8>>,pub presents:AtomicU64,pub presented_crc32:AtomicU64}
 impl Default for Session {
-    fn default()->Self {Self{stop:AtomicBool::new(false),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0)}}
+    fn default()->Self {Self{stop:AtomicBool::new(false),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0),presented_crc32:AtomicU64::new(0)}}
 }
 impl Session {
     pub fn publish(&self,pixels:&[u8])->Result<(),String> {
@@ -98,7 +98,7 @@ mod native {
                     if !dc.is_null() {
                         FillRect(dc,&rect,GetStockObject(4));
                         let info=Bitmap{size:40,width:800,height:-600,planes:1,bits:32,compression:0,image:0,x:0,y:0,used:0,important:0};
-                        if w>0&&height>0&&StretchDIBits(dc,x,y,w,height,0,0,800,600,frame.as_ptr().cast(),&info,0,0x00cc0020)>0 {shared.presents.fetch_add(1,Ordering::Relaxed);}
+                        if w>0&&height>0&&StretchDIBits(dc,x,y,w,height,0,0,800,600,frame.as_ptr().cast(),&info,0,0x00cc0020)>0 {shared.presented_crc32.store(u64::from(!crate::image::crc32(&frame,!0)),Ordering::Release);shared.presents.fetch_add(1,Ordering::Release);}
                         ReleaseDC(h,dc);
                     }
                 }

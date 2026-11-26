@@ -61,6 +61,10 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let result=if command=="boot-kernel" {whp::boot_kernel(&plan,&mut log,&mut trace,start)} else {
                 whp::boot_kernel_disk(&plan,&mut log,&mut trace,start,Path::new(&args[6]),Path::new(&args[7]),command.ends_with("create"))
             };
+            if let Some(window)=&window {
+                use std::sync::atomic::Ordering;
+                println!("NATIVE_PLAYER_JSON={{\"software_blits\":{},\"last_submitted_bgrx_crc32\":{},\"guest_input_verified\":false,\"gpu_accelerated\":false}}",window.session.presents.load(Ordering::Acquire),window.session.presented_crc32.load(Ordering::Acquire));
+            }
             trace.stopped_ms=Some(start.elapsed().as_millis() as u64);
             trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||if plan.android_init_probe {"Android second-stage init checkpoint reached; framework/Home not verified".into()} else {"Linux diagnostic userspace checkpoint reached; Android boot not implemented".into()});
             timings.write_all(trace.json().as_bytes()).map_err(|e|e.to_string())?;

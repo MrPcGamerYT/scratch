@@ -270,6 +270,14 @@ mod windows {
                 Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(kernel::BOOT_PARAMS as u64),Register::scalar(0)])?;
             let surface=if plan.framebuffer_output.is_some() {Some(allocate_at(partition,crate::framebuffer::MAPPED_BYTES,crate::framebuffer::GPA)?)} else {None};
             let result=action(partition,memory,surface.as_ref());
+            if let (Some(session),Some(surface))=(plan.player.as_ref(),surface.as_ref()) {
+                // Publish the final stopped surface and give the presenter a bounded drain.
+                let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
+                session.publish(pixels)?;
+                let expected=u64::from(!crate::image::crc32(&pixels[..crate::framebuffer::PIXEL_BYTES],!0));
+                let until=std::time::Instant::now()+std::time::Duration::from_millis(500);
+                while !session.stopped()&&session.presented_crc32.load(std::sync::atomic::Ordering::Acquire)!=expected&&std::time::Instant::now()<until {std::thread::sleep(std::time::Duration::from_millis(5));}
+            }
             if let (Some(file),Some(surface))=(&mut output,&surface) {
                 // Run returned; no vCPU or worker is accessing the framebuffer during capture.
                 let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
