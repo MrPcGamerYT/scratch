@@ -85,8 +85,13 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
-    for step in 0..50000 {
-        if std::time::Instant::now()>=deadline {return Err("LAPIC run deadline exceeded".into());}
+    let mut mmio_count=0;
+    for _ in 0..50000 {
+        if std::time::Instant::now()>=deadline {
+            let names=[0x10,0x11];let mut state=[Register::scalar(0);2];
+            unsafe {WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),2,state.as_mut_ptr());}
+            return Err(format!("LAPIC CPU{index} run deadline exceeded; RIP=0x{:x} flags=0x{:x}",u64::from_le_bytes(state[0].0[..8].try_into().unwrap()),u64::from_le_bytes(state[1].0[..8].try_into().unwrap())));
+        }
         {
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         let local=&mut fabric[index as usize];
@@ -105,8 +110,9 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
-        if exit.reason()!=1 {return Ok(exit.reason());}
-        if step<8 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
+        if exit.reason()!=1 {eprintln!("SMP_STOP cpu={index} reason=0x{:x} RIP=0x{:x}",exit.reason(),u64::from_le_bytes(exit.0[32..40].try_into().unwrap()));return Ok(exit.reason());}
+        mmio_count+=1;
+        if mmio_count<=16 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
         let hr=unsafe {WHvEmulatorTryMmioEmulation(emulator.handle,(&mut ctx as *mut ApicContext).cast(),exit.0[8..].as_ptr(),access.0.as_ptr(),&mut status)};
         if let Some(e)=ctx.error.take() {return Err(format!("{e}; RIP=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap())));}check(hr,"APIC emulate")?;
@@ -195,7 +201,9 @@ fn smp_cycle()->Result<(),String> {
         });
         let bsp=run_index(handle,0,ram,bytes,Some(tx),lapics.clone());
         let ap=ap.join().map_err(|_|"AP run thread panicked")?;
-        Ok((bsp?,ap?))
+        let ap=ap?;
+        if ap!=8 {return Err(format!("AP stopped at unexpected exit 0x{ap:x}"));}
+        Ok((bsp?,ap))
     })))?;
     if expired||bsp!=8||ap!=8 {return Err(format!("SMP INIT/SIPI failed: BSP exit={bsp:x} AP exit={ap:x} timeout={expired}"));}
     // Both vCPUs have stopped and workers joined before accessing shared RAM.
