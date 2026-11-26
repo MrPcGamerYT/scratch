@@ -50,6 +50,14 @@ mod tests {
         assert!(t.json().contains("\"android_home_ready_ms\":null"));assert!(t.json().contains("\"target_met\":null"));
         assert!(t.json().contains("\"total_boot_verified\":false"));
     }
+    #[test] fn diagnostic_userspace_marker_is_not_android_home() {
+        let mut t=BootTrace::default();t.observe_serial(b"Linux version 6.6",1);
+        t.observe_serial(b"NEXUS_USERSPACE_",2);t.observe_serial(b"READY",3);
+        assert_eq!(t.linux_userspace_ready_ms,Some(3));
+        t.observe_serial(b"NEXUS_USERSPACE_READY",4);assert_eq!(t.linux_userspace_ready_ms,Some(3));
+        assert!(t.json().contains("\"android_home_ready_ms\":null"));
+        assert!(t.json().contains("\"total_boot_verified\":false"));
+    }
     #[test] fn log_text_cannot_invent_a_successful_total_boot() {
         let mut t=BootTrace::default();t.observe_serial(b"Android Home ready in 1 second",1);
         assert_eq!(t.linux_banner_ms,None);assert!(t.json().contains("\"android_home_ready_ms\":null"));

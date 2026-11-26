@@ -65,6 +65,8 @@ def main():
         if index==0:
             notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-2048:]).decode())
             notice('NATIVE_TIMING='+json.dumps(metrics))
+            for offset in range(0,min(len(raw),32768),1500):
+                notice(f'KERNEL_SERIAL_CHUNK_{offset:05d}='+base64.b64encode(raw[offset:offset+1500]).decode())
         assert metrics.get('linux_userspace_ready_ms') is not None,('Diagnostic userspace not reached',p.stderr,serial[-2200:])
         if metrics.get('linux_userspace_ready_ms') is not None:
             assert p.returncode==0 and 'NEXUS_USERSPACE_PID1' in serial,serial[-1800:]
@@ -73,7 +75,7 @@ def main():
         if index==0:
             notice('KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw[:2048]).decode())
             notice(f'KERNEL_SHA256={expected}; SERIAL_SHA256={hashlib.sha256(raw).hexdigest()}; SERIAL_BYTES={len(raw)}')
-        notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; PIT programs={metrics["pit_channel2_programs"]}; stopped={metrics["stopped_ms"]} ms; FULL BOOT=false; blocker: '+p.stderr[-1300:])
+        notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; userspace={metrics["linux_userspace_ready_ms"]} ms; IRQ0 injections={metrics["irq0_injections"]}; stopped={metrics["stopped_ms"]} ms; ANDROID BOOT=false; engine output: '+p.stderr[-1300:])
     summary={'schema':1,'target':'approximately 60 seconds from emulator launch to usable, verified Android Home',
         'target_ms':60000,'target_verified':False,'android_home_ready_ms':None,
         'scope':'hosted Windows Server 2022, tiny Linux diagnostic PID1 only; no general Linux distribution; NOT Windows 10/Android boot performance',
