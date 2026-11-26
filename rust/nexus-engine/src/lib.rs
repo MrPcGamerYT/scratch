@@ -40,3 +40,5 @@ pub mod tsc;
 pub mod topology;
 
 pub mod lapic;
+
+pub mod ioapic;
