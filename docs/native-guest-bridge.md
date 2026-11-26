@@ -1,5 +1,8 @@
 # Nexus native guest bridge v1 (prototype)
 
+**Independent Rust/WHP engine:** see [native-device-integration.md](native-device-integration.md).
+The historical results below use the legacy QEMU transport and do not certify the new engine.
+
 For unverified follow-up code and current test blockers, see
 [native-bridge-next-verification.md](native-bridge-next-verification.md).
 The verified results below describe the previous downloadable c032908 build.
