@@ -346,6 +346,9 @@ mod windows {
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
+                    if let Some((_,session))=display {
+                        if platform.uart.can_receive() {if let Some(byte)=session.next_byte() {platform.uart.receive(byte)?;}}
+                    }
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
                     if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;

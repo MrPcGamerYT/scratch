@@ -1,9 +1,13 @@
 //! Non-FIFO COM1 subset: immediate TX, THRE IRQ4, fixed modem pins and probe loopback.
-//! No external input, DMA, baud timing or FIFO emulation. Host serial ports never used.
+//! One-byte host console input, no DMA, baud timing or FIFO emulation. Host serial ports never used.
 use crate::io::IoExit;
 #[derive(Default)]
 pub struct EarlyUart {regs:[u8;8],divisor:[u8;2],tx_pending:bool,rx:Option<u8>,overrun:bool,modem_delta:u8,pub output:Vec<u8>}
 impl EarlyUart {
+    pub fn can_receive(&self)->bool {self.rx.is_none()&&self.regs[4]&0x10==0}
+    pub fn receive(&mut self,byte:u8)->Result<(),String> {
+        if !self.can_receive() {return Err("UART receiver busy or in loopback".into());}self.rx=Some(byte);Ok(())
+    }
     fn modem(&self)->u8 {
         let m=self.regs[4];
         if m&0x10==0 {0xb0} else {((m&1)<<5)|((m&2)<<3)|((m&4)<<4)|((m&8)<<4)}
@@ -83,6 +87,12 @@ mod tests {
         assert_eq!(u.access(io(0x3f8,false,0)).unwrap(),Some(0xae));
         assert_eq!(u.access(io(0x3fa,false,0)).unwrap(),Some(2));
         assert_eq!(u.access(io(0x3fa,false,0)).unwrap(),Some(1));
+    }
+    #[test] fn external_console_rx_irq_and_consume() {
+        let mut u=EarlyUart::default();u.access(io(0x3fc,true,8)).unwrap();u.access(io(0x3f9,true,1)).unwrap();
+        u.receive(b'a').unwrap();assert!(u.irq_asserted());assert!(!u.can_receive());assert!(u.receive(b'b').is_err());
+        assert_eq!(u.access(io(0x3fa,false,0)).unwrap(),Some(4));assert_eq!(u.access(io(0x3f8,false,0)).unwrap(),Some(97));
+        assert!(!u.irq_asserted());assert!(u.can_receive());u.receive(b'b').unwrap();assert!(u.irq_asserted());
     }
     #[test] fn strict_ports_and_widths() {
         let mut u=EarlyUart::default();assert!(u.access(io(0x70,false,0)).is_err());

@@ -1,15 +1,21 @@
 //! Native software presentation. UI reads owned snapshots, never live guest RAM.
 use std::sync::{atomic::{AtomicBool,AtomicU64,Ordering},Arc,Mutex};
 #[derive(Debug)]
-pub struct Session {pub stop:AtomicBool,frame:Mutex<Vec<u8>>,pub presents:AtomicU64,pub presented_crc32:AtomicU64}
+pub struct Session {pub stop:AtomicBool,frame:Mutex<Vec<u8>>,input:Mutex<std::collections::VecDeque<u8>>,pub presents:AtomicU64,pub presented_crc32:AtomicU64}
 impl Default for Session {
-    fn default()->Self {Self{stop:AtomicBool::new(false),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0),presented_crc32:AtomicU64::new(0)}}
+    fn default()->Self {Self{stop:AtomicBool::new(false),input:Mutex::new(std::collections::VecDeque::new()),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0),presented_crc32:AtomicU64::new(0)}}
 }
 impl Session {
     pub fn publish(&self,pixels:&[u8])->Result<(),String> {
         if pixels.len()!=crate::framebuffer::MAPPED_BYTES {return Err("Invalid live scanout length".into());}
         self.frame.lock().map_err(|_|"Player snapshot lock poisoned")?.copy_from_slice(&pixels[..crate::framebuffer::PIXEL_BYTES]);Ok(())
     }
+    pub fn type_byte(&self,byte:u8)->Result<(),String> {
+        if !(byte.is_ascii_graphic()||matches!(byte,b' '|b'\r'|b'\n'|8|127|9)) {return Err("Console input supports ASCII text only".into());}
+        let mut input=self.input.lock().map_err(|_|"Player input lock poisoned")?;
+        if input.len()>=256 {return Err("Player console input queue full".into());}input.push_back(byte);Ok(())
+    }
+    pub fn next_byte(&self)->Option<u8> {self.input.lock().ok()?.pop_front()}
     pub fn stopped(&self)->bool {self.stop.load(Ordering::Acquire)}
 }
 /// Aspect-preserving destination. Coordinates outside this rectangle are letterbox.
@@ -90,6 +96,7 @@ mod native {
                 let status=GetMessageW(&mut msg,null,0,0);
                 if status<=0 {if status<0 {error=Some("Player message loop failed".to_string());}break;}
                 if shared.stopped() {DestroyWindow(h);break;}
+                if msg.message==0x102&&msg.wparam<=127 {let _=shared.type_byte(msg.wparam as u8);}
                 if msg.message==0x113 {
                     let mut rect=Rect{left:0,top:0,right:0,bottom:0};GetClientRect(h,&mut rect);
                     let (x,y,w,height)=viewport(rect.right,rect.bottom);
@@ -112,5 +119,11 @@ mod native {
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn aspect_and_minimize() {assert_eq!(viewport(1000,600),(100,0,800,600));assert_eq!(viewport(800,800),(0,100,800,600));assert_eq!(viewport(0,5),(0,0,0,0));assert_eq!(viewport(i32::MAX,i32::MAX).2,i32::MAX);}
+    #[test] fn console_input_is_bounded_ordered_and_text_only() {
+        let s=Session::default();assert!(s.type_byte(0xff).is_err());
+        for _ in 0..256 {s.type_byte(b'x').unwrap();}assert!(s.type_byte(b'y').is_err());
+        for _ in 0..256 {assert_eq!(s.next_byte(),Some(b'x'));}assert_eq!(s.next_byte(),None);
+        for b in b"logcat\r" {s.type_byte(*b).unwrap();}for b in b"logcat\r" {assert_eq!(s.next_byte(),Some(*b));}
+    }
     #[test] fn snapshots_are_owned_and_bounded() {let s=Session::default();let mut p=vec![17;crate::framebuffer::MAPPED_BYTES];s.publish(&p).unwrap();p[0]=99;assert_eq!(s.frame.lock().unwrap()[0],17);assert!(s.publish(&p[..10]).is_err());assert!(!s.stopped());s.stop.store(true,Ordering::Release);assert!(s.stopped());}
 }
