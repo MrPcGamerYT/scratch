@@ -133,3 +133,13 @@ architectural limitation. WHPX compatibility and a verified hardware graphics
 path are prerequisites for credible gaming-performance work. Do not silently
 change the user's backing image/CPU mode, disable Windows protections, increase
 vCPUs indiscriminately, or call a boot-hiding/branding/compiler change a solution.
+
+
+## Separate QEMU-free research engine
+
+The existing player described above is unchanged. A new, independent Rust crate
+in `rust/nexus-engine` has no QEMU dependency and defines a real `gustimg.zlag`
+container. Initial direct WHP CPU/RAM tests pass, but it cannot boot Android or
+provide GPU acceleration yet. It is NOT a replacement shipped inside this player.
+See [native-engine-roadmap.md](native-engine-roadmap.md) for exact evidence and
+remaining gates, and [zlag-image-format.md](zlag-image-format.md) for the format.

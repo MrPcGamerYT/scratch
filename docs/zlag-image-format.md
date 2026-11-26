@@ -33,6 +33,7 @@ nexus-engine import-raw stopped-standalone.raw gustimg.zlag
 nexus-engine verify gustimg.zlag
 nexus-engine capabilities
 nexus-engine whp-probe
+nexus-engine cpu-smoke
 ```
 
 Import requires an offline source, creates a new destination exclusively, and

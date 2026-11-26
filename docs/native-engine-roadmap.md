@@ -14,17 +14,23 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
   and payload CRC32 checks, exact-size/version/reserved-bit validation, read-only
   sector transport with overflow/bounds checks. No third-party crate dependency.
 - Independent Rust CLI with capabilities, import, verify and a direct Windows
-  Hypervisor Platform partition create/configure/setup/delete probe. The latter
-  does NOT execute a guest CPU instruction and fails if WHP is unavailable.
+  Hypervisor Platform partition create/configure/setup/delete probe.
+- Direct WHP real-mode CPU execution: private 4 KiB guest RAM, vCPU register
+  initialization/run/result checking, guest store/load/HLT program, bounded cancel
+  watchdog, and RAII vCPU/mapping/partition cleanup. This is not a complete CPU
+  exit emulator or boot machine. Windows SDK compile-time assertions validate the
+  small hand-written Rust FFI layouts and constants.
 - Host-independent unit tests plus independent Python/zlib binary-format checks
   on Linux/Windows CI. No fabricated Android/GPU/FPS success condition.
 - `boot` explicitly refuses to start; no silent fallback to the old QEMU engine.
 
 ## Required next implementation gates (not delivered yet)
 
-1. **CPU + memory:** direct WHP RAM mappings, vCPU register/run/cancel, exit
-   handling and instruction/MMIO emulation; small bounded HLT/I/O/RAM guest tests.
-   Using WHP directly is not a guarantee to fix a host WHPX/MMIO failure.
+1. **CPU + memory expansion:** general guest RAM layout and vCPU lifecycle,
+   long-mode/SMP setup, exit handling and instruction/MMIO emulation; bounded
+   I/O/interrupt and cancellation tests. A real-mode store/load/HLT test now
+   passes, but it does not cover these missing pieces. Using WHP directly is
+   not a guarantee to fix a host WHPX/MMIO failure.
 2. **Machine + boot:** choose and document a machine ABI, firmware/loader,
    interrupts/timers/ACPI as required, PCI/virtio and block transport, persistence
    with separate safe write layers. Boot a Linux test kernel before Android.
@@ -50,3 +56,20 @@ There is no credible single-turn implementation or test that makes this entire
 list finished. Hosted Windows runners may lack virtualization/GPU support; their
 capability probe outcomes must be reported as unavailable, not falsely passed.
 No performance improvement is claimed and no QEMU-free Android download is ready.
+
+## Verified first CPU milestone
+
+[Run 45740200529](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45740200529)
+passed on Windows Server 2022 and Ubuntu 24.04 runners. Both platforms passed
+four Rust image tests, Clippy with warnings denied, release builds and independent
+Python/zlib format/source-safety checks. The Windows job additionally compiled
+FFI size/alignment/offset/enum assertions against its Windows SDK, created a WHP
+partition, and ran the real guest CPU store/load/HLT test three times, checking
+AX and guest RAM both contained `0x5a17`. No QEMU executable or library is involved.
+Linux explicitly reports WHP unsupported; it does not pretend to execute that test.
+
+This is a Windows **server runner** observation, not physical Windows 10/i3/HD530
+certification. There is still no Android boot, firmware/device model, accelerated
+GPU backend, working converted Android `gustimg.zlag`, or speed comparison.
+No end-user emulator replacement is published. Existing player and guest files
+remain unchanged; all artifacts from this workflow are developer foundations.
