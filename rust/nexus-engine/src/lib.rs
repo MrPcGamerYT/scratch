@@ -38,3 +38,5 @@ pub mod sha256;
 pub mod tsc;
 
 pub mod topology;
+
+pub mod lapic;

@@ -6,7 +6,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
 enum StartupEvent {Init,Sipi(u8)}
-struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,spurious:u32,tpr:u32,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapic:crate::lapic::LocalApic,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -52,24 +52,26 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             return Ok(());
         }
         if a.direction==0 {
-            let value=match offset {0x20=>c.index<<24,0x30=>0x00050014,0x80=>c.tpr,0xf0=>c.spurious,_=>return Err(format!("APIC read 0x{offset:x} not implemented"))};
+            let value=c.lapic.read(offset)?;
             a.data[..4].copy_from_slice(&value.to_le_bytes());
         } else {
             let value=u32::from_le_bytes(a.data[..4].try_into().unwrap());
             if offset==0x300 {
-                if value&!0x0000cfff!=0 {return Err("APIC ICR shorthand/reserved bits not supported".into());}
+                if value&!0x000ccfff!=0 {return Err("APIC ICR shorthand/reserved bits not supported".into());}
                 let kind=(value>>8)&7;
-                if ![5,6].contains(&kind) {return Err("Only INIT/SIPI delivery is implemented in the experimental startup frontend".into());}
+                if kind==0 {
+                    let shorthand=(value>>18)&3;
+                    let own_target=shorthand==1||(shorthand==0&&c.icr_high>>24==c.index);
+                    if !own_target||value&((1<<11)|(1<<15))!=0 {return Err("Fixed IPI currently requires physical, edge-triggered local destination".into());}
+                    c.lapic.request_edge(value as u8)?;return Ok(());
+                }
+                if ![5,6].contains(&kind)||value&0xc0000!=0 {return Err("Unsupported APIC delivery mode or startup shorthand".into());}
                 if c.icr_high>>24!=1||value&(1<<11)!=0 {return Err("Startup target must be dormant physical AP1".into());}
                 let tx=c.startup.as_ref().ok_or("No AP startup router on this CPU")?;
                 let event=if kind==5 {StartupEvent::Init} else {StartupEvent::Sipi(value as u8)};
                 tx.send(event).map_err(|_|"AP startup worker disconnected")?;
             } else {
-                match offset {
-                    0x80=>c.tpr=value&255,
-                    0xf0 if value&!0x1ff==0=>c.spurious=value,
-                    _=>return Err(format!("APIC write 0x{offset:x} not implemented")),
-                }
+                c.lapic.write(offset,value)?;
             }
         }Ok(())
     })
@@ -80,8 +82,18 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
-    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,spurious:255,tpr:0,error:None,startup};
+    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapic:crate::lapic::LocalApic::new(index as u8),error:None,startup};
     for step in 0..256 {
+        if let Some(vector)=ctx.lapic.pending() {
+            let names=[0x11,0x80000001,0x80000000];let mut values=[Register::scalar(0);3];
+            unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),3,values.as_mut_ptr()),"LAPIC interrupt window")?;}
+            let scalar=|n:usize|u64::from_le_bytes(values[n].0[..8].try_into().unwrap());
+            if scalar(0)&0x200!=0&&scalar(1)&1==0&&scalar(2)&1==0 {
+                let name=0x80000000;let value=Register::scalar(1|(u64::from(vector)<<16));
+                unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"LAPIC fixed interrupt injection")?;}
+                ctx.lapic.acknowledge(vector)?;
+            }
+        }
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
@@ -117,6 +129,15 @@ fn smp_cycle()->Result<(),String> {
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x09,0x46,0x00,0x00,
         0x80,0x3d,0x00,0xa0,0x00,0x00,0x5a,0x75,0xf7,0xf4,
     ]);
+    code.pop(); // replace final HLT with STI/self-IPI/handler-return verification
+    code.extend_from_slice(&[0xfb,0x90,
+        0xc7,0x05,0x00,0x03,0xe0,0xfe,0x40,0x00,0x04,0x00,
+        0xa1,0x20,0x01,0xe0,0xfe,0xa3,0x34,0xa0,0,0,0xfa,0xf4]);
+    f.idt_limit=0x207;
+    f.ram[cpu::IDT+0x200..cpu::IDT+0x208].copy_from_slice(&[0,0x94,8,0,0,0x8e,0,0]);
+    let handler=[0xff,0x05,0x30,0xa0,0,0,
+        0xc7,0x05,0xb0,0,0xe0,0xfe,0,0,0,0,0xcf];
+    f.ram[0x9400..0x9400+handler.len()].copy_from_slice(&handler);
     f.ram[cpu::ENTRY..cpu::ENTRY+code.len()].copy_from_slice(&code);
     // AP startup in real mode: DS=0, address-size override selects 32-bit RAM GPA.
     let ap=[0x31,0xc0,0x8e,0xd8,
@@ -160,6 +181,9 @@ fn smp_cycle()->Result<(),String> {
     let marker=unsafe {*memory.address.cast::<u8>().add(0xa000)};
     if marker!=0x5a {return Err("AP startup marker missing".into());}
     let word=|at:usize|unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(at).cast::<u32>())};
+    if word(0xa030)!=1||word(0xa034)!=0||scalar_register(&partition,4)?!=cpu::STACK {
+        return Err("Local fixed IPI handler/EOI/restored stack verification failed".into());
+    }
     for (index,base) in [(0,0xa010),(1,0xa020)] {
         if word(base)>>24!=index||(word(base)>>16)&255!=2||word(base+4)!=index||word(base+8)!=2 {
             return Err(format!("Guest CPU{index} topology disagrees with allocated vCPUs"));
