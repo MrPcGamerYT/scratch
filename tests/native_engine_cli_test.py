@@ -31,5 +31,6 @@ with tempfile.TemporaryDirectory() as folder:
     assert 'QEMU dependency: none' in text and 'NOT IMPLEMENTED' in text
     # DLL/API availability differs across hosted runners. Report it honestly.
     p=subprocess.run([exe,'whp-probe'],capture_output=True,text=True)
-    print('WHP observation (not CPU execution certification):',p.returncode,p.stdout,p.stderr,flush=True)
+    observation=f'WHP probe observation, NOT a CPU-execution test: exit={p.returncode}; '+(p.stdout+p.stderr).strip()
+    print('::notice::'+observation.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)
