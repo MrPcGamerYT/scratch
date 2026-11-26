@@ -5,7 +5,7 @@ PID1 proves getpid and two real nanosleep returns via /dev/kmsg markers.
 import struct
 
 
-def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False):
+def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None):
     if filesystem and disk_write is None:
         raise ValueError("Filesystem fixture requires an explicit write/read mode")
     base = 0x400000
@@ -43,6 +43,20 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
     tick = b'NEXUS_USERSPACE_TICK\n'
     ready = b'NEXUS_USERSPACE_READY\n'
     log('started', started)
+    if expected_cpus is not None:
+        if not isinstance(expected_cpus,int) or not 1<=expected_cpus<=8:
+            raise ValueError("Expected CPU count must be 1..8")
+        for cpu in range(expected_cpus):
+            # Linux sched_setaffinity(0,8,&mask), then getcpu(&cpu,NULL,NULL).
+            emit(b'\xb8\xcb\x00\x00\x00\x31\xff\xbe\x08\x00\x00\x00')
+            address(b'\x48\xba',f'cpumask{cpu}')
+            emit(b'\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+            emit(b'\xb8\x35\x01\x00\x00');address(b'\x48\xbf','currentcpu')
+            emit(b'\x31\xf6\x31\xd2\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+            address(b'\x48\xb8','currentcpu');emit(b'\x83\x38'+bytes([cpu]));branch(b'\x0f\x85','fail')
+        smpmarker=f'NEXUS_SMP_AFFINITY_OK cpus={expected_cpus}\n'.encode()
+        log('smpmarker',smpmarker)
+
     # Exercise the real kernel clock syscall, not RDTSC or a host timestamp.
     # Stack output remains writable even for the default read/execute ELF.
     emit(b'\x48\x83\xec\x10\x45\x31\xf6')  # reserve timespec; r14d=fine delta seen
@@ -243,6 +257,11 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
                           ('bridgehello',greeting),('bridgequery',query),('bridgeanswer',answer),
                           ('bridgebyte',bytes(1)),('bridgemarker',bridge_marker)]:
             label(name);emit(body)
+    if expected_cpus is not None:
+        label('currentcpu');emit(bytes(4))
+        label('smpmarker');emit(smpmarker)
+        for cpu in range(expected_cpus):
+            label(f'cpumask{cpu}');emit(struct.pack('<Q',1<<cpu))
     for offset, name in absolute:
         struct.pack_into('<Q', code, offset, entry + labels[name])
     for offset, name in relative:
@@ -250,7 +269,7 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
     size = 120 + len(code)
     header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01\x01'+bytes(9), 2, 62, 1,
                          entry, 64, 0, 0, 64, 56, 1, 0, 0, 0)
-    segment = struct.pack('<IIQQQQQQ', 1, 7 if disk_write is not None or display or bridge else 5, 0, base, base, size, size, 4096)
+    segment = struct.pack('<IIQQQQQQ', 1, 7 if disk_write is not None or display or bridge or expected_cpus is not None else 5, 0, base, base, size, size, 4096)
     return header + segment + code
 
 
@@ -263,12 +282,12 @@ def newc(name, mode, body=b'', rmajor=0, rminor=0, inode=1):
     return data + bytes(-len(data) % 4)
 
 
-def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False):
+def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None):
     return (newc('dev', 0o40755, inode=1) + newc('dev/console', 0o20600, rmajor=5, rminor=1, inode=2)
             + newc('dev/kmsg', 0o20600, rmajor=1, rminor=11, inode=3)
             + (newc('dev/ttyS1',0o20600,rmajor=4,rminor=65,inode=7) if bridge else b'')
             + (newc('mnt', 0o40755, inode=6) if filesystem else b'')
-            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display, bridge), inode=4) + newc('TRAILER!!!', 0, inode=5))
+            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display, bridge, expected_cpus), inode=4) + newc('TRAILER!!!', 0, inode=5))
 
 
 if __name__ == '__main__':
