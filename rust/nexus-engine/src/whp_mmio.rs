@@ -136,12 +136,12 @@ pub fn mmio_smoke()->Result<(),String> {
         f.ram[0x24000..0x24003].fill(0xff);
         if !long {
             f.idt_limit=0x12f;
-            f.ram[cpu::IDT+0x128..cpu::IDT+0x130].copy_from_slice(&[0,0x81,8,0,0,0x8e,0,0]);
+            f.ram[cpu::IDT+0x128..cpu::IDT+0x130].copy_from_slice(&[0,0x90,8,0,0,0x8e,0,0]);
             // Preserve EAX; capture IRQ status; ACK device before PIC EOI; IRETD.
             let handler=[0x50,0xa1,0x60,0,0,0xd0,0xa3,0x30,0xb0,1,0,
                 0xb8,1,0,0,0,0xa3,0x64,0,0,0xd0,0xff,0x05,0x34,0xb0,1,0,
                 0xb0,0x20,0xe6,0x20,0x58,0xcf];
-            f.ram[0x8100..0x8100+handler.len()].copy_from_slice(&handler);
+            f.ram[0x9000..0x9000+handler.len()].copy_from_slice(&handler);
         }
         let mut code=Vec::new();
         let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
