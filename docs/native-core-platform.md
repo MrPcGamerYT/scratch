@@ -689,3 +689,42 @@ interrupt/reset/concurrency certification. Runtime INIT reset remains explicitly
 rejected; physical Windows 10 acceptance and the other Step 1 gaps above remain
 open. No Android Home, guest GPU, networking/audio, renderer selection or player
 settings acceptance is implied.
+
+### Native CR8 and software TPR priority coherence
+
+Code **b470be7** fixes the missing connection between WHP's native CR8 register
+and the software xAPIC task-priority register. Each stopped VP samples its own
+CR8 before interrupt arbitration; CR8 changes replace TPR[7:4] while preserving
+TPR[3:0]. MMIO TPR reads first synchronize that alias, and MMIO TPR writes update
+native CR8 before the VP resumes. Thus native `MOV CR8` can no longer leave the
+host arbitration path using a stale task-priority class. The Windows SDK ABI
+check now explicitly requires `WHvX64RegisterCr8 == 0x20`.
+
+The added real **long64** guest fixture writes TPR=7, writes CR8=4, enables IF,
+and queues a self-IPI vector 0x40. It captures TPR=0x47, the vector's IRR bit set,
+and a zero handler counter before lowering CR8=3. It then waits for exactly one
+handler/EOI/IRETQ round trip, writes MMIO TPR=0x5b and captures MOV-from-CR8=5.
+Final host evidence must be exactly `[1,0x47,1,0,5]`; exit reason and bounded
+execution must also pass. This is actual guest instruction execution, not
+simulated register assignments. The fixture runs three times in the Windows
+foundation CLI gate, which requires the exact `NATIVE_CR8_TPR_OK` evidence.
+A model-level test also checks all 16 priority classes and all 16 subpriorities
+against every external vector, deferred IRR retention/unmasking, and rejection
+of out-of-range CR8 values without discarding pending work.
+
+Verification:
+
+- **45859463908**: strict Windows/Ubuntu foundation at b470be7 passed, including
+  three real guest priority fixtures and the existing 48 dual-VP cycles.
+- **45859713362**: the entire 47-VM APIC Linux matrix passed with native CR8
+  synchronization enabled (core/RAM, storage/COM2, fault/recovery, concurrent IO).
+- **45860572300**: legacy PIC Linux regression passed, reusing the existing kernel.
+- **45860603320**, code **659f633**: foundation passed again with the explicit
+  CR8 marker requirement and SDK assertion. Windows check **140050307728**
+  records the three actual long64 alias/deferred-delivery cycles as passed.
+
+This closes the tested native CR8/TPR alias gap only. It does **not** certify
+runtime INIT reset/hotplug, all APIC priority/delivery modes, arbitrary interrupt
+contention, long-duration stress or physical Windows 10. Step 1 remains open;
+Android Home/GPU/network/audio/player settings and launch-time targets are not
+advanced by this gate.
