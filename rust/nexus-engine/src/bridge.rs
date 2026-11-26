@@ -47,7 +47,7 @@ impl Bridge {
                 if apk.sent==apk.total {self.pending.extend(b"NEXUS 1 APK COMMIT\n");apk.phase=2;}
                 else {
                     let size=(apk.total-apk.sent).min(65536) as usize;let mut chunk=vec![0;size];apk.file.read_exact(&mut chunk).map_err(|e|e.to_string())?;
-                    self.pending.extend(format!("NEXUS 1 APK DATA {size}\n").bytes());self.pending.extend(chunk);apk.sent+=size;
+                    self.pending.extend(format!("NEXUS 1 APK DATA {size}\n").bytes());self.pending.extend(chunk);apk.sent+=size as u64;
                 }return Ok(());
             }
             if line==b"NEXUS 1 RESULT APK_INSTALL OK"&&apk.phase==2&&self.pending.is_empty() {self.pending.extend(b"NEXUS 1 VERIFY_TEST_APK\n");apk.phase=3;return Ok(());}
