@@ -83,18 +83,6 @@ mod native {
     unsafe extern "system" fn proc(h:Handle,m:u32,w:usize,l:isize)->isize {
         if m==2 {PostQuitMessage(0);return 0;}DefWindowProcW(h,m,w,l)
     }
-    #[cfg(test)]
-    mod abi_tests {
-        use super::*;
-        use std::mem::{size_of,offset_of};
-        #[test] fn win32_x64_layouts_match_sdk_contract() {
-            assert_eq!(size_of::<Class>(),72);assert_eq!(offset_of!(Class,proc),8);
-            assert_eq!(offset_of!(Class,instance),24);assert_eq!(offset_of!(Class,name),64);
-            assert_eq!(size_of::<Msg>(),48);assert_eq!(offset_of!(Msg,wparam),16);
-            assert_eq!(offset_of!(Msg,lparam),24);assert_eq!(offset_of!(Msg,pt),36);
-            assert_eq!(size_of::<Bitmap>(),40);assert_eq!(size_of::<Rect>(),16);
-        }
-    }
     pub fn close(s:&Session)->Result<(),String> {
         let h=s.hwnd.load(Ordering::Acquire) as Handle;
         if h.is_null()||unsafe {PostMessageW(h,0x10,0,0)}==0 {return Err("Player close request failed".into());}Ok(())
@@ -135,6 +123,19 @@ mod native {
             error.map_or(Ok(()),Err)
         }
     }
+    #[cfg(test)]
+    mod abi_tests {
+        use super::*;
+        use std::mem::{size_of,offset_of};
+        #[test] fn win32_x64_layouts_match_sdk_contract() {
+            assert_eq!(size_of::<Class>(),72);assert_eq!(offset_of!(Class,proc),8);
+            assert_eq!(offset_of!(Class,instance),24);assert_eq!(offset_of!(Class,name),64);
+            assert_eq!(size_of::<Msg>(),48);assert_eq!(offset_of!(Msg,wparam),16);
+            assert_eq!(offset_of!(Msg,lparam),24);assert_eq!(offset_of!(Msg,pt),36);
+            assert_eq!(size_of::<Bitmap>(),40);assert_eq!(size_of::<Rect>(),16);
+        }
+    }
+
 }
 #[cfg(test)] mod tests {
     use super::*;
