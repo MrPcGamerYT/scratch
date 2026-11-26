@@ -7,7 +7,8 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
 struct InterruptRequest {control:u64,destination:u32,vector:u32}
 #[link(name="WinHvPlatform")]
 extern "system" {fn WHvRequestInterrupt(partition:*mut c_void,control:*const InterruptRequest,size:u32)->i32;}
-struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,error:Option<String>}
+enum StartupEvent {Init,Sipi(u8)}
+struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -63,7 +64,12 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 let kind=(value>>8)&7;
                 if ![0,4,5,6].contains(&kind) {return Err("Unsupported APIC delivery mode".into());}
                 let request=InterruptRequest{control:u64::from(kind|((value>>11)&1)<<8|((value>>15)&1)<<12),destination:c.icr_high>>24,vector:value&255};
-                unsafe {check(WHvRequestInterrupt(c.partition,&request,16),"APIC ICR delivery")?;}
+                if kind==5||kind==6 {
+                    if request.destination!=1||value&(1<<11)!=0 {return Err("Startup target must be dormant physical AP1".into());}
+                    let tx=c.startup.as_ref().ok_or("No AP startup router on this CPU")?;
+                    let event=if kind==5 {StartupEvent::Init} else {StartupEvent::Sipi(value as u8)};
+                    tx.send(event).map_err(|_|"AP startup worker disconnected")?;
+                } else {unsafe {check(WHvRequestInterrupt(c.partition,&request,16),"APIC ICR delivery")?;}}
             } else {
                 let value=Register::scalar(u64::from(value));
                 unsafe {check(WHvSetVirtualProcessorRegisters(c.partition,c.index,&name,1,&value),"APIC MMIO write")?;}
@@ -71,13 +77,13 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
         }Ok(())
     })
 }
-fn run_index(handle:usize,index:u32,ram:usize,bytes:usize)->Result<u32,String> {
+fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sync::mpsc::Sender<StartupEvent>>)->Result<u32,String> {
     let callbacks=Box::new(EmulatorCallbacks{size:std::mem::size_of::<EmulatorCallbacks>() as u32,reserved:0,io:apic_io,memory:apic_memory,get:apic_get,set:apic_set,translate:apic_translate});
     let mut emulator=std::ptr::null_mut();
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
-    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,error:None};
+    let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,error:None,startup};
     for step in 0..256 {
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
@@ -101,7 +107,7 @@ pub fn smp_smoke()->Result<(),String> {
     }
     let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
     // BSP enables its APIC, targets APIC ID1, issues INIT followed by SIPI vector9.
-    // The AP is NOT assigned a host-created instruction pointer of 0x9000.
+    // The dormant AP receives its architectural CS:IP only after the guest SIPI.
     let mut code=vec![0xb8,1,0,0,0,0x31,0xc9,0x0f,0xa2,0x89,0x1d,0x10,0xa0,1,0,
         0xb8,0xb,0,0,0,0xb9,1,0,0,0,0x0f,0xa2,0x89,0x15,0x14,0xa0,1,0,0x89,0x1d,0x18,0xa0,1,0];
     code.extend_from_slice(&[
@@ -128,8 +134,25 @@ pub fn smp_smoke()->Result<(),String> {
         Register::scalar(0),Register::scalar(2),Register::scalar(0xfee00800),Register::scalar(1)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
     let ((bsp,ap),expired)=bounded(&partition,5000,||std::thread::scope(|scope| {
-        let ap=scope.spawn(move ||run_index(handle,1,ram,bytes));
-        let bsp=run_index(handle,0,ram,bytes);
+        let (tx,rx)=std::sync::mpsc::channel();
+        let ap=scope.spawn(move || {
+            let mut initialized=false;
+            loop {
+                match rx.recv_timeout(std::time::Duration::from_secs(4)).map_err(|_|"AP received no startup event")? {
+                    StartupEvent::Init=>initialized=true,
+                    StartupEvent::Sipi(vector) if initialized=>{
+                        let mut cs=Register::segment(0x9b);
+                        cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
+                        cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
+                        let names=[0x13,0x10,0x80000005];let values=[cs,Register::scalar(0),Register::scalar(0)];
+                        unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),3,values.as_ptr()),"Guest-requested SIPI entry")?;}
+                        return run_index(handle,1,ram,bytes,None);
+                    }
+                    StartupEvent::Sipi(_)=>return Err("SIPI received before INIT".into()),
+                }
+            }
+        });
+        let bsp=run_index(handle,0,ram,bytes,Some(tx));
         let ap=ap.join().map_err(|_|"AP run thread panicked")?;
         Ok((bsp?,ap?))
     }))?;
