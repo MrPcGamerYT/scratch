@@ -5,7 +5,10 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
     if index>=partition.2||names.len()!=values.len() {return Err("Invalid indexed register access".into());}
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
-type ApicFabric=std::sync::Arc<std::sync::Mutex<Vec<crate::lapic::LocalApic>>>;
+struct ApicState {cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
+impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
+type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
 enum StartupEvent {Init,Sipi(u8)}
 struct ApicContext {timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
@@ -45,6 +48,14 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             if a.direction!=0 {return Err("Concurrent APIC emulator RAM write refused".into());}
             unsafe {std::ptr::copy_nonoverlapping(c.ram.add(a.gpa as usize),a.data.as_mut_ptr(),n);}return Ok(());
         }
+        if (0xfec00000..0xfec00020).contains(&a.gpa) {
+            if a.size!=4 {return Err("IOAPIC requires 32-bit MMIO".into());}
+            let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+            let offset=(a.gpa-0xfec00000) as u32;
+            if a.direction==0 {a.data[..4].copy_from_slice(&state.io.read(offset)?.to_le_bytes());}
+            else {state.io.write(offset,u32::from_le_bytes(a.data[..4].try_into().unwrap()))?;}
+            return Ok(());
+        }
         if !(0xfee00000..0xfee01000).contains(&a.gpa)||a.size!=4||a.gpa%16!=0 {return Err(format!("Unsupported APIC MMIO address/width: cpu={} gpa=0x{:x} size={} direction={}",c.index,a.gpa,a.size,a.direction));}
         let now=std::time::Instant::now();
         c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?[c.index as usize].advance_ns(now.duration_since(c.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;
@@ -77,7 +88,10 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 let event=if kind==5 {StartupEvent::Init} else {StartupEvent::Sipi(value as u8)};
                 tx.send(event).map_err(|_|"AP startup worker disconnected")?;
             } else {
-                c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?[c.index as usize].write(offset,value)?;
+                let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+                if offset==0xb0 {if let Some(vector)=state[c.index as usize].eoi() {state.io.eoi(c.index as usize,vector);}}
+                else {state[c.index as usize].write(offset,value)?;}
+
             }
         }Ok(())
     })
@@ -99,6 +113,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         {
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+        {let ApicState{cpus,io}=&mut *fabric;io.service(cpus)?;}
         let local=&mut fabric[index as usize];
         let now=std::time::Instant::now();
         local.advance_ns(now.duration_since(ctx.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;ctx.timer_clock=now;
@@ -184,14 +199,26 @@ fn smp_cycle()->Result<u64,String> {
         0xc7,0x05,0x20,3,0xe0,0xfe,0x40,0,2,0,
         0xc7,0x05,0x80,3,0xe0,0xfe,0x80,0x84,0x1e,0,
         0xfa,0x83,0x3d,0x30,0xa0,0,0,5,0x74,4,0xfb,0xf4,0xeb,0xf2,
-        0xc7,0x05,0x80,3,0xe0,0xfe,0,0,0,0,0xfa,0xf4]);
-    f.idt_limit=0x207;
+        0xc7,0x05,0x80,3,0xe0,0xfe,0,0,0,0,
+        0xc7,0x05,0,0,0xc0,0xfe,0x11,0,0,0,
+        0xc7,0x05,0x10,0,0xc0,0xfe,0,0,0,0,
+        0xc7,0x05,0,0,0xc0,0xfe,0x10,0,0,0,
+        0xc7,0x05,0x10,0,0xc0,0xfe,0x42,0x80,0,0,
+        0xfa,0x83,0x3d,0x50,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4]);
+    f.idt_limit=0x217;
+    f.ram[cpu::IDT+0x210..cpu::IDT+0x218].copy_from_slice(&[0,0x9a,8,0,0,0x8e,0,0]);
     f.ram[cpu::IDT+0x200..cpu::IDT+0x208].copy_from_slice(&[0,0x94,8,0,0,0x8e,0,0]);
     let handler=[0xff,0x05,0x30,0xa0,0,0,
         0x83,0x3d,0x30,0xa0,0,0,5,0x75,10,
         0xc7,0x05,0x20,3,0xe0,0xfe,0x40,0,3,0,
         0xc7,0x05,0xb0,0,0xe0,0xfe,0,0,0,0,0xcf];
     f.ram[0x9400..0x9400+handler.len()].copy_from_slice(&handler);
+    let io_handler=[0xff,0x05,0x50,0xa0,0,0,
+        0x83,0x3d,0x50,0xa0,0,0,2,0x75,20,
+        0xc7,0x05,0,0,0xc0,0xfe,0x10,0,0,0,
+        0xc7,0x05,0x10,0,0xc0,0xfe,0x42,0x80,1,0,
+        0xc7,0x05,0xb0,0,0xe0,0xfe,0,0,0,0,0xcf];
+    f.ram[0x9a00..0x9a00+io_handler.len()].copy_from_slice(&io_handler);
     f.ram[cpu::ENTRY..cpu::ENTRY+code.len()].copy_from_slice(&code);
     // AP startup in real mode: DS=0, address-size override selects 32-bit RAM GPA.
     let ap=[0x31,0xc0,0x8e,0xd8,0x8e,0xd0,0xbc,0,0x70,
@@ -225,7 +252,10 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)]));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
+    // It must retrigger only after guest EOI, and stop when the handler masks it.
+    lapics.lock().map_err(|_|"LAPIC lock poisoned")?.io.set_line(0,true)?;
     let ((bsp,ap,ap_halts),expired)=timer_pump(&partition,||bounded(&partition,5000,||std::thread::scope(|scope| {
         let (tx,rx)=std::sync::mpsc::channel();
         let ap_lapics=lapics.clone();
@@ -264,7 +294,11 @@ fn smp_cycle()->Result<u64,String> {
     let mut ap_stack=Register::scalar(0);let rsp=4;
     unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,1,&rsp,1,&mut ap_stack),"AP restored stack")?;}
     if u64::from_le_bytes(ap_stack.0[..8].try_into().unwrap())!=0x7000 {return Err("AP interrupt stack was not restored".into());}
-    let fabric=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+    let mut fabric=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+    if word(0xa050)!=2 {return Err("IOAPIC held-level source did not deliver exactly two guest IRQs".into());}
+    fabric.io.write(0,0x10)?;
+    if fabric.io.read(0x10)?!=0x18042 {return Err("IOAPIC source not masked or remote IRR not cleared by guest EOI".into());}
+    fabric.io.set_line(0,false)?;
     for local in fabric.iter() {
         if local.pending().is_some()||(0x100..=0x170).chain(0x200..=0x270).filter(|offset|offset%16==0).any(|offset|local.read(offset)!=Ok(0)) {return Err("IPI remains pending/in-service after guest EOI".into());}
     }
