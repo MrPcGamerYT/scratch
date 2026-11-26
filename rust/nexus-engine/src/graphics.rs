@@ -3,6 +3,9 @@
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Backend {Hardware,Warp}
 pub struct Rendered {pub pixels:Vec<u8>,pub feature_level:u32,pub adapter:String,pub vendor_id:u32,pub device_id:u32,pub software_adapter:bool,pub adapter_flags:u32}
+pub fn is_software_adapter(vendor:u32,device:u32,flags:u32,name:&str)->bool {
+    flags&2!=0||(vendor==0x1414&&device==0x8c)||name.to_ascii_lowercase().contains("basic render driver")
+}
 pub const WIDTH:usize=64;
 pub const HEIGHT:usize=64;
 pub fn reference()->Vec<u8> {
@@ -67,7 +70,7 @@ mod windows {
             let adapter_name=String::from_utf16_lossy(&adapter_desc.description[..adapter_desc.description.iter().position(|x|*x==0).unwrap_or(128)]);
             // Some virtualized Windows runners report Flags=0 for Basic Render Driver.
             // Never certify that known CPU renderer as a physical hardware path.
-            let software_adapter=adapter_desc.flags&2!=0||(adapter_desc.vendor==0x1414&&adapter_desc.device==0x8c)||adapter_name.to_ascii_lowercase().contains("basic render driver");
+            let software_adapter=is_software_adapter(adapter_desc.vendor,adapter_desc.device,adapter_desc.flags,&adapter_name);
             if backend==Backend::Hardware&&software_adapter {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend=Hardware HRESULT=0x887a0004 software DXGI adapter: {adapter_name}"));}
             let vertex=shader(b"float4 main(uint id:SV_VertexID):SV_Position { float2 p[3]={float2(-1,-1),float2(-1,3),float2(3,-1)}; return float4(p[id],0,1); }",c"vs_4_0".to_bytes_with_nul())?;
             let pixel=shader(b"float4 main(float4 pos:SV_Position):SV_Target { uint2 p=uint2(pos.xy); return float4(float(p.x%4)/3,float(p.y%4)/3,float((p.x+p.y)%4)/3,1); }",c"ps_4_0".to_bytes_with_nul())?;
@@ -115,5 +118,12 @@ mod windows {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn reject_known_cpu_renderer_even_when_dxgi_software_flag_is_missing() {
+        assert!(is_software_adapter(0x1414,0x8c,0,"adapter"));
+        assert!(is_software_adapter(0,0,0,"Microsoft Basic Render Driver"));
+        assert!(is_software_adapter(0x8086,0x1912,2,"anything"));
+        assert!(!is_software_adapter(0x8086,0x1912,0,"Intel HD Graphics 530"));
+        assert!(!is_software_adapter(0x10de,0x1234,0,"example adapter"));
+    }
     #[test] fn asymmetric_reference() {let p=reference();assert_eq!(p.len(),64*64*4);assert_eq!(&p[..8],&[0,0,0,255,85,0,85,255]);assert_eq!(&p[256..260],&[0,85,85,255]);assert_ne!(&p[..256],&p[256..512]);}
 }
