@@ -205,7 +205,7 @@ mod tests {
         let mut p=PicPair::default();
         for value in [0x10,0x13,0x19,0xc0,0x0c,0x68] {assert!(p.access(0x20,true,value).is_err());}
         p.access(0x20,true,0x11).unwrap();p.access(0x21,true,0x20).unwrap();p.access(0x21,true,4).unwrap();
-        assert!(p.access(0x21,true,3).is_err());assert_eq!(p.master.step,4);
+        assert!(p.access(0x21,true,5).is_err());assert_eq!(p.master.step,4);
         p.access(0x21,true,1).unwrap();assert_eq!(p.master.step,0);
         assert!(p.access(0x22,false,0).is_err());
     }
