@@ -126,3 +126,44 @@ checks. Latest production code **6b7af44** passed:
 
 The high-resolution clock fix is verified for these tested guest profiles;
 SMP/APIC and the other remaining core acceptance items above are not waived.
+
+
+## Continued Step 1: topology and two-vCPU startup (not full SMP boot)
+
+Code **f71fa31** keeps this step active. Production boot still uses one vCPU;
+there is deliberately no claim that Linux/Android can yet boot with SMP/APIC.
+
+- Added indexed vCPU register/lifetime management, correctly deleting each vCPU
+  by its own index. Whole-partition watchdog cancellation now covers all created
+  vCPUs, not just CPU0.
+- Added a reviewed one-socket/one-thread-per-core topology contract. Replies use
+  WHP-filtered defaults, rewrite virtual core/APIC IDs and counts, clamp cache
+  sharing counts, and remove unsupported MONITOR/VMX/SVM/x2APIC/TSC-deadline
+  claims. CPUID.1, .4, .B/.1F and AMD topology leaves agree. Unit tests cover
+  configurations 1..8; real guest conformance covers the one/two-vCPU profiles.
+  This does not certify every other host feature bit or every CPU model.
+- `smp-smoke` is an explicit experimental startup fixture, not a production SMP
+  scheduler. BSP guest MMIO writes issue INIT/SIPI through the SDK instruction
+  emulator to the startup frontend. A dormant AP gets architectural CS:IP only
+  after these commands; two real WHP vCPUs execute, exchange shared RAM and
+  independently store CPUID results. No host writes a successful AP marker.
+- Foundation **45820887975** and **45821109570** passed **48** two-vCPU
+  create/start/handshake/teardown cycles each, with distinct guest-observed CPU
+  IDs and matching logical counts. Unit/Clippy/release and pre-existing native
+  CPU/timer/MMIO/storage safety gates passed on both CI hosts as applicable.
+- Linux **45820893306** passed the clock, boot, block, ext4, bridge and software
+  display regressions. Android regression **45820887569** passed actual signed
+  APK install/presence/uninstall using unchanged derived assets **45806838925**.
+
+The failed intermediate tests were investigated, not skipped: opaque WHP xAPIC
+startup ran the AP incorrectly when entered too early; the newer INIT/SIPI trap
+flag was rejected by Server 2022 (`0x80070032`). The working explicit startup
+frontend does not depend on that newer API. Real-mode AP handshake buffers also
+stay below 64KiB to respect segment limits. Unsupported APIC operations fail
+explicitly; this startup subset does not pretend to provide fixed IPIs, LAPIC
+interrupt priorities/timers, IOAPIC routing or arbitrary AP restart.
+
+**Still required before core completion:** production SMP scheduling and boot
+enumeration, full LAPIC/IOAPIC/timer routing with OS-level acceptance, reset and
+failure stress beyond the tested subset, and the physical Windows 10 matrix.
+No Step 2 work or completion declaration is implied by these results.
