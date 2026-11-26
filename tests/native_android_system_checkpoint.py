@@ -27,14 +27,14 @@ def main():
     cmd=('earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 '
          'ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 '
          'root=/dev/ram0 ROOT=/dev/vda SRC=/android virtio_mmio.device=4K@0xd0000000:5 '
-         'DEBUG=0 SWITCH=switch_root rdinit=/bin/busybox -- sh -x /init')
+         'rdinit=/init')
     p=subprocess.run([exe,'probe-android-init-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),
                       str(root/'android-system.zlag'),'android-system.cow','--ram-mib=2048',
                       '--framebuffer=android-system.ppm'],capture_output=True,text=True,timeout=150)
     serial=log.read_text(errors='replace') if log.exists() else ''
     timing=Path(str(log)+'.timing.json');metrics=json.loads(timing.read_text()) if timing.exists() else {}
     result={'schema':1,'android_second_stage_init_verified':False,'android_framework_verified':False,
-            'android_home_verified':False,'original_init_shell_trace':True,'engine_exit':p.returncode,'stderr':p.stderr,'metrics':metrics,
+            'android_home_verified':False,'original_init_shell_trace':False,'engine_exit':p.returncode,'stderr':p.stderr,'metrics':metrics,
             'serial_tail':serial[-12000:],'base_sha256_before':manifest['files']['android-system.zlag']['sha256'],
             'base_sha256_after':digest(root/'android-system.zlag')}
     Path('android-system-checkpoint.json').write_text(json.dumps(result,indent=2))
