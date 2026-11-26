@@ -16,3 +16,11 @@ __pycache__/
 
 # Native-engine local build/test containers
 *.zlag
+
+# Native integration scratch media (never user-ready releases)
+*.cow
+*.raw
+/android-boot-assets/
+/android-system-artifact/
+/source-payload/
+/android-tree/

@@ -314,15 +314,19 @@ mod windows {
         set_registers(partition,&[0x80000000],&[Register::scalar(1|(u64::from(vector)<<16))])?;
         platform.pic.acknowledge()?;Ok(Some(vector))
     }
+    #[derive(Clone,Copy,PartialEq)]
+    enum RunGoal {Diagnostic,TimerFixture,AndroidInit}
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
-        fixture:bool,mut disk:Option<&mut LiveBlock>)->Result<(),String> {
+        goal:RunGoal,mut disk:Option<&mut LiveBlock>)->Result<(),String> {
+        let fixture=goal==RunGoal::TimerFixture;
+        let limit=if goal==RunGoal::AndroidInit {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;
         timer_pump(partition,|| {
-            let (result,timed_out)=bounded(partition,30000,|| {
+            let (result,timed_out)=bounded(partition,limit,|| {
                 for _ in 0..250000 {
-                    if elapsed_ms()>=30000 {return Err("Platform wall deadline exceeded".into());}
+                    if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
@@ -365,7 +369,7 @@ mod windows {
                             }
                             if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
                             else {set_registers(partition,&[0x10],&[rip])?;}
-                            if !fixture&&trace.linux_userspace_ready_ms.is_some() {return Ok(Ok(()));}
+                            if (goal==RunGoal::Diagnostic&&trace.linux_userspace_ready_ms.is_some())||(goal==RunGoal::AndroidInit&&trace.android_init_second_stage_ms.is_some()) {return Ok(Ok(()));}
                         }
                         reason=>{
                             let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
@@ -383,7 +387,7 @@ mod windows {
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,_| {
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false,None)
+            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,RunGoal::Diagnostic,None)
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -395,7 +399,7 @@ mod windows {
             let mut platform=crate::platform::EarlyPlatform::default();
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut platform,serial,trace,start,false,Some(&mut disk))
+            run_platform(partition,&mut platform,serial,trace,start,if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},Some(&mut disk))
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
@@ -483,7 +487,7 @@ mod windows {
             platform.pit0.access(0x43,true,0x30,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
-            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,true,None)?;
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,RunGoal::TimerFixture,None)?;
             let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
             if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
                 return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));
