@@ -633,12 +633,12 @@ part of independent-engine acceptance; the editor/ISO code was not removed.
 ### Startup limitation made explicit
 
 First SIPI delivery commits AP startup state under the routing lock. Duplicate
-SIPIs to an already-started CPU are ignored architecturally. INIT after startup
-(including a startup/reset race) now fails explicitly instead of queueing an
-ignored reset into a worker that is already running. Destination validation
-precedes event sends. **This does not implement runtime INIT reset/hotplug**.
+SIPIs to an already-started CPU are ignored architecturally. At this checkpoint,
+INIT after startup failed explicitly rather than silently ignoring a reset.
+**That runtime-INIT rejection is superseded by the target-owned reset work below**;
+OS hotplug and full architectural reset semantics remain uncertified.
 
-Remaining Step 1 work includes runtime reset, broader fault/interruption and
+Remaining Step 1 work includes broader runtime-reset and fault/interruption and
 long-duration concurrency coverage, broader CR8/advanced interrupt
 semantics and physical Windows 10 testing. Android SMP/disk/bridge, renderer
 selection, player settings integration and accelerated guest GPU remain outside
@@ -685,8 +685,8 @@ an edge-triggered GSI5 could remain logically high and lose a new rising edge.
 MMIO acknowledgement, and samples platform IRQ changes under its I/O lock.
 The unchanged concurrent workload then passed along with the complete matrix.
 This is bounded functional coverage, not a throughput benchmark or exhaustive
-interrupt/reset/concurrency certification. Runtime INIT reset remains explicitly
-rejected; physical Windows 10 acceptance and the other Step 1 gaps above remain
+interrupt/reset/concurrency certification. Runtime INIT was explicitly rejected
+at that checkpoint (superseded below); physical Windows 10 acceptance and the other Step 1 gaps above remain
 open. No Android Home, guest GPU, networking/audio, renderer selection or player
 settings acceptance is implied.
 
@@ -728,3 +728,60 @@ runtime INIT reset/hotplug, all APIC priority/delivery modes, arbitrary interrup
 contention, long-duration stress or physical Windows 10. Step 1 remains open;
 Android Home/GPU/network/audio/player settings and launch-time targets are not
 advanced by this gate.
+
+
+### Target-owned runtime AP INIT/SIPI restart
+
+Code **15148d3** replaces the earlier explicit runtime-INIT rejection with a
+shared AP worker used by both the native fixture and Linux SMP frontend. Guest
+INIT is queued to the target worker. The 1 ms cancellation pump brings that VP
+out of WHP execution; its run loop checks the control channel before reentry.
+Only the target worker, with no WHvRun active on that VP, deletes and recreates
+its WHP processor under the device/fabric lock. This discards stale native
+register/pending-event/translation state rather than attempting a partial list
+of register repairs. It replaces the target's software LAPIC and establishes
+real-mode reset entry state (including CR8=0), then waits for a new SIPI to set
+CS:IP. The partition, RAM mapping, other VPs and shared devices are not recreated.
+This is a host implementation of a guest-requested AP reset; no QEMU is involved.
+
+Routing validates all destinations before sending commands, commits INIT/SIPI
+startup state under the fabric lock, ignores duplicate SIPIs after startup,
+and ignores level INIT deassert as a second reset. Physical AP destinations
+and all-except-self startup routing remain available. BSP/self-all reset and
+whole-machine reboot are not supplied by this change. Normal shutdown, error
+and panic paths retain scoped worker joins and the existing RAM/device gates.
+
+The two-VP guest fixture now performs three **active** runtime AP resets after
+its original startup/interrupt/device checks. Before each INIT, AP1 dirties its
+TPR/CR8 and queues a masked self-IPI, publishes its generation, then spins with
+IF=0 rather than halting. BSP issues INIT assert/deassert and duplicate SIPIs.
+Each restarted AP checks reset TPR/SVR defaults and empty IRR/ISR at the probed
+vector class before enabling its LAPIC. Shared generation counters must show
+exactly four starts and four completions, with no stale bits; the final
+generation halts cleanly so the original no-pending-IRQ and restored-stack
+assertions remain enforced. Three CLI repetitions of 16 cycles require **144
+active AP resets**, using the same production worker as the Linux frontend.
+The test initially failed because its final generation deliberately left a
+pending test IPI, violating the existing drain assertion; the final generation
+now leaves a clean halt, without weakening that drain assertion.
+
+Verified runs:
+
+- **45862730479**: strict Windows/Ubuntu foundation at 15148d3 passed. Windows
+  check **140057651449** records all 144 active AP resets and the three long64
+  CR8/TPR cycles; the CLI requires the exact reset marker in all 48 cycles.
+- **45862939896**: all 47 APIC Linux VM invocations passed using the new worker,
+  including selected CPU/RAM, raw/ext4/COM2, DMA errors/panics and recovery, and
+  concurrent direct-I/O/persistence. Kernel artifact 45834154987 was reused.
+- **45863607435**: legacy PIC Linux regression passed with artifact 45814022595.
+- Seven local Python initramfs structural tests passed again.
+
+**Limits:** runtime reset is directly exercised on AP1 executing protected32
+code, not on a running Linux scheduler, long64 AP workload, all eight APs under
+reset storms, or during an in-flight disk transaction. Initial Linux SMP boots
+through the shared worker pass, but they are not OS CPU-offline/online tests.
+No claim of complete INIT architectural semantics, hotplug, BSP reset, ACPI
+power management, physical Windows 10 acceptance or exhaustive interrupt stress
+is made. Step 1 remains incomplete to those bounds; Android Home, accelerated
+guest graphics, networking/audio, ANR fixes and player-settings integration are
+still separate unfinished stages.
