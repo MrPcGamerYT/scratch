@@ -56,7 +56,7 @@ def main():
         assert 'Unsupported kernel port 0x70' not in p.stderr,p.stderr
         assert metrics['total_boot_verified'] is False
         assert metrics['target_met'] is None and metrics['android_home_ready_ms'] is None
-        assert metrics['android_home_target_ms']==60000
+        assert metrics['android_home_target_ms']==100000
         fields=['header_validated_ms','vm_ready_ms','vcpu_run_requested_ms','linux_banner_ms','linux_userspace_ready_ms','stopped_ms']
         times=[metrics[field] for field in fields]
         assert all(isinstance(n,int) and n>=0 for n in times) and times==sorted(times),times
@@ -76,8 +76,8 @@ def main():
             notice('KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw[:2048]).decode())
             notice(f'KERNEL_SHA256={expected}; SERIAL_SHA256={hashlib.sha256(raw).hexdigest()}; SERIAL_BYTES={len(raw)}')
         notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; userspace={metrics["linux_userspace_ready_ms"]} ms; IRQ0 injections={metrics["irq0_injections"]}; stopped={metrics["stopped_ms"]} ms; ANDROID BOOT=false; engine output: '+p.stderr[-1300:])
-    summary={'schema':1,'target':'approximately 60 seconds from emulator launch to usable, verified Android Home',
-        'target_ms':60000,'target_verified':False,'android_home_ready_ms':None,
+    summary={'schema':1,'target':'approximately 100 seconds from emulator launch to usable, verified Android Home',
+        'target_ms':100000,'target_verified':False,'android_home_ready_ms':None,
         'scope':'hosted Windows Server 2022, tiny Linux diagnostic PID1 only; no general Linux distribution; NOT Windows 10/Android boot performance',
         'linux_userspace_checkpoint_verified':True,
         'linux_userspace_median_ms':statistics.median(s['metrics']['linux_userspace_ready_ms'] for s in samples),

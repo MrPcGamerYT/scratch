@@ -1,3 +1,4 @@
+//! Current Android Home goal: approximately 100 seconds end-to-end.
 //! Host monotonic checkpoints, not guest wall clock, FPS or Android readiness.
 #[derive(Default)]
 pub struct BootTrace {
@@ -34,7 +35,7 @@ impl BootTrace {
     }
     pub fn json(&self)->String {
         format!(concat!("{{\n  \"schema\":1,\n  \"clock\":\"host_monotonic\",\n  \"origin\":\"engine_main_including_input_load\",\n",
-            "  \"android_home_target_ms\":60000,\n  \"android_home_ready_ms\":null,\n  \"total_boot_verified\":false,\n  \"target_met\":null,\n",
+            "  \"android_home_target_ms\":100000,\n  \"android_home_ready_ms\":null,\n  \"total_boot_verified\":false,\n  \"target_met\":null,\n",
             "  \"header_validated_ms\":{},\n  \"vm_ready_ms\":{},\n  \"vcpu_run_requested_ms\":{},\n  \"linux_banner_ms\":{},\n  \"linux_userspace_ready_ms\":{},\n  \"stopped_ms\":{},\n",
             "  \"vcpu_exits\":{},\n  \"pit_channel2_programs\":{},\n  \"pit_accesses\":{},\n  \"pic_accesses\":{},\n  \"pic_initializations\":{},\n  \"pit0_programs\":{},\n  \"pit0_edges\":{},\n  \"irq0_injections\":{},\n  \"halt_waits\":{},\n  \"serial_bytes\":{},\n  \"stop_reason\":{}\n}}\n"),
             number(self.header_validated_ms),number(self.vm_ready_ms),number(self.vcpu_run_requested_ms),number(self.linux_banner_ms),number(self.linux_userspace_ready_ms),number(self.stopped_ms),
@@ -47,6 +48,7 @@ mod tests {
     #[test] fn banner_across_chunks_is_not_android_readiness() {
         let mut t=BootTrace::default();t.observe_serial(b"noise Li",2);t.observe_serial(b"nux ver",3);t.observe_serial(b"sion 6.6",4);
         assert_eq!(t.linux_banner_ms,Some(4));t.observe_serial(b"Linux version ",10);assert_eq!(t.linux_banner_ms,Some(4));
+        assert!(t.json().contains("\"android_home_target_ms\":100000"));
         assert!(t.json().contains("\"android_home_ready_ms\":null"));assert!(t.json().contains("\"target_met\":null"));
         assert!(t.json().contains("\"total_boot_verified\":false"));
     }
@@ -55,6 +57,7 @@ mod tests {
         t.observe_serial(b"NEXUS_USERSPACE_",2);t.observe_serial(b"READY",3);
         assert_eq!(t.linux_userspace_ready_ms,Some(3));
         t.observe_serial(b"NEXUS_USERSPACE_READY",4);assert_eq!(t.linux_userspace_ready_ms,Some(3));
+        assert!(t.json().contains("\"android_home_target_ms\":100000"));
         assert!(t.json().contains("\"android_home_ready_ms\":null"));
         assert!(t.json().contains("\"total_boot_verified\":false"));
     }

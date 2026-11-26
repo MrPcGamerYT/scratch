@@ -42,6 +42,17 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
         print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
         print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
+        ata_raw=root/'ata-fixture.raw';ata_image=root/'ata-fixture.zlag'
+        ata_payload=bytes((n*17+n//512)%251 for n in range(2048))
+        ata_raw.write_bytes(ata_payload);run('import-raw',ata_raw,ata_image)
+        ata_sha=hashlib.sha256(ata_image.read_bytes()).hexdigest()
+        for _ in range(3):run('ata-pio-smoke',ata_image)
+        assert hashlib.sha256(ata_image.read_bytes()).hexdigest()==ata_sha
+        assert ata_raw.read_bytes()==ata_payload
+        bad_ata=root/'corrupt-ata.zlag';bad_bytes=bytearray(ata_image.read_bytes());bad_bytes[-1]^=1;bad_ata.write_bytes(bad_bytes)
+        failure=run('ata-pio-smoke',bad_ata,ok=False)
+        assert 'checksum mismatch' in failure.stderr,failure.stderr
+        print('::notice::PASS: verified ZLAG -> virtual ATA IDENTIFY/LBA28 PIO -> actual guest RAM exact sector comparison, guest write-command ABRT, source SHA unchanged, three repetitions; corrupt images refused; read-only/polled device only, not Android boot',flush=True)
         sector=bytearray(512); code=bytearray([0xba,0xe9,0])
         for byte in b'NEXUS-ZLAG-BOOT':code.extend([0xb0,byte,0xee])
         code.append(0xf4);sector[:len(code)]=code;sector[510:]=b'\x55\xaa'
@@ -62,5 +73,6 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: real ZLAG file -> verified first-sector loader -> direct WHP execution at 0000:7c00 -> NEXUS-ZLAG-BOOT debug output -> HLT, three repetitions; source SHA unchanged, invalid signature/corruption refused; not Android boot',flush=True)
         print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
     else:
+        run('ata-pio-smoke',target,ok=False)
         for cmd in ['cpu-smoke','io-smoke','cancel-smoke','protected-smoke','long-smoke','kernel-contract-smoke','timer-irq-smoke']: run(cmd,ok=False)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)

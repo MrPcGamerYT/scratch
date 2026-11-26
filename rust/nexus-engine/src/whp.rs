@@ -368,6 +368,61 @@ mod windows {
             run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false)
         })
     }
+    pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {
+        use crate::{cpu,ata::AtaPio,image::Image};
+        let ata=AtaPio::open(path)?;
+        let mut image=Image::open(path).map_err(|e|e.to_string())?;
+        if image.disk_bytes<1024 {return Err("ATA smoke needs at least two disk sectors".into());}
+        let capacity=(image.disk_bytes/512) as u32;
+        let mut expected=[0;512];image.read_sectors(1,&mut expected).map_err(|e|e.to_string())?;
+        let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
+        let mut code=Vec::new();
+        let output=|code:&mut Vec<u8>,port:u32,value:u8| {
+            code.push(0xba);code.extend_from_slice(&port.to_le_bytes());code.extend_from_slice(&[0xb0,value,0xee]);
+        };
+        let words=|code:&mut Vec<u8>,address:u32| {
+            code.extend_from_slice(&[0xba,0xf0,1,0,0,0xbf]);code.extend_from_slice(&address.to_le_bytes());
+            code.extend_from_slice(&[0xb9,0,1,0,0,0x66,0xed,0x66,0x89,7,0x83,0xc7,2,0xe2,0xf6]);
+        };
+        output(&mut code,0x3f6,2);output(&mut code,0x1f6,0xe0);output(&mut code,0x1f7,0xec);
+        words(&mut code,0x1a000);
+        for (port,value) in [(0x1f2,1),(0x1f3,1),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {output(&mut code,port,value);}
+        words(&mut code,0x1b000);
+        output(&mut code,0x1f7,0x30); // Must ABRT, never write the image.
+        code.extend_from_slice(&[0xec,0xa2,0,0xc0,1,0,0xf4]); // Save status then HLT.
+        f.ram[cpu::ENTRY..cpu::ENTRY+code.len()].copy_from_slice(&code);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;
+            let mut platform=crate::platform::EarlyPlatform{ata:Some(ata),..Default::default()};
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..2048 {
+                    let context=run_once(partition)?;
+                    match context.reason() {
+                        8=>return Ok(Ok(())),
+                        2=>{
+                            let io=crate::io::IoExit::decode(&context.0)?;
+                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+                            let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
+                            if let Some(rax)=platform.access(io,0)? {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
+                            else {set_registers(partition,&[0x10],&[rip])?;}
+                        }
+                        reason=>return Err(format!("Unexpected ATA fixture guest exit 0x{reason:x}")),
+                    }
+                }
+                Ok(Err("ATA fixture exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("ATA fixture deadline exceeded".into());}result?;
+            let ram=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>(),memory.bytes)};
+            let observed_capacity=u32::from_le_bytes(ram[0x1a078..0x1a07c].try_into().unwrap());
+            let device=platform.ata.as_ref().ok_or("Missing ATA fixture device")?;
+            if ram[0x1b000..0x1b200]!=expected||observed_capacity!=capacity||ram[0x1c000]&1==0
+                ||device.sectors_read!=1||device.commands!=3||scalar_register(partition,4)?!=cpu::STACK {
+                return Err("ATA guest IDENTIFY/read/write-refusal/stack result mismatch".into());
+            }
+            Ok(())
+        })
+    }
     pub fn timer_irq_smoke()->Result<(),String> {
         use crate::cpu;
         let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
@@ -446,3 +501,8 @@ pub fn boot_kernel(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Wr
 pub use windows::timer_irq_smoke;
 #[cfg(not(windows))]
 pub fn timer_irq_smoke()->Result<(),String> {Err("Timer IRQ execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::ata_pio_smoke;
+#[cfg(not(windows))]
+pub fn ata_pio_smoke(_path:&std::path::Path)->Result<(),String> {Err("ATA guest execution requires Windows x64 WHP".into())}

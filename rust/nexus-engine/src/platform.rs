@@ -1,13 +1,20 @@
 //! Early bring-up platform; not a complete PC chipset. Host ports never exposed.
-use crate::{io::IoExit,pit::Pit2,pit0::Pit0,pic::PicPair,rtc::Rtc,uart::EarlyUart};
+use crate::{ata::AtaPio,io::IoExit,pit::Pit2,pit0::Pit0,pic::PicPair,rtc::Rtc,uart::EarlyUart};
 #[derive(Default)]
-pub struct EarlyPlatform {pub uart:EarlyUart,pub pit:Pit2,pub pit0:Pit0,pub pic:PicPair,pub rtc:Rtc}
+pub struct EarlyPlatform {pub uart:EarlyUart,pub pit:Pit2,pub pit0:Pit0,pub pic:PicPair,pub rtc:Rtc,pub ata:Option<AtaPio>}
 impl EarlyPlatform {
     pub fn tick(&mut self,now_ns:u64) {
         if self.pit0.poll(now_ns) {self.pic.raise_irq0();}
     }
     pub fn access(&mut self,io:IoExit,now_ns:u64)->Result<Option<u64>,String> {
         self.tick(now_ns);
+        if (0x1f0..=0x1f7).contains(&io.port)||io.port==0x3f6 {
+            if let Some(ata)=&mut self.ata {return ata.access(io);}
+            if (io.port==0x1f0&&io.size==2)||(io.port!=0x1f0&&io.size==1) {
+                return Ok(if io.write {None} else {Some(io.input_register(if io.size==2 {0xffff} else {0xff}))});
+            }
+            return Err("Unsupported ATA access width".into());
+        }
         if io.port==0x40||(io.port==0x43&&io.write&&(io.rax as u8)>>6==0) {
             if io.size!=1 {return Err("PIT channel0 accesses must be bytes".into());}
             return self.pit0.access(io.port,io.write,io.rax as u8,now_ns).map(|value|value.map(|b|io.input_register(u32::from(b))));
