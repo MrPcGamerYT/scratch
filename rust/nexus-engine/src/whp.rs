@@ -278,23 +278,60 @@ mod windows {
             Ok(())
         })
     }
-    pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
-        load_kernel_plan(plan,|partition,_| {
-            let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-            trace.vm_ready_ms=Some(elapsed_ms());
-            let mut platform=crate::platform::EarlyPlatform::default();
+    // Cancellation is only a scheduling rendezvous; it never fabricates a guest tick.
+    // Join before partition teardown even when action returns an error.
+    fn timer_pump<T>(partition:&Partition,action:impl FnOnce()->Result<T,String>)->Result<T,String> {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let handle=partition.0 as usize;let (tx,rx)=mpsc::channel();
+        let worker=std::thread::spawn(move || {
+            while matches!(rx.recv_timeout(Duration::from_millis(1)),Err(mpsc::RecvTimeoutError::Timeout)) {
+                unsafe {WHvCancelRunVirtualProcessor(handle as *mut c_void,0,0);}
+            }
+        });
+        let result=action();let _=tx.send(());worker.join().map_err(|_|"Timer rendezvous thread panicked")?;result
+    }
+    fn queue_irq0(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<bool,String> {
+        let Some(vector)=platform.pic.pending_vector() else {return Ok(false);};
+        // Never overwrite an event already queued in WHP. WHP observes IF and STI/MOV-SS shadow.
+        if scalar_register(partition,0x80000000)?&1!=0 {return Ok(false);}
+        set_registers(partition,&[0x80000000],&[Register::scalar(1|(u64::from(vector)<<16))])?;
+        platform.pic.acknowledge_irq0()?;Ok(true)
+    }
+    fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
+        serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
+        fixture:bool)->Result<(),String> {
+        let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+        let mut halted=false;
+        timer_pump(partition,|| {
             let (result,timed_out)=bounded(partition,30000,|| {
                 for _ in 0..250000 {
+                    if elapsed_ms()>=30000 {return Err("Platform wall deadline exceeded".into());}
+                    let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                    platform.tick(now_ns);
+                    if queue_irq0(partition,platform)? {trace.irq0_injections+=1;halted=false;}
+                    trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
+                    if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
                     let context=run_once(partition)?;trace.exits+=1;
                     match context.reason() {
+                        0x2001=>continue, // Scheduling rendezvous; wall deadline remains global.
+                        8=>{
+                            if fixture&&trace.irq0_injections>0 {return Ok(Ok(()));}
+                            let flags=scalar_register(partition,0x11)?;
+                            if flags&0x200==0 {return Err("Guest halted with interrupts disabled; no completed boot".into());}
+                            let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
+                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+                            set_registers(partition,&[0x10],&[Register::scalar(mode.next_rip(rip,context.0[10]&15)?)])?;
+                            trace.halt_waits+=1;halted=true;
+                        }
                         2=>{
                             let io=crate::io::IoExit::decode(&context.0)?;
                             let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
                             let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
                             let before=platform.uart.output.len();
-                            let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-                            let response=platform.access(io,now_ns);
+                            let io_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                            let response=platform.access(io,io_ns);
                             trace.pit_programs=platform.pit.programs;trace.pit_accesses=platform.pit.accesses;
                             trace.pic_accesses=platform.pic.accesses;trace.pic_initializations=platform.pic.initializations;
                             let input=response.map_err(|e|format!("{e}; mode={mode:?}, RIP=0x{:x}",io.rip))?;
@@ -318,6 +355,39 @@ mod windows {
             serial.flush().map_err(|e|e.to_string())?;
             if timed_out {return Err("Kernel wall deadline exceeded; no completed-boot claim".into());}
             result
+        })
+    }
+    pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
+        load_kernel_plan(plan,|partition,_| {
+            trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
+            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false)
+        })
+    }
+    pub fn timer_irq_smoke()->Result<(),String> {
+        use crate::cpu;
+        let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
+        f.idt_limit=0x107;
+        // IRQ0 vector20 points at a protected-mode INC / EOI / IRETD handler.
+        f.ram[cpu::IDT+0x100..cpu::IDT+0x108].copy_from_slice(&[0,0x81,8,0,0,0x8e,0,0]);
+        // STI; NOP; HLT; CLI; HLT. The first halt must wake via an external IRQ.
+        f.ram[cpu::ENTRY..cpu::ENTRY+5].copy_from_slice(&[0xfb,0x90,0xf4,0xfa,0xf4]);
+        f.ram[0x8100..0x810b].copy_from_slice(&[0xff,0x05,0,0x90,1,0,0xb0,0x20,0xe6,0x20,0xcf]);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;
+            let mut platform=crate::platform::EarlyPlatform::default();
+            for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0xfe)] {platform.pic.access(port,true,value)?;}
+            // Long enough to exercise HLT wait, short enough for deterministic CI budgets.
+            platform.pit0.access(0x43,true,0x30,0)?;
+            platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
+            let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,true)?;
+            let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
+            if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
+                return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));
+            }
+            if platform.pic.pending_vector().is_some() {return Err("Timer IRQ remained pending after EOI".into());}
+            Ok(())
         })
     }
     pub fn boot_test_sector(path:&std::path::Path)->Result<Vec<u8>,String> {
@@ -366,3 +436,8 @@ pub fn long_smoke()->Result<(),String> {Err("Direct WHP long-mode test requires 
 pub fn kernel_contract_smoke()->Result<(),String> {Err("Direct WHP kernel contract test requires Windows 10 x64".into())}
 #[cfg(not(windows))]
 pub fn boot_kernel(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant)->Result<(),String> {Err("Direct WHP kernel execution requires Windows 10 x64".into())}
+
+#[cfg(windows)]
+pub use windows::timer_irq_smoke;
+#[cfg(not(windows))]
+pub fn timer_irq_smoke()->Result<(),String> {Err("Timer IRQ execution requires Windows x64 WHP".into())}

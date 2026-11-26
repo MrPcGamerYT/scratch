@@ -34,3 +34,7 @@ static_assert(sizeof(WHV_X64_TABLE_REGISTER) == 16);
 static_assert(offsetof(WHV_X64_TABLE_REGISTER, Limit) == 6);
 static_assert(offsetof(WHV_X64_TABLE_REGISTER, Base) == 8);
 static_assert(offsetof(WHV_X64_SEGMENT_REGISTER, Selector) == 12);
+
+static_assert(WHvRegisterPendingInterruption == 0x80000000);
+static_assert(WHvX64PendingInterrupt == 0);
+static_assert(sizeof(WHV_X64_PENDING_INTERRUPTION_REGISTER) == 8);

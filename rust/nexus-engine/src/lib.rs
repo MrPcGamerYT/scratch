@@ -4,6 +4,7 @@ pub mod image;
 pub mod kernel;
 pub mod uart;
 pub mod pit;
+pub mod pit0;
 pub mod pic;
 pub mod rtc;
 pub mod platform;
