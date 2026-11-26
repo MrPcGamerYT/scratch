@@ -15,19 +15,17 @@ end-to-end wiring and acceptance for these requirements; the native CLI tests
 below do not claim that integration is finished. Do not treat CPU/RAM changes
 as hot-plug support: the verified settings apply when constructing a fresh VM.
 
-## Latest verified scope: selected-core Linux SMP/APIC
+## Latest verified scope: SMP/APIC disk DMA and COM2
 
-Code **76c08de** passed a **10-boot actual Linux matrix** in **45842479962**:
-selected CPU counts 1..8, RAM 128..1024 MiB, and repeat two-CPU boots at 256/512
-MiB. Linux reports the selected online CPU count and E820 memory range; PID1
-pins itself onto **every selected CPU** and verifies getcpu(). Foundation
-**45842185302** passed both platforms, and legacy PIC Linux regression
-**45842774985** passed. `boot-kernel ... --apic-probe --cpus=N --ram-mib=M`
-now applies N to WHP processor creation, CPUID, MP tables and guest INIT/SIPI
-startup, and M to actual guest RAM/E820. The default disk/Android/PIC profile
-still rejects multiple CPUs. This is headless initramfs SMP acceptance, **not
-SMP Android/disk/player acceptance, comprehensive concurrency stress, physical
-Windows 10 certification or completed Step 1**.
+Final code **2cd8fa9** passed foundation **45849986875**, actual Linux APIC
+**45850222110**, and legacy Linux/PIC regression **45850990588**. The APIC OS
+gate now runs **19 independent boots**: the existing 10-boot selected CPU/RAM
+matrix, plus nine raw/ext4 persistence boots with 1/2/4/8 CPUs, actual block
+DMA rendezvous, real IOAPIC disk interrupts, and exact private COM2 handshake.
+CPU count and RAM remain effective VM inputs. Headless Linux APIC disk/bridge
+mode is now accepted; Android, APK, player/renderer paths are not certified.
+This is still **not completed Step 1**: full reset/failure/concurrency stress,
+advanced interrupt semantics and physical Windows 10 acceptance remain.
 
 ## New core findings and verified changes
 
@@ -560,3 +558,89 @@ and physical Windows 10 acceptance. Android SMP, renderer setting integration,
 accelerated guest GPU and player settings are not certified. These results
 supersede the earlier absence of actual OS SMP startup/scheduling acceptance,
 not the remaining platform or complete-emulator criteria. No Step 2 was started.
+
+
+## Sequential blocker: APIC disk DMA and COM2, including multiple CPUs
+
+Extended `boot-kernel-disk-create/open ... --apic-probe --cpus=N` to use the
+APIC controller runner and existing validated VirtIO MMIO/block/COW backend.
+The first stage deliberately enforced one CPU and passed before lifting that
+restriction. Block queue service is outside synchronous emulator callbacks,
+not an unbounded callback-side device operation. Device IRQ state now feeds
+IOAPIC GSI5. Acceptance requires actual queue completions, MMIO accesses and
+positive GSI5 deliveries, not merely a bound driver or a startup marker.
+
+### SMP DMA synchronization
+
+Every vCPU holds a shared guest-RAM gate **only while inside WHP Run**. Host
+block service takes the exclusive gate before constructing a mutable guest-RAM
+view or examining/updating queues. The existing 1ms cancellation worker brings
+running CPUs out of WHP; their guards drop before they attempt the fabric lock.
+The writer waits until all vCPUs are stopped and prevents reentry until device
+service completes. Guest-memory fetch/translation callbacks participate in the
+same gate without holding it while acquiring the controller fabric, avoiding
+a lock-order inversion. RAM/queue views drop before the exclusive guard.
+Block backend and queue state remain serialized by the fabric lock. Completed
+rendezvous are counted and reported in native disk evidence. No claim is made
+that this stop-all DMA path is optimized or benchmarked.
+
+### Private bridge device
+
+The query-only `--bridge-probe` now works in headless Linux APIC mode, including
+with SMP disk I/O. The existing COM2 model/client is advanced in the serial
+observer, its interrupt source feeds GSI3, and successful termination requires
+both guest PID1 ready and the actual host client query result. Guest code checks
+the exact QUERY_APP request before replying. Host acceptance requires app
+`org.nexus.fixture`, a complete result, and positive GSI3 deliveries. This is a
+Linux test fixture, **not an Android app, APK install or launcher acceptance**.
+Android/APK/player/framebuffer combinations remain explicitly rejected.
+
+### Verified progression and final matrix
+
+- **45847490309**: strict foundation passed the first APIC disk frontend.
+- **45847885723**, code **8ee39d6**: 10 core/RAM boots plus nine **single-CPU**
+  raw/ext4 disk/persistence boots passed before SMP DMA was enabled.
+- **45848339143** and **45848611300**: scoped all-vCPU DMA synchronization
+  passed foundation and the complete SMP disk matrix respectively.
+- **45849149467** and **45849399406**: COM2 integration passed foundation and
+  all 19 boots with the exact bridge query added to every disk boot.
+- Final **2cd8fa9**, **45849986875**: Windows/Ubuntu strict tests, SDK ABI,
+  release and native dual-vCPU interrupt/timer gates passed.
+- Final **45850222110**: all 19 Linux boots passed, including this disk matrix:
+
+| Sequence | First boot | Second boot | Third boot |
+|---|---|---|---|
+| Raw pattern | 1 CPU / 128 MiB: write, fsync, read/compare | 2 / 256: reopen/read/compare | 8 / 1024: reopen/read/compare |
+| Clean ext4 | 4 / 512: file+directory fsync, unmount | 2 / 256: readonly remount/read/unmount | 8 / 1024: readonly remount/read/unmount |
+| Mounted ext4 VM stop | 8 / 1024: file+directory fsync, stop mounted | 4 / 512: require journal recovery, read/compare | 2 / 256: readonly remount/read/compare |
+
+For every disk sample PID1 first migrates through **all selected CPUs**, ending
+pinned on the last CPU; subsequent disk and bridge work therefore exercises AP
+execution and indexed callbacks when N>1. Every sample requires the exact data
+marker, PID1 ready, bound virtio-blk device, actual disk/GSI5 work, exact COM2
+request/result/GSI3 work, unchanged base/source SHA256 and no disk error.
+The mounted-VM-stop case is **not host power-loss or arbitrary failure injection**.
+All APIC OS tests reuse the SMP-capable kernel **45834154987**; no QEMU is used
+by this Rust/WHP execution path.
+
+Legacy PIC Linux regression **45850990588** passed its clock/storage/ext4/COM2/
+software-display gates after final changes, reusing **45814022595**. Its kernel
+build was skipped on artifact reuse, not rebuilt. Six local Python initramfs
+structural tests also pass. Superseded automatic legacy kernel rebuilds and old
+long-running generic legacy QEMU builds were canceled rather than treated as
+part of independent-engine acceptance; the editor/ISO code was not removed.
+
+### Startup limitation made explicit
+
+First SIPI delivery commits AP startup state under the routing lock. Duplicate
+SIPIs to an already-started CPU are ignored architecturally. INIT after startup
+(including a startup/reset race) now fails explicitly instead of queueing an
+ignored reset into a worker that is already running. Destination validation
+precedes event sends. **This does not implement runtime INIT reset/hotplug**.
+
+Remaining Step 1 work includes runtime reset and failure-injection acceptance,
+concurrent multi-process disk/interrupt stress, broader CR8/advanced interrupt
+semantics and physical Windows 10 testing. Android SMP/disk/bridge, renderer
+selection, player settings integration and accelerated guest GPU remain outside
+this gate. Earlier statements that APIC disk/COM2 or SMP DMA are wholly absent
+are superseded only to the exact verified scope above; Step 1 is not complete.
