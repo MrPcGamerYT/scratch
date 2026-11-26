@@ -4,17 +4,30 @@ Work is restricted to core/platform corrections and regression tests. Do not
 interpret a successful individual test, Linux PID1, APK installation, or starting
 another diagnostic as completion of this step or of the emulator.
 
-## Latest verified scope: opt-in Linux APIC, one CPU
+## Configuration contract — standing requirement
 
-Code **6096f2d** passed eight actual Linux APIC/PID1 boots in
-**45838588570**, native foundation **45838293945**, and legacy PIC Linux
-regression **45838866459**. The new `boot-kernel ... --apic-probe` profile is
-headless/initramfs-only and deliberately one CPU. Linux itself enumerates the
-MP table/controllers, validates its PIT-through-IOAPIC route, programs the
-LAPIC timer, and reaches diagnostic PID1 with functioning clocks. This is no
-longer only a synthetic guest enumeration result. It is still **not Linux SMP,
-disk/Android APIC acceptance, physical Windows 10 certification or completed
-Step 1**. The default disk/Android/legacy boot profile remains unchanged.
+Selected CPU count, RAM and renderer must govern the actual VM/device creation,
+boot and runtime paths, not just labels in Settings. Unsupported combinations
+must be rejected explicitly, not silently ignored or downgraded. Renderer
+selection must identify a real rendering path; software scanout/WARP is not
+proof of accelerated guest graphics. The player/UI configuration still needs
+end-to-end wiring and acceptance for these requirements; the native CLI tests
+below do not claim that integration is finished. Do not treat CPU/RAM changes
+as hot-plug support: the verified settings apply when constructing a fresh VM.
+
+## Latest verified scope: selected-core Linux SMP/APIC
+
+Code **76c08de** passed a **10-boot actual Linux matrix** in **45842479962**:
+selected CPU counts 1..8, RAM 128..1024 MiB, and repeat two-CPU boots at 256/512
+MiB. Linux reports the selected online CPU count and E820 memory range; PID1
+pins itself onto **every selected CPU** and verifies getcpu(). Foundation
+**45842185302** passed both platforms, and legacy PIC Linux regression
+**45842774985** passed. `boot-kernel ... --apic-probe --cpus=N --ram-mib=M`
+now applies N to WHP processor creation, CPUID, MP tables and guest INIT/SIPI
+startup, and M to actual guest RAM/E820. The default disk/Android/PIC profile
+still rejects multiple CPUs. This is headless initramfs SMP acceptance, **not
+SMP Android/disk/player acceptance, comprehensive concurrency stress, physical
+Windows 10 certification or completed Step 1**.
 
 ## New core findings and verified changes
 
@@ -472,3 +485,78 @@ reset/failure stress and physical Windows 10 coverage. ACPI/UEFI interfaces and
 NMI/ExtINT delivery are not supplied by this profile. These results supersede
 older statements that Linux APIC enumeration/timers are entirely untested, but
 not the remaining Step 1 completion criteria. No Step 2 work was started.
+
+
+## Sequential blocker: real Linux SMP and effective CPU/RAM settings
+
+Extended the APIC OS path from one CPU to the selected 1..8 CPUs. The same
+count is used for WHP vCPU creation, virtual CPUID topology, MP discovery entries,
+LAPIC instances and dormant AP workers. AP register state starts in real mode;
+only actual guest INIT/SIPI commands set the requested CS:IP and start an AP.
+Linux runs its own trampoline and mode transitions; the host does not skip to
+Linux's secondary entry. Physical startup destinations and INIT all-except-self
+routing are supported. Level INIT deassert is not misinterpreted as another
+reset. This is initial startup, not complete INIT/reset/hotplug semantics.
+
+All AP run loops share the same controller/device fabric, while vCPUs execute
+concurrently outside its lock. Fixed IPIs, EOI and LAPIC timers use the existing
+runtime path. Shared stop state stops APs when BSP reaches the diagnostic goal
+or a worker fails. A scoped stop guard is dropped before implicit thread joins
+on early setup errors and unwind; workers join before RAM/partition teardown.
+No host serial/device state is read after teardown while an AP can still run.
+
+The diagnostic PID1 now optionally calls sched_setaffinity for each selected
+CPU and then getcpu to verify that CPU is actually executing it. A wrong count,
+failed migration or incorrect reported CPU faults PID1 rather than printing the
+SMP marker. The generated ELF contains writable affinity/result buffers, with
+new deterministic/oracle tests for counts1..8. Existing no-affinity initramfs
+fixtures remain unchanged and their six local structural tests pass.
+
+`--cpus` rejects empty, signed, out-of-range and duplicate settings. More than
+one CPU without the explicit APIC profile is rejected before input file I/O;
+KernelPlan independently rejects inconsistent count/profile combinations.
+No setting is silently accepted while creating just one WHP vCPU. Renderer and
+Android/player integration are not added by this CPU/RAM change.
+
+Verification progression:
+
+- **45840915520**: first multi-CPU-capable runner passed strict foundation gates.
+- **45841266420**: three real two-CPU Linux boots passed; each required both
+  CPUs online and PID1 migrating onto CPU0 and CPU1.
+- **45841740658**: first complete selected-core/RAM matrix passed.
+- Final code **76c08de**, **45842185302**: Ubuntu/Windows foundation passed,
+  retaining 48 native dual-vCPU interrupt/timer/discovery/MSR-recovery cycles
+  and adding CPU configuration validation tests.
+- **45842479962**: final **10 independent Linux boots** passed, with this matrix:
+
+| Selected CPUs | Selected RAM MiB | Required guest proof |
+|---:|---:|---|
+| 1 | 128 | online count, E820 limit, PID1 pinned/getcpu on CPU0 |
+| 2 | 256 | same, executing PID1 on CPU0..1 |
+| 3 | 384 | same, executing PID1 on CPU0..2 |
+| 4 | 512 | same, executing PID1 on CPU0..3 |
+| 5 | 640 | same, executing PID1 on CPU0..4 |
+| 6 | 768 | same, executing PID1 on CPU0..5 |
+| 7 | 896 | same, executing PID1 on CPU0..6 |
+| 8 | 1024 | same, executing PID1 on CPU0..7 |
+| 2 | 256 | independent repeat boot and migration |
+| 2 | 512 | independent repeat with changed RAM |
+
+Every sample additionally requires actual IOAPIC enumeration/accesses, positive
+LAPIC timer injections, PID1 sleep/tick and ready markers, no panic and no
+unchecked MSR access errors. This is sequential per-CPU task migration, not
+simultaneous multi-process stress or a performance benchmark. The RAM parser
+accepts up to 3072 MiB, but this SMP OS matrix verifies only the sizes listed.
+All APIC OS runs reuse the SMP-capable kernel **45834154987**.
+
+Legacy PIC Linux regression **45842774985** passed clock/storage/ext4/COM2/
+software-display acceptance after the final SMP changes, reusing legacy kernel
+**45814022595**. Automatic kernel rebuilds were canceled in favor of the focused
+native/APIC gates followed by this artifact-reusing regression, sequentially.
+
+Remaining Step 1: APIC disk/bridge/device OS integration, concurrency and reset/
+failure stress, CR8/advanced interrupt semantics as needed by broader workloads,
+and physical Windows 10 acceptance. Android SMP, renderer setting integration,
+accelerated guest GPU and player settings are not certified. These results
+supersede the earlier absence of actual OS SMP startup/scheduling acceptance,
+not the remaining platform or complete-emulator criteria. No Step 2 was started.
