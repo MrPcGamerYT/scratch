@@ -13,9 +13,15 @@ impl BlockBackend for Overlay {
     fn write(&mut self,s:u64,d:&[u8])->Result<(),String> {self.write_sectors(s,d)}
     fn flush(&mut self)->Result<(),String> {Overlay::flush(self)}
 }
-impl BlockBackend for Image {
-    fn capacity_sectors(&self)->u64 {self.disk_bytes/512}
-    fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.read_sectors(s,d).map_err(|e|e.to_string())}
+pub struct ReadOnlyDisk {image:Image}
+impl ReadOnlyDisk {
+    pub fn open(path:&std::path::Path)->Result<Self,String> {
+        let mut image=Image::open(path).map_err(|e|e.to_string())?;image.verify().map_err(|e|e.to_string())?;Ok(Self{image})
+    }
+}
+impl BlockBackend for ReadOnlyDisk {
+    fn capacity_sectors(&self)->u64 {self.image.disk_bytes/512}
+    fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.image.read_sectors(s,d).map_err(|e|e.to_string())}
     fn write(&mut self,_s:u64,_d:&[u8])->Result<(),String> {Err("Read-only base device".into())}
     fn flush(&mut self)->Result<(),String> {Ok(())}
 }

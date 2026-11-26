@@ -75,3 +75,24 @@ impl BlockBackend for Disk {
     {let mut disk=Overlay::open(&base,&cow).unwrap();let mut r=ram(0);let mut m=memory(&mut r);let mut q=queue(&m);assert_eq!(process_one(&mut m,&mut q,&mut disk).unwrap().unwrap().status,0);assert_eq!(read(&m,0x2000,512),vec![19;512]);}
     assert_eq!(std::fs::read(&base).unwrap(),original);std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test] fn over_limit_transfer_is_ioerr_before_backend_io() {
+    let mut r=ram(0);r.resize(0x24000,0);desc(&mut r,1,0x2000,128*1024+512,3,2);desc(&mut r,2,0x23000,1,2,0);
+    let mut m=memory(&mut r);let mut q=queue(&m);let mut disk=Disk::default();let c=process_one(&mut m,&mut q,&mut disk).unwrap().unwrap();
+    assert_eq!(c.status,1);assert!(c.error.unwrap().contains("transfer limit"));assert_eq!(disk.ops,0);
+}
+#[test] fn device_write_to_readonly_ram_is_fatal_without_side_effects() {
+    let mut r=ram(0);let (a,rest)=r.split_at_mut(0x2000);let (b,c)=rest.split_at_mut(512);
+    let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:a,writable:true},RamRegion{gpa:0x2000,bytes:b,writable:false},RamRegion{gpa:0x2200,bytes:c,writable:true}]).unwrap();
+    let mut q=queue(&m);let mut disk=Disk::default();assert!(process_one(&mut m,&mut q,&mut disk).is_err());assert_eq!(disk.ops,0);assert_eq!(read(&m,0x3000,1),[0xaa]);
+}
+#[test] fn readonly_backend_requires_verified_payload_and_refuses_writes() {
+    use crate::virtio_block::ReadOnlyDisk;
+    let root=std::env::temp_dir().join(format!("nexus-virtio-ro-{}",std::process::id()));std::fs::create_dir(&root).unwrap();
+    let raw=root.join("raw");let base=root.join("base.zlag");std::fs::write(&raw,[7;2048]).unwrap();image::import_raw(&raw,&base).unwrap();let original=std::fs::read(&base).unwrap();
+    {
+        let mut disk=ReadOnlyDisk::open(&base).unwrap();let mut r=ram(1);let mut m=memory(&mut r);let mut q=queue(&m);
+        let c=process_one(&mut m,&mut q,&mut disk).unwrap().unwrap();assert_eq!(c.status,1);assert!(c.error.unwrap().contains("Read-only"));
+    }
+    assert_eq!(std::fs::read(&base).unwrap(),original);let mut corrupt=original;corrupt[100]^=1;std::fs::write(&base,corrupt).unwrap();assert!(ReadOnlyDisk::open(&base).is_err());std::fs::remove_dir_all(&root).unwrap();
+}
