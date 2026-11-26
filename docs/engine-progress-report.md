@@ -6,6 +6,20 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## Latest verified work: guest software display output
+
+Code `33a9581` passed foundation **45775957425** (Windows/Ubuntu) and Linux
+**45775724726**. A separately mapped 800×600 surface is handed to Linux simplefb;
+real guest fbdev writes and shared mmap stores produce an exact, independently
+checked host RGB capture, three repetitions. Existing capture paths are refused
+before any vCPU execution. The same Linux run retains all eight storage/filesystem
+boot checks. Four structural/oracle tests and three new framebuffer unit tests
+also pass. See `native-display.md` for ABI, CLI, evidence and limits.
+
+This is software scanout/capture, **not a virtual GPU, accelerated graphics,
+interactive player window or Android Home**. The roughly 100-second usable-Home
+and app-ANR goals remain unverified; no finished player release is claimed.
+
 ## Latest verified work: ext4, journal replay and larger RAM
 
 Code `b1e9d27` passed native Linux acceptance **45773550049**: three raw-block boots

@@ -277,3 +277,15 @@ MMIO overlap; Windows/Ubuntu foundation **45773319762** passed engine `dbef542`.
 See `native-virtio-mmio.md`. Earlier filesystem-not-tested statements are historical.
 This is not host-power-loss certification, Android boot, ANR remediation, GPU
 acceleration or completion of the roughly 100-second usable-Home target.
+
+
+## Guest software display transport
+
+Code `33a9581`: foundation **45775957425**, Linux **45775724726** passed. Native
+WHP now maps a reserved 800×600 scanout independently of RAM and block registers,
+hands its layout to Linux simplefb, and captures exact RGB pixels after guest
+fbdev write and mmap operations. Three repeated guests verify geometry, pitch,
+orientation/channel pattern and mapped-store coherence. Existing captures are
+refused before guest execution. See `native-display.md`.
+This is not an accelerated GPU protocol or interactive player; Android/Home/ANR,
+input/audio/networking, graphics acceleration and final certification remain gates.
