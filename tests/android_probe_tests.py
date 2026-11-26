@@ -10,6 +10,45 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
+class StabilityTests(unittest.TestCase):
+    def test_missing_evidence_is_not_a_pass(self):
+        from android_stability import assess
+        self.assertEqual(assess({})['status'], 'inconclusive')
+        self.assertEqual(assess({'lastanr': {'ok': True, 'text': 'No ANR since boot'}})['status'], 'inconclusive')
+
+    def test_anr_and_event_log_detection(self):
+        from android_stability import assess
+        records = {'lastanr': {'ok': True, 'text': 'No ANR since boot'}, 'events': {'ok': True, 'text': ''}}
+        self.assertEqual(assess(records)['status'], 'no_anr_in_capture')
+        self.assertFalse(assess(records)['full_app_stability_verified'])
+        records['events']['text'] = 'am_anr: [0,123,com.example.app]'
+        self.assertEqual(assess(records)['status'], 'anr_observed')
+        records['events']['text'] = ''
+        records['lastanr']['text'] = 'ANR in com.android.launcher3'
+        self.assertEqual(assess(records)['status'], 'anr_observed')
+
+    def test_collection_survives_timeouts_and_never_changes_guest(self):
+        from android_stability import capture, COMMANDS
+        import subprocess
+        calls = []
+        def runner(args, **kwargs):
+            calls.append(args)
+            if 'cpuinfo' in args:
+                raise subprocess.TimeoutExpired(args, 15)
+            text = 'No ANR since boot' if 'lastanr' in args else ''
+            return subprocess.CompletedProcess(args, 0, text, '')
+        with tempfile.TemporaryDirectory() as folder:
+            output = pathlib.Path(folder) / 'snapshot'
+            result = capture('127.0.0.1:5555', output, runner)
+            self.assertIn('cpu', result['failed_commands'])
+            self.assertFalse(result['guest_modified'])
+            self.assertEqual(len(calls), len(COMMANDS))
+            self.assertTrue((output / 'packages.json').exists())
+            with self.assertRaises(FileExistsError):
+                capture('127.0.0.1:5555', output, runner)
+        self.assertFalse(any(word in call for call in calls for word in ['uninstall', 'disable', 'clear', 'kill', 'rm']))
+
+
 class RecipeTests(unittest.TestCase):
     def test_preserves_guest_options_and_skips_installer(self):
         with tempfile.TemporaryDirectory() as folder:

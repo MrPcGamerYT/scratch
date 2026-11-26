@@ -8,6 +8,7 @@ import subprocess
 import time
 from android_frame_metrics import summarize
 from android_home_gate import check_home, install_boot_branding
+from android_stability import capture as capture_stability
 
 
 def boot_recipe(tree):
@@ -239,7 +240,16 @@ def run(args):
                 if getattr(args, 'require_home', False):
                     if not ready:
                         raise RuntimeError('Service readiness failed before Home gate')
-                    result['home_gate'] = check_home(endpoint, output, getattr(args, 'prepare_home', False))
+                    try:
+                        result['home_gate'] = check_home(endpoint, output, getattr(args, 'prepare_home', False))
+                    finally:
+                        # Capture even when Home/ANR gating fails; never clear the evidence.
+                        try:
+                            result['stability_snapshot'] = capture_stability(endpoint, output / 'stability')
+                        except (OSError, RuntimeError) as diagnostic_error:
+                            result['stability_snapshot'] = {'status': 'inconclusive', 'error': str(diagnostic_error)}
+                    if result['stability_snapshot']['status'] != 'no_anr_in_capture':
+                        raise RuntimeError('Post-Home ANR evidence failed or is incomplete; inspect stability diagnostics')
                     if getattr(args, 'boot_animation', ''):
                         result['boot_branding'] = install_boot_branding(endpoint, args.boot_animation)
                 if args.profile == 'virgl':
