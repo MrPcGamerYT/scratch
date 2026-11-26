@@ -34,6 +34,18 @@ def unpack_archive(blob):
 
 
 class FixtureTests(unittest.TestCase):
+    def test_private_bridge_fixture_is_separate_from_default_guest(self):
+        default=unpack_archive(initramfs())
+        bridge=unpack_archive(initramfs(bridge=True))
+        self.assertNotIn('dev/ttyS1',default)
+        self.assertEqual(bridge['dev/ttyS1'][0][9:11],[4,65])
+        elf=bridge['init'][1]
+        self.assertEqual(struct.unpack_from('<I',elf,68)[0],7)
+        for token in [b'/dev/ttyS1\0',b'NEXUS 1 QUERY_APP\n',b'NEXUS_PRIVATE_COM2_EXACT_QUERY_MATCH\n']:
+            self.assertIn(token,elf)
+        self.assertNotIn(b'NEXUS_PRIVATE_COM2_EXACT_QUERY_MATCH',default['init'][1])
+
+
     def test_elf_layout_and_archive_modes(self):
         for write, fs, clean in [(None, False, True), (True, False, True),
                                   (False, False, True), (True, True, True),
