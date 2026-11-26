@@ -42,3 +42,5 @@ pub mod topology;
 pub mod lapic;
 
 pub mod ioapic;
+
+pub mod firmware;
