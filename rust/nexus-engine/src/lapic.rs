@@ -95,6 +95,16 @@ fn send_fixed_mode(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn trigger_mode_tracks_acknowledged_vector_and_clears_on_eoi() {
+        let mut a=LocalApic::new(0);a.write(0xf0,0x1ff).unwrap();
+        a.request_level(0x41).unwrap();assert!(!a.in_service_level(0x41));
+        a.acknowledge(0x41).unwrap();assert!(a.in_service_level(0x41));
+        a.request_edge(0x60).unwrap();a.acknowledge(0x60).unwrap();assert!(!a.in_service_level(0x60));
+        assert_eq!(a.service_vector(),Some(0x60));a.eoi();assert!(a.in_service_level(0x41));
+        a.request_edge(0x41).unwrap();a.eoi();assert!(!a.in_service_level(0x41));
+        a.acknowledge(0x41).unwrap();assert!(!a.in_service_level(0x41));
+        assert!(a.request_level(15).is_err());
+    }
     #[test] fn timer_countdown_periodic_masking_and_reprogramming() {
         let mut a=LocalApic::new(0);a.write(0xf0,0x1ff).unwrap();
         assert_eq!(a.read(0x320).unwrap(),1<<16);

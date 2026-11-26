@@ -77,6 +77,15 @@ mod tests {
         reg(&mut io,0x10,0x18041);io.set_line(0,true).unwrap();io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
         reg(&mut io,0x10,0x8041);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x41));
     }
+    #[test] fn reprogramming_preserves_inflight_eoi_vector() {
+        let mut io=IoApic::new();let mut c=cpus();reg(&mut io,0x10,0x8040);
+        io.set_line(0,true).unwrap();io.service(&mut c).unwrap();
+        c[0].acknowledge(0x40).unwrap();assert!(c[0].in_service_level(0x40));
+        assert_eq!(c[0].read(0x1a0).unwrap(),1);
+        reg(&mut io,0x10,0x8041);io.eoi(0x41);io.service(&mut c).unwrap();assert_eq!(c[0].pending(),None);
+        c[0].eoi();assert_eq!(c[0].read(0x1a0).unwrap(),0);
+        io.eoi(0x40);io.service(&mut c).unwrap();assert_eq!(c[0].pending(),Some(0x41));
+    }
     #[test] fn edge_logical_polarity_and_validation() {
         let mut io=IoApic::new();let mut c=cpus();c[1].write(0xd0,2<<24).unwrap();
         reg(&mut io,0x11,2<<24);reg(&mut io,0x10,0x2842); // active-low logical edge
