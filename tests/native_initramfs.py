@@ -5,7 +5,9 @@ PID1 proves getpid and two real nanosleep returns via /dev/kmsg markers.
 import struct
 
 
-def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None):
+def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None, stress_cpus=None, stress_readonly=False):
+    if stress_cpus is not None and (not isinstance(stress_cpus,int) or not 2<=stress_cpus<=8 or disk_write is None or filesystem or expected_cpus!=stress_cpus):
+        raise ValueError("Direct IO stress requires matching 2..8 CPUs and a raw block fixture")
     if filesystem and disk_write is None:
         raise ValueError("Filesystem fixture requires an explicit write/read mode")
     base = 0x400000
@@ -148,6 +150,42 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
         if filesystem and disk_write and not clean_unmount:
             disk_marker=b'NEXUS_EXT4_FSYNC_UNCLEAN_STOP_READY\n'
         log('diskmarker', disk_marker)
+    if stress_cpus is not None:
+        # Fork every child before waiting, so pinned processes issue I/O concurrently.
+        for cpu in range(stress_cpus):
+            emit(b'\xb8\x39\x00\x00\x00\x0f\x05\x48\x85\xc0')
+            branch(b'\x0f\x88','fail');branch(b'\x0f\x84',f'stresschild{cpu}')
+        emit(b'\xbb'+struct.pack('<I',stress_cpus))
+        label('stresswait')
+        emit(b'\xb8\x3d\x00\x00\x00\x48\xc7\xc7\xff\xff\xff\xff')
+        address(b'\x48\xbe','stressstatus');emit(b'\x31\xd2\x45\x31\xd2\x0f\x05\x48\x85\xc0')
+        branch(b'\x0f\x8e','fail')
+        address(b'\x48\xb8','stressstatus');emit(b'\x83\x38\x00');branch(b'\x0f\x85','fail')
+        emit(b'\xff\xcb');branch(b'\x0f\x85','stresswait')
+        stressmarker=f'NEXUS_SMP_DIRECT_IO_STRESS_OK cpus={stress_cpus} mode={"read" if stress_readonly else "write"}\n'.encode()
+        log('stressmarker',stressmarker);branch(b'\xe9','stressdone')
+        for cpu in range(stress_cpus):
+            label(f'stresschild{cpu}')
+            emit(b'\xb8\xcb\x00\x00\x00\x31\xff\xbe\x08\x00\x00\x00')
+            address(b'\x48\xba',f'cpumask{cpu}');emit(b'\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+            emit(b'\xb8\x02\x00\x00\x00');address(b'\x48\xbf','blockdev')
+            emit(b'\xbe\x02\x40\x00\x00\x31\xd2\x0f\x05\x85\xc0');branch(b'\x0f\x88','fail')
+            emit(b'\x41\x89\xc4\xbb'+struct.pack('<I',1 if stress_readonly else 16))
+            label(f'stressloop{cpu}')
+            if not stress_readonly:
+                emit(b'\xb8\x12\x00\x00\x00\x44\x89\xe7');address(b'\x48\xbe',f'stresspattern{cpu}')
+                emit(b'\xba\x00\x02\x00\x00\x41\xba'+struct.pack('<I',8192+cpu*4096)+b'\x0f\x05\x3d\x00\x02\x00\x00')
+                branch(b'\x0f\x85','fail')
+                emit(b'\xb8\x4a\x00\x00\x00\x44\x89\xe7\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+            emit(b'\xb8\x11\x00\x00\x00\x44\x89\xe7');address(b'\x48\xbe','stressbuffer')
+            emit(b'\xba\x00\x02\x00\x00\x41\xba'+struct.pack('<I',8192+cpu*4096)+b'\x0f\x05\x3d\x00\x02\x00\x00')
+            branch(b'\x0f\x85','fail')
+            address(b'\x48\xbe',f'stresspattern{cpu}');address(b'\x48\xbf','stressbuffer')
+            emit(b'\xb9\x00\x02\x00\x00\xfc\xf3\xa6');branch(b'\x0f\x85','fail')
+            emit(b'\xff\xcb');branch(b'\x0f\x85',f'stressloop{cpu}')
+            emit(b'\xb8\x03\x00\x00\x00\x44\x89\xe7\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+            emit(b'\xb8\xe7\x00\x00\x00\x31\xff\x0f\x05\x0f\x0b')
+        label('stressdone')
     if display:
         if disk_write is None:
             emit(b'\xb8\xa5\x00\x00\x00\x31\xff')
@@ -262,6 +300,13 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
         label('smpmarker');emit(smpmarker)
         for cpu in range(expected_cpus):
             label(f'cpumask{cpu}');emit(struct.pack('<Q',1<<cpu))
+    if stress_cpus is not None:
+        label('stressstatus');emit(bytes(4));label('stressmarker');emit(stressmarker)
+        # O_DIRECT requires aligned user buffers, not merely aligned disk offsets.
+        for cpu in range(stress_cpus):
+            emit(bytes(-(entry+len(code))%4096));label(f'stresspattern{cpu}')
+            emit(bytes((n*37+cpu*17+11)%256 for n in range(512)))
+        emit(bytes(-(entry+len(code))%4096));label('stressbuffer');emit(bytes(512))
     for offset, name in absolute:
         struct.pack_into('<Q', code, offset, entry + labels[name])
     for offset, name in relative:
@@ -282,12 +327,12 @@ def newc(name, mode, body=b'', rmajor=0, rminor=0, inode=1):
     return data + bytes(-len(data) % 4)
 
 
-def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None):
+def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False, expected_cpus=None, stress_cpus=None, stress_readonly=False):
     return (newc('dev', 0o40755, inode=1) + newc('dev/console', 0o20600, rmajor=5, rminor=1, inode=2)
             + newc('dev/kmsg', 0o20600, rmajor=1, rminor=11, inode=3)
             + (newc('dev/ttyS1',0o20600,rmajor=4,rminor=65,inode=7) if bridge else b'')
             + (newc('mnt', 0o40755, inode=6) if filesystem else b'')
-            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display, bridge, expected_cpus), inode=4) + newc('TRAILER!!!', 0, inode=5))
+            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display, bridge, expected_cpus, stress_cpus, stress_readonly), inode=4) + newc('TRAILER!!!', 0, inode=5))
 
 
 if __name__ == '__main__':

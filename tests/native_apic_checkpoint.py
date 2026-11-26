@@ -153,3 +153,28 @@ for cpus in (2,4,8):
         assert all(recovery.values()),recovery
 Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'12 BSP-before/AP-after-service DMA error/panic teardowns and same-overlay SMP recoveries; not mid-write, reset or host-power-loss certification','samples':fault_samples},indent=2))
 print('::notice::APIC_FAILURE_ACCEPTANCE 12 injected errors/panics, joined workers, released RAM gate, WHP cleanup and same-overlay SMP reboots PASS',flush=True)
+
+stress_results=[]
+for cpus in (4,8):
+    cow=Path(f'apic-stress-{cpus}.cow').resolve()
+    for readonly in (False,True):
+        mode='read' if readonly else 'write';prefix=f'apic-stress-{cpus}-{mode}'
+        rd=Path(prefix+'.cpio');rd.write_bytes(initramfs(disk_write=False,expected_cpus=cpus,stress_cpus=cpus,stress_readonly=readonly))
+        log=Path(prefix+'.log')
+        p=subprocess.run([exe,'boot-kernel-disk-open' if readonly else 'boot-kernel-disk-create',str(kernel),str(log),
+                          cmd+f' maxcpus={cpus} virtio_mmio.device=4K@0xd0000000:5',str(rd),str(fault_base),str(cow),
+                          '--apic-probe',f'--cpus={cpus}',f'--ram-mib={cpus*128}'],capture_output=True,text=True,timeout=45)
+        text=log.read_text(errors='replace') if log.exists() else ''
+        checks={'exit_success':p.returncode==0,
+                'all_children_success':f'NEXUS_SMP_DIRECT_IO_STRESS_OK cpus={cpus} mode={mode}' in text,
+                'pid1_ready':'NEXUS_USERSPACE_READY' in text,
+                'actual_device_irqs_and_dma':'NATIVE_APIC_DISK_OK' in p.stdout,
+                'source_unchanged':hashlib.sha256(fault_base.read_bytes()).hexdigest()==fault_base_sha,
+                'no_disk_error':'I/O error' not in text}
+        sample={'cpus':cpus,'mode':mode,'checks':checks,'stdout':p.stdout,'stderr':p.stderr,'serial_tail':text[-7000:]}
+        stress_results.append(sample);Path('apic-stress-checkpoint.json').write_text(json.dumps({'verified':False,'samples':stress_results},indent=2))
+        if not all(checks.values()):
+            print('::error::APIC_STRESS_FAILURE='+json.dumps(sample).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+        assert all(checks.values()),checks
+Path('apic-stress-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'4/8 concurrent CPU-pinned processes, 16 O_DIRECT write/fsync/read iterations each, fresh-VM direct-read comparison; not exhaustive stress','samples':stress_results},indent=2))
+print('::notice::APIC_STRESS_ACCEPTANCE concurrent pinned O_DIRECT IO on 4/8 CPUs plus fresh-VM persisted pattern checks PASS',flush=True)
