@@ -108,6 +108,9 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     }Err("APIC exit budget exceeded".into())
 }
 pub fn smp_smoke()->Result<(),String> {
+    for _ in 0..16 {smp_cycle()?;}Ok(())
+}
+fn smp_cycle()->Result<(),String> {
     use crate::cpu;
     let partition=create_machine(2,true)?;
     let memory=allocate(&partition,cpu::RAM_BYTES)?;
