@@ -21,7 +21,7 @@ impl IoApic {
                 0x10..=0x3f=>{let n=usize::from((self.select-0x10)/2);
                     if self.select%2==1 {self.entries[n]=(self.entries[n]&0xffffffff)|(u64::from(value&0xff000000)<<32);}
                     else {
-                        // Do not silently accept lowest-priority/NMI/ExtINT delivery.
+                        // Fixed and lowest-priority are supported; active NMI/ExtINT are not.
                         if (value&0x700>0x100&&value&(1<<16)==0)||value&!0x1efff!=0 {return Err(format!("Unsupported IOAPIC delivery mode/reserved bits: reg=0x{:x} value=0x{value:x}",self.select));}
                         if value&255<16&&value&(1<<16)==0 {return Err("Invalid IOAPIC fixed vector".into());}
                         self.entries[n]=(self.entries[n]&!0xffffffff)|u64::from(value&0x1afff);
