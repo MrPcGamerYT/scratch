@@ -401,9 +401,20 @@ mod windows {
     // Cancellation is only a scheduling rendezvous; it never fabricates a guest tick.
     // Scoped workers join before partition teardown on success, error AND panic.
     // Channels live inside the scope so unwinding disconnects them before join.
+    #[link(name="winmm")]
+    extern "system" {fn timeBeginPeriod(period:u32)->u32;fn timeEndPeriod(period:u32)->u32;}
+    struct TimerResolution;
+    impl TimerResolution {fn acquire()->Result<Self,String> {
+        if unsafe {timeBeginPeriod(1)}!=0 {return Err("Cannot request 1ms Windows scheduling resolution".into());}Ok(Self)
+    }}
+    impl Drop for TimerResolution {fn drop(&mut self) {unsafe {timeEndPeriod(1);}}}
     fn timer_pump<T>(partition:&Partition,action:impl FnOnce()->Result<T,String>)->Result<T,String> {
         use std::sync::mpsc;
         use std::time::Duration;
+        // Default Windows timer granularity (~15.6ms) can miss Linux's real
+        // PIT/IOAPIC boot check despite a requested 1ms rendezvous. Scope the
+        // resolution request to VM lifetime and restore it on errors/panics too.
+        let _resolution=TimerResolution::acquire()?;
         let handle=partition.0 as usize;let processors=partition.2;
         std::thread::scope(|scope| {
         let (tx,rx)=mpsc::channel();

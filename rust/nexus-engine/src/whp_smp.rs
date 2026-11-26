@@ -149,14 +149,15 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         if exit.reason()==0x1000 {
             let word=|at|u32::from_le_bytes(exit.0[at..at+4].try_into().unwrap());
             let msr=word(52);let write=word(48)&1!=0;
-            if msr!=0x1b {
+            let invariant_hwcr=msr==0xc0010015&&!write;
+            if msr!=0x1b&&!invariant_hwcr {
                 // Unsupported RDMSR/WRMSR architecturally faults at the current RIP.
                 // Linux rdmsr_safe probes rely on #GP fixups, not invented values.
                 let name=0x80000002;let value=Register::scalar(1|(1<<8)|(13<<16));
                 unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"Unsupported MSR #GP(0)")?;}
                 continue;
             }
-            let base=0xfee00800u64|if index==0 {0x100} else {0};
+            let base=if invariant_hwcr {1<<24} else {0xfee00800u64|if index==0 {0x100} else {0}};
             if write {
                 let value=u64::from(word(56))|(u64::from(word(64))<<32);
                 if value!=base {return Err(format!("APIC base relocation/disable unsupported: 0x{value:x}"));}
