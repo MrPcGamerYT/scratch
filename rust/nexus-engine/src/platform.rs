@@ -8,6 +8,18 @@ impl EarlyPlatform {
         self.pic.set_irq4(self.uart.irq_asserted());
         if self.pit0.poll(now_ns) {self.pic.raise_irq0();}
     }
+    /// Mirror real platform sources into the APIC profile. PIC state may still
+    /// observe them for legacy mode, but the runner must inject from ONE profile.
+    /// Conventional PC override: ISA IRQ0 -> GSI2; COM2/COM1 -> GSI3/GSI4.
+    pub fn route_ioapic(&self,io:&mut crate::ioapic::IoApic,pit_edges:&mut u64,block_irq:bool)->Result<(),String> {
+        if self.pit0.edges!=*pit_edges {
+            io.set_line(2,false)?;io.set_line(2,true)?;io.set_line(2,false)?;
+            *pit_edges=self.pit0.edges;
+        }
+        io.set_line(3,self.bridge.as_ref().is_some_and(|bridge|bridge.uart.irq_asserted()))?;
+        io.set_line(4,self.uart.irq_asserted())?;
+        io.set_line(5,block_irq)?;Ok(())
+    }
     pub fn access(&mut self,io:IoExit,now_ns:u64)->Result<Option<u64>,String> {
         self.tick(now_ns);
         if (0x2f8..=0x2ff).contains(&io.port) {if let Some(bridge)=&mut self.bridge {return bridge.access(io);}}

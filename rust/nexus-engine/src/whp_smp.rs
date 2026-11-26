@@ -5,7 +5,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
     if index>=partition.2||names.len()!=values.len() {return Err("Invalid indexed register access".into());}
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
-struct ApicState {cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+struct ApicState {platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
 impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
 impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
@@ -117,7 +117,11 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         {
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
-        {let ApicState{cpus,io}=&mut *fabric;io.service(cpus)?;}
+        {
+            let ApicState{cpus,io,platform,pit_edges,epoch}=&mut *fabric;
+            platform.tick(epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
+            platform.route_ioapic(io,pit_edges,false)?;io.service(cpus)?;
+        }
         let local=&mut fabric[index as usize];
         let now=std::time::Instant::now();
         local.advance_ns(now.duration_since(ctx.timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;ctx.timer_clock=now;
@@ -137,6 +141,21 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
+        if exit.reason()==2 {
+            let io=crate::io::IoExit::decode(&exit.0)?;
+            let mode=crate::cpu::CpuMode::from_exit(&exit.0)?;
+            let response={
+                let mut state=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+                let now=state.epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                state.platform.access(io,now)?
+            };
+            let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
+            if let Some(rax)=response {
+                let names=[0,0x10];let values=[Register::scalar(rax),rip];
+                unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),2,values.as_ptr()),"APIC platform IN")?;}
+            } else {let name=0x10;unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&rip),"APIC platform OUT")?;}}
+            continue;
+        }
         if exit.reason()==8 {
             let names=[0x11,0x80000000];let mut state=[Register::scalar(0);2];
             unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),2,state.as_mut_ptr()),"LAPIC HLT state")?;}
@@ -208,8 +227,30 @@ fn smp_cycle()->Result<u64,String> {
         0xc7,0x05,0x10,0,0xc0,0xfe,0,0,0,0,
         0xc7,0x05,0,0,0xc0,0xfe,0x10,0,0,0,
         0xc7,0x05,0x10,0,0xc0,0xfe,0x42,0x80,0,0,
-        0xfa,0x83,0x3d,0x50,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4]);
-    f.idt_limit=0x217;
+        0xfa,0x83,0x3d,0x50,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2]);
+    // Route the actual platform PIT IRQ0 through GSI2/vector43, not a host flag.
+    let io_write=|code:&mut Vec<u8>,register:u32,value:u32| {
+        code.extend_from_slice(&[0xc7,0x05,0,0,0xc0,0xfe]);code.extend_from_slice(&register.to_le_bytes());
+        code.extend_from_slice(&[0xc7,0x05,0x10,0,0xc0,0xfe]);code.extend_from_slice(&value.to_le_bytes());
+    };
+    io_write(&mut code,0x15,0);io_write(&mut code,0x14,0x43);
+    code.extend_from_slice(&[0xb0,0x30,0xe6,0x43,0xb0,0x9c,0xe6,0x40,0xb0,0x2e,0xe6,0x40,
+        0xfa,0x83,0x3d,0x60,0xa0,0,0,1,0x74,4,0xfb,0xf4,0xeb,0xf2]);
+    // COM1 OUT2+THRE IRQ4, device IIR read clears the source before level EOI.
+    io_write(&mut code,0x19,0);io_write(&mut code,0x18,0x8044);
+    code.extend_from_slice(&[0x66,0xba,0xfc,3,0xb0,8,0xee,
+        0x66,0xba,0xf9,3,0xb0,2,0xee,
+        0xfa,0x83,0x3d,0x70,0xa0,0,0,1,0x74,4,0xfb,0xf4,0xeb,0xf2,
+        0x66,0xba,0xf8,3,0xb0,0x55,0xee,
+        0xfa,0x83,0x3d,0x70,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4]);
+    f.idt_limit=0x227;
+    f.ram[cpu::IDT+0x218..cpu::IDT+0x220].copy_from_slice(&[0,0x9c,8,0,0,0x8e,0,0]);
+    f.ram[cpu::IDT+0x220..cpu::IDT+0x228].copy_from_slice(&[0,0x9e,8,0,0,0x8e,0,0]);
+    let pit_handler=[0xff,0x05,0x60,0xa0,0,0,0xc7,0x05,0xb0,0,0xe0,0xfe,0,0,0,0,0xcf];
+    f.ram[0x9c00..0x9c00+pit_handler.len()].copy_from_slice(&pit_handler);
+    let uart_handler=[0x50,0x52,0x66,0xba,0xfa,3,0xec,0x0f,0xb6,0xc0,0xa3,0x74,0xa0,0,0,
+        0xff,0x05,0x70,0xa0,0,0,0xc7,0x05,0xb0,0,0xe0,0xfe,0,0,0,0,0x5a,0x58,0xcf];
+    f.ram[0x9e00..0x9e00+uart_handler.len()].copy_from_slice(&uart_handler);
     f.ram[cpu::IDT+0x210..cpu::IDT+0x218].copy_from_slice(&[0,0x9a,8,0,0,0x8e,0,0]);
     f.ram[cpu::IDT+0x200..cpu::IDT+0x208].copy_from_slice(&[0,0x94,8,0,0,0x8e,0,0]);
     let handler=[0xff,0x05,0x30,0xa0,0,0,
@@ -256,7 +297,7 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
     // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
     // It must retrigger only after guest EOI, and stop when the handler masks it.
     lapics.lock().map_err(|_|"LAPIC lock poisoned")?.io.set_line(0,true)?;
@@ -303,6 +344,10 @@ fn smp_cycle()->Result<u64,String> {
     fabric.io.write(0,0x10)?;
     if fabric.io.read(0x10)?!=0x18042 {return Err("IOAPIC source not masked or remote IRR not cleared by guest EOI".into());}
     fabric.io.set_line(0,false)?;
+    if word(0xa060)!=1||fabric.platform.pit0.edges!=1||fabric.pit_edges!=1 {return Err("Real PIT source failed IOAPIC edge delivery".into());}
+    if word(0xa070)!=2||word(0xa074)!=2||fabric.platform.uart.irq_asserted()||fabric.platform.uart.output!=b"U" {return Err("Real UART source failed IOAPIC level delivery/device ACK".into());}
+    fabric.io.write(0,0x18)?;
+    if fabric.io.read(0x10)?!=0x8044 {return Err("UART IOAPIC remote IRR remains after device ACK and EOI".into());}
     for local in fabric.iter() {
         if local.pending().is_some()||(0x100..=0x170).chain(0x200..=0x270).filter(|offset|offset%16==0).any(|offset|local.read(offset)!=Ok(0)) {return Err("IPI remains pending/in-service after guest EOI".into());}
     }
