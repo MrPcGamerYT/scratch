@@ -19,7 +19,7 @@ pub fn result(leaf:u32,subleaf:u32,index:u32,count:u32,apic:bool,mut d:[u32;4])-
         }
         5=>d=[0;4],
         0xb|0x1f=>d=match subleaf {0=>[0,1,0x100,index],1=>[width,count,0x201,index],_=>[0,0,subleaf&255,index]},
-        0x80000001=>d[2]&=!(1<<2), // no nested SVM
+        0x80000001=>d[2]&=!((1<<2)|(1<<9)), // no nested SVM or OSVW MSR interface
         0x80000008=>d[2]=(d[2]&!0xf0ff)|(count-1)|(width<<12),
         0x8000001e=>d=[index,index,0,0],
         _=>return Err("Unexpected topology CPUID exit".into()),

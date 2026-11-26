@@ -65,7 +65,7 @@ impl LocalApic {
     pub fn write(&mut self,offset:u32,value:u32)->Result<(),String> {
         match offset {
             0x280=>Ok(()), // no local APIC error source is generated
-            0x330..=0x370 if offset%16==0&&value&(1<<16)!=0=>{self.other_lvt[((offset-0x330)/16) as usize]=value;Ok(())},
+            0x330..=0x370 if offset%16==0&&value&!0x1a7ff==0=>{self.other_lvt[((offset-0x330)/16) as usize]=value;Ok(())},
             0x320 if value&!0x300ff==0&&value&(1<<18)==0&&((value&0xff)>=16||value&(1<<16)!=0)=>{self.timer_lvt=value;Ok(())},
             0x380=>{self.timer_initial=value;self.timer_current=value;self.timer_fraction=0;Ok(())},
             0x3e0 if value&!0xb==0=>{self.timer_divide=value;self.timer_fraction=0;Ok(())},
