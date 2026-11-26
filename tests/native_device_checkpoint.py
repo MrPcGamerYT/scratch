@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from native_initramfs import initramfs
 
 
@@ -31,4 +33,8 @@ def main():
     print('::notice::NATIVE_DEVICE_BRIDGE: Linux ttyS1 raw bidirectional query/response and IRQ3 PASS, three boots; no QEMU/ADB/socket; NOT Android/app installation/network/audio verification',flush=True)
 
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    try: main()
+    except Exception as error:
+        print('::error::'+str(error)[-3000:].replace('%','%25').replace('\n','%0A'),flush=True)
+        raise
