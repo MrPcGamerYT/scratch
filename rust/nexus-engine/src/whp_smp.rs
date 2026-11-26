@@ -62,9 +62,11 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 let kind=(value>>8)&7;
                 if kind==0 {
                     let shorthand=(value>>18)&3;
-                    if value&((1<<11)|(1<<15))!=0 {return Err("Fixed IPI requires physical edge-triggered destination".into());}
+                    if value&(1<<15)!=0 {return Err("Fixed IPI requires edge-triggered delivery".into());}
                     let mut cpus=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
-                    crate::lapic::send_fixed(&mut cpus,c.index as usize,(c.icr_high>>24) as u8,shorthand as u8,value as u8)?;return Ok(());
+                    if value&(1<<11)!=0 {crate::lapic::send_fixed_logical(&mut cpus,c.index as usize,(c.icr_high>>24) as u8,shorthand as u8,value as u8)?;}
+                    else {crate::lapic::send_fixed(&mut cpus,c.index as usize,(c.icr_high>>24) as u8,shorthand as u8,value as u8)?;}
+                    return Ok(());
                 }
                 if ![5,6].contains(&kind)||value&0xc0000!=0 {return Err("Unsupported APIC delivery mode or startup shorthand".into());}
                 if c.icr_high>>24!=1||value&(1<<11)!=0 {return Err("Startup target must be dormant physical AP1".into());}
@@ -146,11 +148,17 @@ fn smp_cycle()->Result<(),String> {
     ]);
     code.pop(); // replace final HLT with STI/self-IPI/handler-return verification
     code.extend_from_slice(&[0xfb,0x90,
+        0xc7,0x05,0x80,0,0xe0,0xfe,0x40,0,0,0,
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x40,0x00,0x04,0x00,
+        0xa1,0x20,0x02,0xe0,0xfe,0xa3,0x38,0xa0,0,0,
+        0xa1,0x20,0x01,0xe0,0xfe,0xa3,0x3c,0xa0,0,0,
+        0xc7,0x05,0x80,0,0xe0,0xfe,0,0,0,0,
         0xa1,0x20,0x01,0xe0,0xfe,0xa3,0x34,0xa0,0,0,
         0xc7,0x05,0x10,0x03,0xe0,0xfe,0,0,0,1,
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x41,0,0,0,
-        0x66,0x83,0x3d,0x40,0xa0,0,0,1,0x75,0xf6,0xfa,0xf4]);
+        0x66,0x83,0x3d,0x40,0xa0,0,0,1,0x75,0xf6,
+        0xc7,0x05,0x00,0x03,0xe0,0xfe,0x41,8,0,0,
+        0x66,0x83,0x3d,0x40,0xa0,0,0,2,0x75,0xf6,0xfa,0xf4]);
     f.idt_limit=0x207;
     f.ram[cpu::IDT+0x200..cpu::IDT+0x208].copy_from_slice(&[0,0x94,8,0,0,0x8e,0,0]);
     let handler=[0xff,0x05,0x30,0xa0,0,0,
@@ -173,9 +181,10 @@ fn smp_cycle()->Result<(),String> {
     f.ram[0x5300..0x5306].copy_from_slice(&[0x0f,2,0,0xb0,0,0]);
     let ap_protected=[0x66,0xb8,16,0,0x8e,0xd8,0x8e,0xd0,0xbc,0,0x70,0,0,
         0x0f,0x01,0x1d,0,0x53,0,0,
-        0xc7,0x05,0xf0,0,0xe0,0xfe,0xff,1,0,0,0xfb,0x90,
+        0xc7,0x05,0xf0,0,0xe0,0xfe,0xff,1,0,0,
+        0xc7,0x05,0xd0,0,0xe0,0xfe,0,0,0,1,0xfb,0x90,
         0xc6,0x05,0,0xa0,0,0,0x5a,
-        0x83,0x3d,0x40,0xa0,0,0,1,0x75,0xf7,0xfa,0xf4];
+        0x83,0x3d,0x40,0xa0,0,0,2,0x75,0xf7,0xfa,0xf4];
     f.ram[0x9600..0x9600+ap_protected.len()].copy_from_slice(&ap_protected);
     f.ram[0xb208..0xb210].copy_from_slice(&[0,0x98,8,0,0,0x8e,0,0]);
     let ap_handler=[0xff,0x05,0x40,0xa0,0,0,
@@ -223,10 +232,10 @@ fn smp_cycle()->Result<(),String> {
     let marker=unsafe {*memory.address.cast::<u8>().add(0xa000)};
     if marker!=0x5a {return Err("AP startup marker missing".into());}
     let word=|at:usize|unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(at).cast::<u32>())};
-    if word(0xa030)!=1||word(0xa034)!=0||scalar_register(&partition,4)?!=cpu::STACK {
+    if word(0xa030)!=1||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
         return Err("Local fixed IPI handler/EOI/restored stack verification failed".into());
     }
-    if word(0xa040)!=1 {return Err("Remote AP fixed IPI handler did not run exactly once".into());}
+    if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
     let mut ap_stack=Register::scalar(0);let rsp=4;
     unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,1,&rsp,1,&mut ap_stack),"AP restored stack")?;}
     if u64::from_le_bytes(ap_stack.0[..8].try_into().unwrap())!=0x7000 {return Err("AP interrupt stack was not restored".into());}

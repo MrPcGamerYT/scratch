@@ -1,12 +1,12 @@
 //! Edge-triggered local APIC interrupt arbitration. No timers or level-source EOI yet.
 //! Device state is independent of WHP; acknowledge only after CPU injection succeeds.
-pub struct LocalApic {id:u8,svr:u32,tpr:u8,irr:[u32;8],isr:[u32;8]}
+pub struct LocalApic {id:u8,svr:u32,tpr:u8,ldr:u8,irr:[u32;8],isr:[u32;8]}
 fn highest(bits:&[u32;8])->Option<u8> {
     for i in (0..8).rev() {if bits[i]!=0 {return Some((i*32+31-bits[i].leading_zeros() as usize) as u8);}}
     None
 }
 impl LocalApic {
-    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,irr:[0;8],isr:[0;8]}}
+    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8]}}
     fn ppr(&self)->u8 {
         let service=highest(&self.isr).map_or(0,|v|v&0xf0);
         if self.tpr&0xf0>=service {self.tpr} else {service}
@@ -30,7 +30,7 @@ impl LocalApic {
     pub fn read(&self,offset:u32)->Result<u32,String> {
         match offset {
             0x20=>Ok(u32::from(self.id)<<24),0x30=>Ok(0x00050014),
-            0x80=>Ok(u32::from(self.tpr)),0xa0=>Ok(u32::from(self.ppr())),0xf0=>Ok(self.svr),
+            0x80=>Ok(u32::from(self.tpr)),0xd0=>Ok(u32::from(self.ldr)<<24),0xe0=>Ok(0xffffffff),0xa0=>Ok(u32::from(self.ppr())),0xf0=>Ok(self.svr),
             0x100..=0x170 if offset%16==0=>Ok(self.isr[((offset-0x100)/16) as usize]),
             0x200..=0x270 if offset%16==0=>Ok(self.irr[((offset-0x200)/16) as usize]),
             _=>Err(format!("APIC register read 0x{offset:x} not implemented")),
@@ -40,6 +40,9 @@ impl LocalApic {
         match offset {
             0x80=>{self.tpr=value as u8;Ok(())},
             0xb0=>{self.eoi();Ok(())},
+            0xd0=>{self.ldr=(value>>24) as u8;Ok(())},
+            0xe0 if value&0xf0000000==0xf0000000=>Ok(()), // flat logical mode, reserved bits read as ones
+
             0xf0 if value&!0x1ff==0=>{self.svr=value;Ok(())},
             _=>Err(format!("APIC register write 0x{offset:x} not implemented")),
         }
@@ -48,17 +51,31 @@ impl LocalApic {
 /// Physical destination or ICR shorthand: 1=self, 2=all, 3=all excluding self.
 /// Validate the whole request before changing any destination IRR.
 pub fn send_fixed(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u8,vector:u8)->Result<(),String> {
+    send_fixed_mode(cpus,source,destination,shorthand,vector,false)
+}
+pub fn send_fixed_logical(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u8,vector:u8)->Result<(),String> {
+    send_fixed_mode(cpus,source,destination,shorthand,vector,true)
+}
+fn send_fixed_mode(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u8,vector:u8,logical:bool)->Result<(),String> {
     if cpus.is_empty()||cpus.len()>8||source>=cpus.len()||vector<16||shorthand>3 {return Err("Invalid fixed IPI request".into());}
     let explicit=cpus.iter().position(|cpu|cpu.id==destination);
-    if shorthand==0&&explicit.is_none() {return Err("Fixed IPI targets nonexistent APIC ID".into());}
+    if !logical&&shorthand==0&&explicit.is_none() {return Err("Fixed IPI targets nonexistent APIC ID".into());}
     for (index,cpu) in cpus.iter_mut().enumerate() {
-        let selected=match shorthand {0=>Some(index)==explicit,1=>index==source,2=>true,3=>index!=source,_=>false};
+        let selected=match shorthand {0=>if logical {cpu.ldr&destination!=0} else {Some(index)==explicit},1=>index==source,2=>true,3=>index!=source,_=>false};
         if selected {cpu.request_edge(vector)?;}
     }Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn flat_logical_destinations_and_mode_validation() {
+        let mut cpus=vec![LocalApic::new(0),LocalApic::new(1),LocalApic::new(2)];
+        for (i,cpu) in cpus.iter_mut().enumerate() {cpu.write(0xf0,0x1ff).unwrap();cpu.write(0xd0,1<<(24+i)).unwrap();}
+        assert!(cpus[0].write(0xe0,0).is_err());assert_eq!(cpus[0].read(0xe0).unwrap(),0xffffffff);
+        send_fixed_logical(&mut cpus,0,6,0,0x50).unwrap();
+        assert_eq!(cpus.iter().map(LocalApic::pending).collect::<Vec<_>>(),vec![None,Some(0x50),Some(0x50)]);
+        send_fixed_logical(&mut cpus,0,0,1,0x60).unwrap();assert_eq!(cpus[0].pending(),Some(0x60));
+    }
     #[test] fn physical_destination_and_shorthand_do_not_touch_other_cpus() {
         let mut cpus=vec![LocalApic::new(0),LocalApic::new(1),LocalApic::new(2)];
         for cpu in &mut cpus {cpu.write(0xf0,0x1ff).unwrap();}
