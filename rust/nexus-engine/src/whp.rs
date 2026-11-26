@@ -539,6 +539,7 @@ mod windows {
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
+        if plan.apic_probe {return Err("APIC OS probe does not yet support disk/Android profiles".into());}
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
         load_kernel_plan(plan,|partition,memory,surface| {
             let capacity=backend.disk_bytes()/512;
