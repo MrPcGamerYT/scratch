@@ -175,6 +175,25 @@ mod windows {
             check_ram(partition,memory)
         })
     }
+    pub fn protection_smoke()->Result<(),String> {
+        use crate::cpu;
+        let f=cpu::protection_fixture()?;
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;
+            run_to_halt_mode(partition,&mut crate::io::TestBus::default(),cpu::CpuMode::Long64)?;
+            let read=|at:usize|->u64 {
+                let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(at),8)};
+                u64::from_le_bytes(bytes.try_into().unwrap())
+            };
+            if read(cpu::DATA)!=cpu::VALUE64||read(cpu::DATA+8)!=cpu::ALIAS
+                ||read(cpu::DATA+16)!=3||read(cpu::INTERRUPT_COUNT)!=2
+                ||accumulator(partition)?!=cpu::VALUE64||scalar_register(partition,4)?!=cpu::STACK {
+                return Err("Guest page-fault protection/recovery mismatch".into());
+            }
+            Ok(())
+        })
+    }
     pub fn transition_smoke()->Result<(),String> {
         use crate::cpu::{self,CpuMode};
         let ram=cpu::transition_image()?;
@@ -662,3 +681,8 @@ pub fn boot_kernel_disk(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::i
 pub use windows::transition_smoke;
 #[cfg(not(windows))]
 pub fn transition_smoke()->Result<(),String> {Err("Guest mode transition execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::protection_smoke;
+#[cfg(not(windows))]
+pub fn protection_smoke()->Result<(),String> {Err("Guest page protection execution requires Windows x64 WHP".into())}

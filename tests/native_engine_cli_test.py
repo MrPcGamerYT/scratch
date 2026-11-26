@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory() as folder:
     if sys.platform=='win32':
         assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
         for _ in range(3):
-            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke'); run('transition-smoke')
+            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke'); run('transition-smoke'); run('protection-smoke')
             run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke'); run('mmio-smoke')
         print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, forced instruction fetch through nonidentity guest paging, guest-notified write/flush/read DMA, used-ring/status and IRQ latch/ACK, COW reopen persistence/base integrity; three repetitions; protected32 external IRQ5 handler captures status, ACKs device, EOIs PIC and IRETD restores stack; fixture-seeded rings, not Linux discovery',flush=True)
         print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
@@ -56,6 +56,7 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
         print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
         print('::notice::PASS: guest-driven real16 -> protected32 -> long64 transition with GDT, CR0/CR3/CR4/EFER and nonidentity paging store/load, three independent partitions',flush=True)
+        print('::notice::PASS: guest unmapped-read and write-protected-page faults delivered to guest handler, CR2/error code, unchanged protected RAM, two IRETQ recoveries and restored stack; three repetitions',flush=True)
         ata_raw=root/'ata-fixture.raw';ata_image=root/'ata-fixture.zlag'
         ata_payload=bytes((n*17+n//512)%251 for n in range(2048))
         ata_raw.write_bytes(ata_payload);run('import-raw',ata_raw,ata_image)

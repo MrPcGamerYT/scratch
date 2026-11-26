@@ -80,6 +80,31 @@ pub fn fixture(mode:CpuMode)->Result<Fixture,String> {
     write(&mut f.ram,ENTRY,&code)?;
     Ok(f)
 }
+/// Long-mode #PF recovery: unmapped read followed by a supervisor write to a
+/// read-only PTE with CR0.WP enabled. Guest handler records CR2/error and IRETQs.
+pub fn protection_fixture()->Result<Fixture,String> {
+    let mut f=fixture(CpuMode::Long64)?;f.cr0|=0x10000;
+    qword(&mut f.ram,0x4000,DATA as u64|1)?;
+    qword(&mut f.ram,DATA,VALUE64)?;
+    let handler=0x8500usize;
+    let mut gate=[0;16];gate[..2].copy_from_slice(&(handler as u16).to_le_bytes());
+    gate[2..4].copy_from_slice(&8u16.to_le_bytes());gate[5]=0x8e;
+    write(&mut f.ram,IDT+14*16,&gate)?;
+    let mut code=vec![0x48,0xa1];code.extend_from_slice(&0x200000u64.to_le_bytes()); // absent PDE
+    code.extend_from_slice(&[0x48,0xb8]);code.extend_from_slice(&0x55u64.to_le_bytes());
+    code.extend_from_slice(&[0x48,0xa3]);code.extend_from_slice(&ALIAS.to_le_bytes()); // read-only PTE
+    code.extend_from_slice(&[0x48,0xa1]);code.extend_from_slice(&ALIAS.to_le_bytes());
+    code.push(0xf4);write(&mut f.ram,ENTRY,&code)?;
+    let mut isr=vec![0x50,0x0f,0x20,0xd0,0x48,0xa3]; // PUSH RAX; MOV RAX,CR2; store
+    isr.extend_from_slice(&(DATA as u64+8).to_le_bytes());
+    isr.extend_from_slice(&[0x48,0x8b,0x44,0x24,8,0x48,0xa3]); // error code below saved RAX
+    isr.extend_from_slice(&(DATA as u64+16).to_le_bytes());
+    isr.extend_from_slice(&[0x58,0x48,0x83,0xc4,8, // POP RAX; discard error code
+        0x48,0x83,0x04,0x24,10, // skip faulting 10-byte MOFFS instruction
+        0x48,0xff,0x04,0x25,0,0x90,1,0,0x48,0xcf]); // count++; IRETQ
+    write(&mut f.ram,handler,&isr)?;Ok(f)
+}
+
 /// Real-mode entry image: the guest itself loads the GDT, sets CR0.PE,
 /// enables PAE and EFER.LME, installs CR3 and enables paging, then far-jumps
 /// into long mode. Host must seed only the real-mode entry state.
@@ -155,6 +180,12 @@ mod tests {
         assert_eq!(read(&ram,GDT+8),0x00cf9b000000ffff);
         assert_eq!(read(&ram,GDT+24),0x00af9b000000ffff);
         assert_eq!(read(&ram,0x4000),DATA as u64|3);assert_eq!(read(&ram,DATA),0);
+    }
+    #[test] fn protection_fixture_enables_wp_and_keeps_fault_targets_unmapped_or_readonly() {
+        let f=protection_fixture().unwrap();assert_ne!(f.cr0&0x10000,0);
+        assert_eq!(read(&f.ram,0x3008),0);assert_eq!(read(&f.ram,0x4000),DATA as u64|1);
+        assert_eq!(read(&f.ram,DATA),VALUE64);assert_eq!(read(&f.ram,INTERRUPT_COUNT),0);
+        assert_eq!(&f.ram[IDT+14*16..IDT+14*16+6],&[0,0x85,8,0,0,0x8e]);
     }
     #[test] fn fixture_writes_fail_closed() {
         let mut ram=[0;16];assert!(write(&mut ram,16,&[1]).is_err());
