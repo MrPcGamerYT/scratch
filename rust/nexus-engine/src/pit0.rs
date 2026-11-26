@@ -77,11 +77,11 @@ mod tests {
         // A partial count write does not cancel a previously armed mode4 event.
         p.access(0x40,true,2,ns(100_001)).unwrap();
         p.access(0x40,true,0,ns(100_002)).unwrap();
-        assert!(!p.poll(ns(100_004)));assert!(p.poll(ns(100_005)));
+        assert!(!p.poll(ns(100_002)+ns(2)));assert!(p.poll(ns(100_002)+ns(3)));
         assert_eq!(p.edges,2);
         let mut p=setup(0x38,1000);p.access(0x40,true,2,ns(999)).unwrap();
         assert!(p.poll(ns(1001))); // original deadline still armed before MSB
-        p.access(0x40,true,0,ns(1002)).unwrap();assert!(p.poll(ns(1005)));
+        p.access(0x40,true,0,ns(1002)).unwrap();assert!(p.poll(ns(1002)+ns(3)));
         assert_eq!(p.edges,2);
     }
     #[test] fn stable_latch_and_strict_control() {
