@@ -536,6 +536,7 @@ mod windows {
         })
     }
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
+        if plan.dma_failure.is_some() {return Err("DMA failure injection requires disk-create, not initramfs-only boot".into());}
         load_kernel_plan(plan,|partition,memory,surface| {
             if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(None,plan.bridge_probe,plan.dma_failure));}
 
@@ -546,7 +547,7 @@ mod windows {
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
-        if plan.dma_failure.is_some()&&(!create||!plan.apic_probe||plan.cpu_count<2) {return Err("DMA failure test requires a NEW disposable APIC SMP overlay".into());}
+        if plan.dma_failure.is_some()&&(!create||!plan.apic_probe||plan.cpu_count<2||plan.bridge_probe) {return Err("DMA failure test requires a NEW disposable APIC SMP overlay".into());}
         if plan.apic_probe&&(plan.android_init_probe||plan.bridge_apk.is_some()||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk requires headless Linux, no Android/APK/player".into());}
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
         load_kernel_plan(plan,|partition,memory,surface| {

@@ -115,6 +115,7 @@ impl KernelPlan {
         self.framebuffer_output=Some(path.to_path_buf());Ok(self)
     }
     pub fn validate_regions(&self)->Result<(),String> {
+        if self.dma_failure.is_some()&&(!self.apic_probe||self.cpu_count<2) {return Err("DMA failure injection requires SMP/APIC".into());}
         if !(1..=8).contains(&self.cpu_count)||(!self.apic_probe&&self.cpu_count!=1) {return Err("Multiple CPUs require the explicit APIC profile (1..8 CPUs)".into());}
         for (i,r) in self.regions.iter().enumerate() {
             let end=r.address.checked_add(r.bytes.len()).ok_or("Kernel region overflow")?;

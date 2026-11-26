@@ -103,7 +103,7 @@ impl Emulator {
         if status!=1 {return Err(format!("MMIO emulator did not complete instruction: status=0x{status:x}"));}Ok(())
     }
 }
-impl Drop for Emulator {fn drop(&mut self) {unsafe {WHvEmulatorDestroyEmulator(self.handle);}}}
+impl Drop for Emulator {fn drop(&mut self) {if unsafe {WHvEmulatorDestroyEmulator(self.handle)}<0 {eprintln!("NATIVE_TEARDOWN_ERROR emulator delete");}}}
 
 struct LiveBlock {context:MmioContext,emulator:Emulator,backend:crate::overlay::Overlay}
 impl LiveBlock {
