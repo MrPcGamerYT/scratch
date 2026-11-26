@@ -11,6 +11,11 @@ impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Targe
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
 #[derive(Clone,Copy)]
 enum StartupEvent {Init,Sipi(u8)}
+// Dropped inside the thread scope before scope's implicit joins on every exit.
+struct StopApic(ApicFabric);
+impl Drop for StopApic {fn drop(&mut self) {
+    let mut state=self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);state.stop=true;
+}}
 struct ApicContext {timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
@@ -447,6 +452,7 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     };
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
     let result=timer_pump(partition,||bounded(partition,30000,||std::thread::scope(|scope| {
+        let _stop=StopApic(fabric.clone());
         let mut workers=Vec::new();let mut routes=vec![None];
         for index in 1..partition.2 {
             registers_at(partition,index,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x10,0x11,0x1a],&[
