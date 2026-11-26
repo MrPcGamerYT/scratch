@@ -5,8 +5,9 @@
 `virtio_mmio.rs` implements a transport-independent modern VirtIO-MMIO v2
 register and queue-service model over the validated split queue/COW block core.
 The model tests call the register API directly. A separate live WHP fixture now
-maps the device page through the Windows SDK instruction emulator; the normal
-Linux boot path does not yet expose it.
+maps the device page through the Windows SDK instruction emulator. The opt-in
+Linux disk boot commands now expose it to a real Linux virtio-blk driver. The
+legacy diskless command and Android player remain unchanged.
 
 Tested commit `028056d`:
 
@@ -98,32 +99,88 @@ release, SDK ABI and repeated live fixtures) and Linux diagnostic regression
 
 Both protected32 and long64 execute this path, three repetitions each in the CLI
 suite. Queue rings are supplied by the host fixture, not constructed by Linux.
-Interrupt status/ACK is tested, **not external interrupt delivery**. No `/dev/vda`,
-filesystem, guest reboot, host crash or Android readiness claim follows from this.
-The normal Linux boot loop still does not expose this device.
+At this historical commit only interrupt status/ACK was tested. Later checkpoints
+below add external interrupt delivery and Linux block IO; the fixture itself is
+not a Linux driver test.
 
 Hardening commit `64296d8` additionally rejects oversized register accesses before
 scalar conversion. Foundation **45759258169** and Linux regression **45759258205**
 both passed at that exact commit; the latter reached diagnostic PID1 in three
 boots, not Android Home or VirtIO disk discovery.
 
+## Dedicated IRQ5 and real Linux block IO
+
+Final tested code **`e1ff3875ab788a826dd3549c82de9e6ecfe60f42`**:
+
+- Foundation **45762223941** passed Windows/Ubuntu, strict Clippy, release builds,
+  SDK ABI checks and all repeated live WHP fixtures.
+- Linux **45762223769** passed three actual kernel/diagnostic PID1 boots, reusing
+  the VirtIO-enabled pinned Linux 6.6 kernel from **45761627640**.
+- Earlier engine integration `87ae768` passed foundation **45761627651** and
+  Linux discovery **45761627640**. Userspace persistence tests `3292dac` passed
+  Linux **45762013313** before the final evidence/CLI polish.
+
+PIC routing supports IRQ0 edges and a dedicated IRQ5 input. IRQ5 defaults to edge
+mode, with explicit ELCR bit 5 selecting level mode; other ELCR sources fail
+closed. Tests cover masks, pending requests, correct/wrong EOIs, held-level
+reassertion, deassertion, rising-edge latching and fixed-priority IRQ0 preemption.
+The WHP injector retains IF/shadow/pending-event guards and acknowledges the
+selected PIC request only after WHP accepts it. IRQ0 and IRQ5 timing counters
+are separate. No slave sources, IOAPIC, MSI, SMP or full chipset are claimed.
+
+The protected32 live fixture now takes one external IRQ5. Its handler captures
+InterruptStatus, acknowledges the device, EOIs the PIC and IRETD returns with the
+original stack; count/status and absence of a residual request are checked.
+Long64 still uses the polled register-ACK fixture; real Linux exercises IRQ5
+while executing its own kernel and driver code.
+
+### Linux acceptance sequence
+
+The CI kernel enables BLOCK, MSDOS_PARTITION, VIRTIO_MMIO,
+VIRTIO_MMIO_CMDLINE_DEVICES and VIRTIO_BLK. The boot command line adds
+`virtio_mmio.device=4K@0xd0000000:5`. Host queue service borrows RAM only after
+synchronous emulation returns, with the sole vCPU stopped. Linux constructs its
+own rings and requests; these are not fixture-seeded descriptors.
+
+1. A new 2 MiB zero-filled test disk is imported to ZLAG and its digest recorded.
+2. Boot 1 creates a new COW overlay. Linux reports `[vda] 4096 512-byte logical
+   blocks`. Diagnostic PID1 mounts devtmpfs (no guessed device major), opens
+   `/dev/vda`, writes a patterned 512-byte block at byte offset 4096, calls
+   `fsync`, reads and compares it, then emits `NEXUS_VDA_WRITE_FLUSH_READ_MATCH`.
+3. Boots 2 and 3 use separate engine processes/VMs and explicitly reopen that
+   overlay. Their PID1 only reads/compares the saved pattern and emits
+   `NEXUS_VDA_REBOOT_READ_MATCH`; they never rewrite the expected data.
+4. Every sample requires real IRQ5 injections, exact marker checks, successful
+   diagnostic completion, unchanged ZLAG digest and Linux PID1/timer evidence.
+
+Serial logs and timing/evidence JSON are uploaded by CI. The report explicitly
+records whether the supplied kernel has VirtIO drivers: reusing an old pre-VirtIO
+kernel is only a diskless regression, not storage acceptance.
+
+### Opt-in CLI
+
+```
+nexus-engine boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow>
+nexus-engine boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow>
+```
+
+Creation and reopen are distinct; never overwrite a user's overlay. Supply the
+VirtIO discovery parameter above and a compatible guest kernel. The diagnostic
+boot loop remains bounded and stops at its PID1 readiness marker, not Android.
+
 ## Remaining integration gates
 
-1. Connect the verified WHP instruction-emulator adapter to the real Linux run
-   loop; the current live fixture verifies registers and synchronous queue service.
-2. Generalize the fixture's stopped-vCPU RAM borrowing into the Linux device lifecycle.
-   All vCPUs and workers must be stopped; concurrent DMA/Acquire-Release atomics
-   and SMP support are not implemented by adding ordinary Rust slices.
-3. Real level-triggered interrupt-controller routing beyond the existing IRQ0
-   path, including assertion/deassertion and completion/configuration acknowledgment.
-4. Guest-visible queue/transfer-limit negotiation, broader valid descriptor
-   layouts and Linux driver compatibility testing. Current requests are limited
-   to 128 KiB and separate 16-byte header/one-byte status descriptors; this is not
-   a fully certified production VirtIO device.
-5. Actual Linux `/dev/vda` discovery, block IO, filesystem write/sync/reboot and
-   crash testing, followed by Android system/vendor/data and SELinux integration.
-6. Async/batched host IO, quotas, overlay compaction, player/GPU integration and
-   affected-guest freeze diagnosis.
+1. Filesystem create/mount/write/sync and separate-boot validation, plus crash and
+   failure-injection testing. Current Linux evidence is **raw block IO**, not a
+   filesystem or a guest-initiated reboot. It uses fresh VMs across process boots.
+2. Android system/vendor/data partition layout, init/fstab/AVB/encryption and
+   SELinux integration; a usable Android Home and actual app-ANR diagnosis.
+3. Broader valid descriptor layouts and workloads. Current requests remain bounded
+   to 128 KiB, direct descriptors, one data segment and separate header/status.
+4. Async/batched IO, SMP-safe guest-memory synchronization, quotas, overlay
+   compaction and recovery UX. This is still synchronous single-vCPU bring-up.
+5. Player connection, accelerated graphics, input, networking/audio and end-to-end
+   readiness/performance validation on the supported Windows 10 hardware.
 
 The roughly **100-second launch-to-usable-Android-Home goal remains unverified**.
-The normal Linux and player paths still do not expose this VirtIO device.
+No Android image or user disk was modified; the player does not use this device yet.

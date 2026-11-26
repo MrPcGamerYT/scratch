@@ -254,3 +254,14 @@ including COW persistence through model reset/reopen. Foundation **45758465816**
 and diagnostic Linux regression **45758465572** passed. No guest WHP MMIO access,
 real VirtIO interrupt delivery or Linux `/dev/vda` discovery is claimed.
 See [native-virtio-mmio.md](native-virtio-mmio.md) for remaining integration gates.
+
+
+## Linux VirtIO raw-block acceptance (supersedes earlier integration gates)
+
+Code `e1ff387` passed foundation **45762223941** and Linux **45762223769**:
+real Linux `/dev/vda`, dedicated IRQ5, PID1 write/fsync/read and two separate
+process/guest boots that reopen COW and compare persisted data. ZLAG stays
+unchanged. See [native-virtio-mmio.md](native-virtio-mmio.md) for exact scope,
+CLI and evidence. Earlier “no MMIO/IRQ/vda” milestone statements are historical.
+Next gates remain filesystem/crash testing, Android partition/init integration,
+app stability, player/GPU and approximately 100-second usable-Home validation.

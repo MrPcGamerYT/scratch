@@ -6,6 +6,23 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## Latest: Linux VirtIO disk and separate-boot persistence
+
+Final tested engine/evidence code `e1ff387` passed foundation **45762223941**
+(Windows/Ubuntu) and Linux **45762223769**. Linux now discovers `/dev/vda` through
+opt-in VirtIO-MMIO boot commands and receives dedicated external IRQ5 interrupts.
+Diagnostic PID1 writes a patterned sector, calls fsync and compares a readback;
+two separate process/VM boots reopen the overlay and read the saved pattern
+without rewriting it. The base ZLAG digest stays unchanged. These are actual
+Linux-generated rings/requests, not only host-seeded fixture chains.
+
+This completes the current **raw-block** acceptance gate, not filesystem/crash
+certification or usable Android. The old diskless boot command/player remains
+unchanged. Filesystem tests, Android partition/init integration, app ANR fixes,
+accelerated graphics and the 100-second Home target remain unfinished. Full
+procedure and CLI are in `native-virtio-mmio.md`; older checkpoints below are
+historical and do not describe the latest integration boundary.
+
 ## Guest-notified VirtIO disk queue checkpoint
 
 Code `44fe10c` passed foundation **45760536459** and three-boot Linux diagnostic
