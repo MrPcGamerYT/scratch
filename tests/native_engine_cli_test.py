@@ -27,6 +27,14 @@ with tempfile.TemporaryDirectory() as folder:
     assert hashlib.sha256(raw.read_bytes()).hexdigest()==before
     broken=bytearray(content);broken[-1]^=1;target.write_bytes(broken);run('verify',target,ok=False)
     run('boot',target,ok=False)
+    # Option rejection precedes input file IO and any WHP setup on both platforms.
+    for options,message in [(['--framebuffer='],'Invalid/duplicate framebuffer'),
+                            (['--framebuffer=a.ppm','--framebuffer=b.ppm'],'Invalid/duplicate framebuffer'),
+                            (['--ram-mib=256','--ram-mib=512'],'Duplicate RAM'),
+                            (['--ram-mib=4096'],'128..3072'),
+                            (['--ram-mib=-1'],'unsigned decimal')]:
+        failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0',*options,ok=False)
+        assert message in failure.stderr,failure.stderr
     text=run('capabilities').stdout
     assert 'QEMU dependency: none' in text and 'NOT IMPLEMENTED' in text
     # DLL/API availability differs across hosted runners. Report it honestly.
