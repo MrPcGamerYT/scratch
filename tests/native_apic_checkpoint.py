@@ -99,3 +99,55 @@ checksums={line.split()[1]:line.split()[0] for line in Path('apic-kernel-artifac
 assert hashlib.sha256(filesystem.read_bytes()).hexdigest()==checksums['filesystem.ext4']
 disk_sequence('apic-ext4-clean',filesystem,filesystem=True)
 disk_sequence('apic-ext4-unclean',filesystem,filesystem=True,unclean=True)
+
+# Faults occur while the exclusive RAM gate is held, BEFORE queue service.
+# Never inject into user/previous overlays: every fault uses disk-create + a new COW.
+import time
+fault_raw=Path('apic-fault-seed.img').resolve()
+seed=bytearray(2*1024*1024);seed[4096:4608]=bytes((n*37+9)%256 for n in range(512));fault_raw.write_bytes(seed)
+fault_base=Path('apic-fault-seed.zlag').resolve()
+subprocess.run([exe,'import-raw',str(fault_raw),str(fault_base)],check=True,capture_output=True)
+fault_base_sha=hashlib.sha256(fault_base.read_bytes()).hexdigest()
+fault_rd=Path('apic-fault.cpio');fault_rd.write_bytes(initramfs(disk_write=False))
+fault_samples=[]
+for cpus in (2,4,8):
+    for mode in ('error','panic'):
+        prefix=f'apic-fault-{cpus}-{mode}';cow=Path(prefix+'.cow').resolve();log=Path(prefix+'.log')
+        started=time.monotonic()
+        p=subprocess.run([exe,'boot-kernel-disk-create',str(kernel),str(log),cmd+f' maxcpus={cpus} virtio_mmio.device=4K@0xd0000000:5',
+                          str(fault_rd),str(fault_base),str(cow),'--apic-probe',f'--cpus={cpus}',f'--test-dma-failure={mode}'],
+                         capture_output=True,text=True,timeout=45)
+        elapsed=time.monotonic()-started
+        checks={'failed_as_requested':p.returncode!=0,
+                'injected_exclusively':f'NATIVE_DMA_FAILURE_INJECTED kind={mode.capitalize()}' in p.stderr and 'exclusive=true before_service=true' in p.stderr,
+                'all_aps_started':f'cpus={cpus} started_aps={cpus-1} ' in p.stderr,
+                'workers_joined_and_gate_released':'NATIVE_APIC_CLEANUP ap_workers=0 ram_gate_released=true' in p.stderr,
+                'vm_dropped':'NATIVE_VM_RESOURCES_DROPPED' in p.stderr,
+                'no_teardown_api_error':'NATIVE_TEARDOWN_ERROR' not in p.stderr,
+                'no_false_boot_success':'NATIVE_APIC_OS_PID1_OK' not in p.stdout,
+                'base_unchanged':hashlib.sha256(fault_base.read_bytes()).hexdigest()==fault_base_sha}
+        result={'cpus':cpus,'mode':mode,'seconds':elapsed,'checks':checks,'stderr':p.stderr,'returncode':p.returncode}
+        fault_samples.append(result)
+        Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':False,'samples':fault_samples},indent=2))
+        print('::notice::APIC_FAILURE_CHECKS='+json.dumps({'cpus':cpus,'mode':mode,**checks}),flush=True)
+        if not all(checks.values()):
+            print('::error::APIC_FAILURE_DETAIL='+json.dumps(result).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+        assert all(checks.values()),checks
+        # A fresh SMP VM must be able to reopen the failed VM's overlay and read
+        # the seeded exact data, not just create another unrelated blank guest.
+        rd=Path(prefix+'-reopen.cpio');rd.write_bytes(initramfs(disk_write=False,expected_cpus=cpus))
+        reopened=Path(prefix+'-reopen.log')
+        p=subprocess.run([exe,'boot-kernel-disk-open',str(kernel),str(reopened),cmd+f' maxcpus={cpus} virtio_mmio.device=4K@0xd0000000:5',
+                          str(rd),str(fault_base),str(cow),'--apic-probe',f'--cpus={cpus}'],capture_output=True,text=True,timeout=45)
+        text=reopened.read_text(errors='replace') if reopened.exists() else ''
+        recovery={'exit_success':p.returncode==0,'data_match':'NEXUS_VDA_REBOOT_READ_MATCH' in text,
+                  'migrated_all_cpus':f'NEXUS_SMP_AFFINITY_OK cpus={cpus}' in text,
+                  'real_disk_irqs':'NATIVE_APIC_DISK_OK' in p.stdout,
+                  'base_unchanged':hashlib.sha256(fault_base.read_bytes()).hexdigest()==fault_base_sha}
+        result['recovery']=recovery;result['recovery_stderr']=p.stderr
+        Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':False,'samples':fault_samples},indent=2))
+        if not all(recovery.values()):
+            print('::error::APIC_FAILURE_RECOVERY='+json.dumps({'checks':recovery,'stderr':p.stderr,'serial_tail':text[-6000:]}).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+        assert all(recovery.values()),recovery
+Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'six pre-service DMA error/panic teardowns and same-overlay SMP recoveries; not mid-write, reset or host-power-loss certification','samples':fault_samples},indent=2))
+print('::notice::APIC_FAILURE_ACCEPTANCE six injected errors/panics, joined workers, released RAM gate, WHP cleanup and same-overlay SMP reboots PASS',flush=True)

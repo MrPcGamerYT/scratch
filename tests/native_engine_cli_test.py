@@ -37,7 +37,10 @@ with tempfile.TemporaryDirectory() as folder:
                             (['--cpus=9'],'1..8'),
                             (['--cpus=-1'],'Invalid/duplicate CPU'),
                             (['--cpus=2','--cpus=4'],'Invalid/duplicate CPU'),
-                            (['--cpus=2'],'requires --apic-probe')]:
+                            (['--cpus=2'],'requires --apic-probe'),
+                            (['--test-dma-failure=bad'],'must be error or panic'),
+                            (['--test-dma-failure=error'],'requires APIC disk-create'),
+                            (['--test-dma-failure=error','--test-dma-failure=panic'],'Duplicate DMA failure')]:
         failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0',*options,ok=False)
         assert message in failure.stderr,failure.stderr
     failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0','--bridge-apk-smoke=absent.apk',ok=False)
