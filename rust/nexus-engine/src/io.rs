@@ -30,8 +30,7 @@ impl IoExit {
         })
     }
     pub fn next_real_mode_rip(self) -> Result<u64, String> {
-        self.rip.checked_add(u64::from(self.instruction_len)).filter(|&n| n <= 0xffff)
-            .ok_or_else(|| "Real-mode I/O instruction pointer overflow".into())
+        crate::cpu::CpuMode::Real16.next_rip(self.rip,self.instruction_len)
     }
     /// IN AL/AX preserves upper bits, IN EAX zero-extends to RAX (x86 rules).
     pub fn input_register(self, value: u32) -> u64 {

@@ -37,7 +37,9 @@ with tempfile.TemporaryDirectory() as folder:
         assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
         for _ in range(3):
             run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
+            run('protected-smoke'); run('long-smoke')
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
+        print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
         sector=bytearray(512); code=bytearray([0xba,0xe9,0])
         for byte in b'NEXUS-ZLAG-BOOT':code.extend([0xb0,byte,0xee])
         code.append(0xf4);sector[:len(code)]=code;sector[510:]=b'\x55\xaa'
@@ -58,5 +60,5 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: real ZLAG file -> verified first-sector loader -> direct WHP execution at 0000:7c00 -> NEXUS-ZLAG-BOOT debug output -> HLT, three repetitions; source SHA unchanged, invalid signature/corruption refused; not Android boot',flush=True)
         print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
     else:
-        for cmd in ['cpu-smoke','io-smoke','cancel-smoke']: run(cmd,ok=False)
+        for cmd in ['cpu-smoke','io-smoke','cancel-smoke','protected-smoke','long-smoke']: run(cmd,ok=False)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)

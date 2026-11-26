@@ -30,7 +30,14 @@ mod windows {
     struct Register([u8;16]);
     impl Register {
         fn scalar(value:u64)->Self { let mut r=Self([0;16]);r.0[..8].copy_from_slice(&value.to_le_bytes());r }
-        fn segment(attributes:u16)->Self { let mut r=Self([0;16]);r.0[8..12].copy_from_slice(&0xffffu32.to_le_bytes());r.0[14..16].copy_from_slice(&attributes.to_le_bytes());r }
+        fn segment(attributes:u16)->Self {Self::flat_segment(0,0xffff,attributes)}
+        fn flat_segment(selector:u16,limit:u32,attributes:u16)->Self {
+            let mut r=Self([0;16]);r.0[8..12].copy_from_slice(&limit.to_le_bytes());
+            r.0[12..14].copy_from_slice(&selector.to_le_bytes());r.0[14..16].copy_from_slice(&attributes.to_le_bytes());r
+        }
+        fn table(base:u64,limit:u16)->Self {
+            let mut r=Self([0;16]);r.0[6..8].copy_from_slice(&limit.to_le_bytes());r.0[8..16].copy_from_slice(&base.to_le_bytes());r
+        }
     }
     #[repr(C,align(16))]
     struct ExitContext([u8;224]);
@@ -39,7 +46,7 @@ mod windows {
     struct Processor<'a>(&'a Partition);
     impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
     fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {
-        if bytes==0 || bytes%4096!=0 || bytes>1024*1024 {return Err("Invalid test RAM mapping size".into());}
+        if bytes==0 || bytes%4096!=0 || bytes>crate::cpu::RAM_BYTES {return Err("Invalid test RAM mapping size".into());}
         let address=unsafe { VirtualAlloc(std::ptr::null_mut(),bytes,0x3000,4) };
         if address.is_null() { return Err("VirtualAlloc failed".into()); }
         let hr=unsafe { WHvMapGpaRange(partition.0,address,0,bytes as u64,7) };
@@ -88,8 +95,11 @@ mod windows {
         unsafe { check(WHvSetVirtualProcessorRegisters(partition.0,0,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHvSetVirtualProcessorRegisters") }
     }
     fn accumulator(partition:&Partition)->Result<u64,String> {
-        let mut result=Register([0;16]);let name=0u32;
-        unsafe { check(WHvGetVirtualProcessorRegisters(partition.0,0,&name,1,&mut result),"WHvGetVirtualProcessorRegisters")?; }
+        scalar_register(partition,0)
+    }
+    fn scalar_register(partition:&Partition,name:u32)->Result<u64,String> {
+        let mut result=Register([0;16]);
+        unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,0,&name,1,&mut result),"WHvGetVirtualProcessorRegisters")?;}
         Ok(u64::from_le_bytes(result.0[..8].try_into().unwrap()))
     }
     fn run_once(partition:&Partition)->Result<ExitContext,String> {
@@ -124,6 +134,9 @@ mod windows {
         Ok((result?,canceled.load(Ordering::SeqCst)))
     }
     fn run_to_halt(partition:&Partition,bus:&mut crate::io::TestBus)->Result<usize,String> {
+        run_to_halt_mode(partition,bus,crate::cpu::CpuMode::Real16)
+    }
+    fn run_to_halt_mode(partition:&Partition,bus:&mut crate::io::TestBus,mode:crate::cpu::CpuMode)->Result<usize,String> {
         let (count,timed_out)=bounded(partition,5000,|| {
             // An I/O-exit storm cannot bypass the wall deadline or exit budget.
             for count in 0..64 {
@@ -132,7 +145,7 @@ mod windows {
                     8=>return Ok(count),
                     2=>{
                         let io=crate::io::IoExit::decode(&context.0)?;
-                        let rip=Register::scalar(io.next_real_mode_rip()?);
+                        let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
                         if let Some(rax)=bus.access(io)? {
                             set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;
                         } else {set_registers(partition,&[0x10],&[rip])?;}
@@ -190,6 +203,53 @@ mod windows {
         }
         Ok(())
     }
+    fn configure_fixture(partition:&Partition,f:&crate::cpu::Fixture)->Result<(),String> {
+        let code=Register::flat_segment(8,u32::MAX,f.code_attributes);
+        let data=Register::flat_segment(16,u32::MAX,0xc093);
+        set_registers(partition,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x16,0x17,0x1b,0x1a,0x10,4,0x11,0],&[
+            Register::scalar(f.cr0),Register::scalar(f.cr3),Register::scalar(f.cr4),Register::scalar(f.efer),
+            code,data,data,data,data,data,Register::table(crate::cpu::GDT as u64,23),
+            Register::table(crate::cpu::IDT as u64,f.idt_limit),Register::scalar(crate::cpu::ENTRY as u64),
+            Register::scalar(crate::cpu::STACK),Register::scalar(2),Register::scalar(0)])
+    }
+    fn mode_fixture(mode:crate::cpu::CpuMode,missing_alias:bool)->Result<(),String> {
+        use crate::cpu;
+        let mut f=cpu::fixture(mode)?;
+        if missing_alias {f.ram[0x4000..0x4008].fill(0);}
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            // Entire image and mapping have equal, bounded lengths.
+            if f.ram.len()!=memory.bytes {return Err("Startup RAM size mismatch".into());}
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;
+            let mut bus=crate::io::TestBus::default();
+            let result=run_to_halt_mode(partition,&mut bus,f.mode);
+            if missing_alias {
+                // No page-fault handler: absent alias must lead to triple fault,
+                // never a successful HLT or an accidental physical write.
+                if !matches!(&result,Err(error) if error=="Unsupported guest exit 0x4") {return Err(format!("Absent PTE did not fail closed: {result:?}"));}
+                let stored=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(cpu::DATA),8)};
+                if stored!=[0;8] {return Err("Absent PTE wrote guest data".into());}
+                return Ok(());
+            }
+            if result?!=1 {return Err("Expected exactly one startup debug I/O exit".into());}
+            let long=mode==cpu::CpuMode::Long64;
+            let expected=if long {cpu::VALUE64} else {cpu::VALUE32};
+            let stored=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(cpu::DATA),8)};
+            if accumulator(partition)?!=expected || u64::from_le_bytes(stored.try_into().unwrap())!=expected
+                || bus.console!=[if long {b'L'} else {b'P'}] {return Err("Protected/long-mode CPU/RAM result mismatch".into());}
+            for (name,value) in [(0x1c,f.cr0),(0x1e,f.cr3),(0x1f,f.cr4),(0x2001,f.efer),(4,cpu::STACK)] {
+                if scalar_register(partition,name)?!=value {return Err(format!("Startup state mismatch for register {name:x}"));}
+            }
+            let count=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT),8)};
+            if u64::from_le_bytes(count.try_into().unwrap())!=u64::from(long) {return Err("Guest interrupt/IRETQ result mismatch".into());}
+            Ok(())
+        })
+    }
+    pub fn protected_smoke()->Result<(),String> {mode_fixture(crate::cpu::CpuMode::Protected32,false)}
+    pub fn long_smoke()->Result<(),String> {
+        mode_fixture(crate::cpu::CpuMode::Long64,false)?;
+        mode_fixture(crate::cpu::CpuMode::Long64,true)
+    }
     pub fn boot_test_sector(path:&std::path::Path)->Result<Vec<u8>,String> {
         let sector=crate::boot::read_test_sector(path)?;
         with_guest_at(&sector,0x7c00,1024*1024,|partition,_| {
@@ -212,7 +272,7 @@ mod windows {
 
 }
 #[cfg(windows)]
-pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke,boot_test_sector};
+pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke,boot_test_sector,protected_smoke,long_smoke};
 #[cfg(not(windows))]
 pub fn probe()->Result<(),String> { Err("Direct WHP backend requires Windows 10 x64".into()) }
 
@@ -226,3 +286,8 @@ pub fn cancel_smoke()->Result<(),String> {Err("Direct WHP cancellation requires 
 
 #[cfg(not(windows))]
 pub fn boot_test_sector(_path:&std::path::Path)->Result<Vec<u8>,String> {Err("Direct WHP test-sector execution requires Windows 10 x64".into())}
+
+#[cfg(not(windows))]
+pub fn protected_smoke()->Result<(),String> {Err("Direct WHP protected-mode test requires Windows 10 x64".into())}
+#[cfg(not(windows))]
+pub fn long_smoke()->Result<(),String> {Err("Direct WHP long-mode test requires Windows 10 x64".into())}

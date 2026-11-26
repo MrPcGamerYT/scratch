@@ -25,3 +25,12 @@ static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, IoPortAccess) == 48);
 static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, AccessInfo) == 20);
 static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, PortNumber) == 24);
 static_assert(offsetof(WHV_X64_IO_PORT_ACCESS_CONTEXT, Rax) == 32);
+
+static_assert(WHvX64RegisterEfer == 0x2001);
+static_assert(WHvX64RegisterGdtr == 0x1b && WHvX64RegisterIdtr == 0x1a);
+static_assert(WHvX64RegisterRsp == 4 && WHvX64RegisterFs == 0x16 && WHvX64RegisterGs == 0x17);
+static_assert(WHvRunVpExitReasonUnrecoverableException == 4);
+static_assert(sizeof(WHV_X64_TABLE_REGISTER) == 16);
+static_assert(offsetof(WHV_X64_TABLE_REGISTER, Limit) == 6);
+static_assert(offsetof(WHV_X64_TABLE_REGISTER, Base) == 8);
+static_assert(offsetof(WHV_X64_SEGMENT_REGISTER, Selector) == 12);
