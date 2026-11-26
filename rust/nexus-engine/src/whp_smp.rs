@@ -89,7 +89,11 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 tx.send(event).map_err(|_|"AP startup worker disconnected")?;
             } else {
                 let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
-                if offset==0xb0 {if let Some(vector)=state[c.index as usize].eoi() {state.io.eoi(c.index as usize,vector);}}
+                if offset==0xb0 {
+                    let local=&mut state[c.index as usize];
+                    let level=local.service_vector().filter(|v|local.in_service_level(*v));
+                    local.eoi();if let Some(vector)=level {state.io.eoi(vector);}
+                }
                 else {state[c.index as usize].write(offset,value)?;}
 
             }

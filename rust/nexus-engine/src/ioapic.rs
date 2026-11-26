@@ -49,14 +49,16 @@ impl IoApic {
                 if selected {owners|=1<<index;}
             }
             if owners==0 {continue;}
-            if logical {send_fixed_logical(cpus,0,destination,0,e as u8)?;} else {send_fixed(cpus,0,destination,0,e as u8)?;}
+            if level {
+                for (index,cpu) in cpus.iter_mut().enumerate() {if owners&(1<<index)!=0 {cpu.request_level(e as u8)?;}}
+            } else if logical {send_fixed_logical(cpus,0,destination,0,e as u8)?;} else {send_fixed(cpus,0,destination,0,e as u8)?;}
             self.edges[pin]=false;if level {self.owners[pin]=owners;self.vectors[pin]=e as u8;}
         }Ok(())
     }
-    /// Broadcast EOI from a LAPIC clears only routes owned by that CPU/vector.
-    pub fn eoi(&mut self,cpu:usize,vector:u8) {
-        if cpu>=8 {return;}
-        for pin in 0..24 {if self.vectors[pin]==vector {self.owners[pin]&=!(1<<cpu);}}
+    /// Bus EOI carries a vector, not a destination ownership acknowledgement.
+    /// Match the vector captured at delivery, even if software rewrote the route.
+    pub fn eoi(&mut self,vector:u8) {
+        for pin in 0..24 {if self.vectors[pin]==vector {self.owners[pin]=0;}}
     }
 }
 #[cfg(test)]
@@ -69,9 +71,9 @@ mod tests {
         io.set_line(0,true).unwrap();io.service(&mut c).unwrap();assert_eq!(c[0].pending(),None);assert_eq!(c[1].pending(),Some(0x41));
         assert_ne!(io.read(0x10).unwrap()&(1<<14),0);
         c[1].acknowledge(0x41).unwrap();io.service(&mut c).unwrap();c[1].eoi();
-        io.eoi(0,0x41);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
-        io.eoi(1,0x41);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x41));
-        c[1].acknowledge(0x41).unwrap();io.set_line(0,false).unwrap();c[1].eoi();io.eoi(1,0x41);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
+        io.eoi(0x42);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
+        io.eoi(0x41);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x41));
+        c[1].acknowledge(0x41).unwrap();io.set_line(0,false).unwrap();c[1].eoi();io.eoi(0x41);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
         reg(&mut io,0x10,0x18041);io.set_line(0,true).unwrap();io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
         reg(&mut io,0x10,0x8041);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x41));
     }

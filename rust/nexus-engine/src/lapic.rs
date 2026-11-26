@@ -1,12 +1,12 @@
 //! Edge-triggered local APIC interrupt arbitration. Includes a 100 MHz virtual bus timer; no level-source EOI yet.
 //! Device state is independent of WHP; acknowledge only after CPU injection succeeds.
-pub struct LocalApic {id:u8,svr:u32,tpr:u8,ldr:u8,irr:[u32;8],isr:[u32;8],timer_lvt:u32,timer_initial:u32,timer_current:u32,timer_divide:u32,timer_fraction:u64}
+pub struct LocalApic {id:u8,svr:u32,tpr:u8,ldr:u8,irr:[u32;8],isr:[u32;8],irr_level:[u32;8],isr_level:[u32;8],timer_lvt:u32,timer_initial:u32,timer_current:u32,timer_divide:u32,timer_fraction:u64}
 fn highest(bits:&[u32;8])->Option<u8> {
     for i in (0..8).rev() {if bits[i]!=0 {return Some((i*32+31-bits[i].leading_zeros() as usize) as u8);}}
     None
 }
 impl LocalApic {
-    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8],timer_lvt:1<<16,timer_initial:0,timer_current:0,timer_divide:0,timer_fraction:0}}
+    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8],irr_level:[0;8],isr_level:[0;8],timer_lvt:1<<16,timer_initial:0,timer_current:0,timer_divide:0,timer_fraction:0}}
     /// Advance monotonic virtual bus time, independent of host scheduling frequency.
     /// Fractional divider ticks survive rendezvous; missed periods coalesce in IRR.
     pub fn advance_ns(&mut self,ns:u64)->Result<(),String> {
@@ -31,6 +31,10 @@ impl LocalApic {
         if vector<16 {return Err("APIC fixed vector must be 16..255".into());}
         self.irr[usize::from(vector/32)]|=1u32<<(vector%32);Ok(())
     }
+    pub fn request_level(&mut self,vector:u8)->Result<(),String> {
+        self.request_edge(vector)?;self.irr_level[usize::from(vector/32)]|=1u32<<(vector%32);Ok(())
+    }
+    pub fn in_service_level(&self,vector:u8)->bool {self.isr_level[usize::from(vector/32)]&(1u32<<(vector%32))!=0}
     pub fn pending(&self)->Option<u8> {
         if self.svr&0x100==0 {return None;}
         highest(&self.irr).filter(|v|v&0xf0>self.ppr()&0xf0)
@@ -38,10 +42,12 @@ impl LocalApic {
     pub fn acknowledge(&mut self,vector:u8)->Result<(),String> {
         if self.pending()!=Some(vector) {return Err("APIC acknowledge without deliverable vector".into());}
         self.irr[usize::from(vector/32)]&=!(1u32<<(vector%32));
-        self.isr[usize::from(vector/32)]|=1u32<<(vector%32);Ok(())
+        let index=usize::from(vector/32);let bit=1u32<<(vector%32);
+        self.isr[index]|=bit;self.isr_level[index]=(self.isr_level[index]&!bit)|(self.irr_level[index]&bit);self.irr_level[index]&=!bit;Ok(())
     }
+    pub fn service_vector(&self)->Option<u8> {highest(&self.isr)}
     pub fn eoi(&mut self)->Option<u8> {
-        let v=highest(&self.isr)?;self.isr[usize::from(v/32)]&=!(1u32<<(v%32));Some(v)
+        let v=highest(&self.isr)?;self.isr[usize::from(v/32)]&=!(1u32<<(v%32));self.isr_level[usize::from(v/32)]&=!(1u32<<(v%32));Some(v)
     }
     pub fn read(&self,offset:u32)->Result<u32,String> {
         match offset {
@@ -49,6 +55,7 @@ impl LocalApic {
             0x20=>Ok(u32::from(self.id)<<24),0x30=>Ok(0x00050014),
             0x80=>Ok(u32::from(self.tpr)),0xd0=>Ok(u32::from(self.ldr)<<24),0xe0=>Ok(0xffffffff),0xa0=>Ok(u32::from(self.ppr())),0xf0=>Ok(self.svr),
             0x100..=0x170 if offset%16==0=>Ok(self.isr[((offset-0x100)/16) as usize]),
+            0x180..=0x1f0 if offset%16==0=>Ok(self.isr_level[((offset-0x180)/16) as usize]),
             0x200..=0x270 if offset%16==0=>Ok(self.irr[((offset-0x200)/16) as usize]),
             _=>Err(format!("APIC register read 0x{offset:x} not implemented")),
         }
