@@ -1,10 +1,11 @@
 //! 24-input IOAPIC: fixed delivery, physical/flat logical destinations.
 //! Remote IRR prevents level redelivery until the destination EOIs.
 use crate::lapic::{LocalApic,send_fixed,send_fixed_logical};
-pub struct IoApic {select:u8,id:u8,entries:[u64;24],lines:[bool;24],edges:[bool;24],owners:[u8;24],vectors:[u8;24]}
+pub struct IoApic {select:u8,id:u8,entries:[u64;24],lines:[bool;24],edges:[bool;24],owners:[u8;24],vectors:[u8;24],deliveries:[u64;24]}
 impl Default for IoApic {fn default()->Self {Self::new()}}
 impl IoApic {
-    pub fn new()->Self {Self{select:0,id:0,entries:[1<<16;24],lines:[false;24],edges:[false;24],owners:[0;24],vectors:[0;24]}}
+    pub fn new()->Self {Self{select:0,id:0,entries:[1<<16;24],lines:[false;24],edges:[false;24],owners:[0;24],vectors:[0;24],deliveries:[0;24]}}
+    pub fn delivery_count(&self,pin:usize)->Result<u64,String> {self.deliveries.get(pin).copied().ok_or_else(||"Invalid IOAPIC input".into())}
     pub fn read(&self,offset:u32)->Result<u32,String> {
         match offset {0=>Ok(u32::from(self.select)),0x10=>match self.select {
             0=>Ok(u32::from(self.id)<<24),1=>Ok(0x00170011),2=>Ok(u32::from(self.id)<<24),
@@ -60,6 +61,7 @@ impl IoApic {
             if level||e&0x700==0x100 {
                 for (index,cpu) in cpus.iter_mut().enumerate() {if owners&(1<<index)!=0 {if level {cpu.request_level(e as u8)?;} else {cpu.request_edge(e as u8)?;}}}
             } else if logical {send_fixed_logical(cpus,0,destination,0,e as u8)?;} else {send_fixed(cpus,0,destination,0,e as u8)?;}
+            self.deliveries[pin]=self.deliveries[pin].saturating_add(1);
             self.edges[pin]=false;if level {self.owners[pin]=owners;self.vectors[pin]=e as u8;}
         }Ok(())
     }

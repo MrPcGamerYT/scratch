@@ -525,8 +525,8 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     let ((reason,waits),expired)=result.map_err(|error|format!("{error}; APIC_DIAG injections={} pit_programs={} pit_edges={} cursor={} SVR={:x?} TPR={:x?} LDR={:x?} pending={:?}",state.injections,state.platform.pit0.programs,state.platform.pit0.edges,state.pit_edges,state[0].read(0xf0),state[0].read(0x80),state[0].read(0xd0),state[0].pending()))?;trace.halt_waits=waits;
     if trace.linux_userspace_ready_ms.is_none()||expired||reason!=0||state.io_accesses==0||state.injections==0||state.timer_injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
     if let Some(disk)=&state.disk {
-        if disk.completions==0||disk.accesses==0 {return Err("APIC disk checkpoint completed without real block work".into());}
-        println!("NATIVE_APIC_DISK_OK completions={} mmio_accesses={}",disk.completions,disk.accesses);
+        if disk.completions==0||disk.accesses==0||state.io.delivery_count(5)?==0 {return Err("APIC disk checkpoint completed without real block work".into());}
+        println!("NATIVE_APIC_DISK_OK completions={} mmio_accesses={} ioapic_gsi5_deliveries={}",disk.completions,disk.accesses,state.io.delivery_count(5)?);
     }
     println!("NATIVE_APIC_OS_PID1_OK cpus={} ram_bytes={} io_mmio={} injections={} lapic_timer_irqs={} pit_edges={}; not Android certification",partition.2,memory.bytes,state.io_accesses,state.injections,state.timer_injections,state.platform.pit0.edges);
     Ok(())
