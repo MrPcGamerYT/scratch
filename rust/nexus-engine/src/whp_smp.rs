@@ -19,6 +19,11 @@ impl Drop for StopApic {fn drop(&mut self) {
     let mut state=self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);state.stop=true;
 }}
 struct ApicContext {ram_gate:RamGate,timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+fn sync_cr8(c:&ApicContext,local:&mut crate::lapic::LocalApic)->Result<(),String> {
+    let name=0x20;let mut value=Register::scalar(0);
+    unsafe {check(WHvGetVirtualProcessorRegisters(c.partition,c.index,&name,1,&mut value),"APIC read CR8")?;}
+    local.set_cr8(u64::from_le_bytes(value.0[..8].try_into().unwrap()))
+}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
     if context.is_null() {return 0x80004003u32 as i32;}
     let ctx=unsafe {&mut *context.cast::<ApicContext>()};
@@ -93,6 +98,7 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             else {c.icr_high=u32::from_le_bytes(a.data[..4].try_into().unwrap());}
             return Ok(());
         }
+        if offset==0x80 {let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;sync_cr8(c,&mut state[c.index as usize])?;}
         if a.direction==0 {
             let value=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?[c.index as usize].read(offset)?;
             a.data[..4].copy_from_slice(&value.to_le_bytes());
@@ -143,7 +149,13 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                     let level=local.service_vector().filter(|v|local.in_service_level(*v));
                     local.eoi();if let Some(vector)=level {state.io.eoi(vector);}
                 }
-                else {state[c.index as usize].write(offset,value)?;}
+                else {
+                    state[c.index as usize].write(offset,value)?;
+                    if offset==0x80 {
+                        let name=0x20;let cr8=Register::scalar(u64::from((value>>4)&15));
+                        unsafe {check(WHvSetVirtualProcessorRegisters(c.partition,c.index,&name,1,&cr8),"APIC TPR to CR8")?;}
+                    }
+                }
 
             }
         }Ok(())
@@ -179,6 +191,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         {
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+        sync_cr8(&ctx,&mut fabric[index as usize])?;
         {
             if fabric.stop {return Ok((0,halt_waits));}
             if let Some(observer)=observe.as_mut() {if observer(&mut fabric)? {fabric.stop=true;return Ok((0,halt_waits));}}
@@ -294,6 +307,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     }Err("APIC exit budget exceeded".into())
 }
 pub fn smp_smoke()->Result<(),String> {
+    priority_cycle()?;
     let mut halt_waits=0;for _ in 0..16 {halt_waits+=smp_cycle()?;}
     if halt_waits==0 {return Err("No actual LAPIC halt/wake exercised in startup batch".into());}Ok(())
 }
@@ -597,4 +611,30 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
 fn observe_serial_tail(output:&[u8],emitted:usize,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
     serial.write_all(&output[emitted..]).map_err(|e|e.to_string())?;serial.flush().map_err(|e|e.to_string())?;
     trace.observe_serial(&output[emitted..],start.elapsed().as_millis() as u64);Ok(())
+}
+
+// Actual long-mode MOV CR8 / xAPIC TPR alias and deferred self-IPI acceptance.
+fn priority_cycle()->Result<(),String> {
+    let partition=create_machine(1,true)?;
+    let memory=allocate(&partition,crate::cpu::RAM_BYTES)?;
+    unsafe {check(WHvCreateVirtualProcessor(partition.0,0,0),"Create priority vCPU")?;}
+    let _processor=Processor(&partition,0);
+    let mut f=crate::cpu::fixture(crate::cpu::CpuMode::Long64)?;
+    // Map the LAPIC's high MMIO page (2MiB mapping); WHP handles unmapped GPA.
+    f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
+    f.ram[0x7fb8..0x7fc0].copy_from_slice(&0xfee00083u64.to_le_bytes());
+    let code=[0xbb,0x0,0x0,0xe0,0xfe,0xc7,0x83,0xf0,0x0,0x0,0x0,0xff,0x1,0x0,0x0,0xc7,0x83,0x80,0x0,0x0,0x0,0x7,0x0,0x0,0x0,0x48,0xc7,0xc0,0x4,0x0,0x0,0x0,0x44,0xf,0x22,0xc0,0xfb,0x90,0xc7,0x83,0x0,0x3,0x0,0x0,0x40,0x0,0x4,0x0,0x8b,0x83,0x80,0x0,0x0,0x0,0x89,0x4,0x25,0x4,0xa0,0x0,0x0,0x8b,0x83,0x20,0x2,0x0,0x0,0x89,0x4,0x25,0x8,0xa0,0x0,0x0,0x8b,0x4,0x25,0x0,0xa0,0x0,0x0,0x89,0x4,0x25,0xc,0xa0,0x0,0x0,0x48,0xc7,0xc0,0x3,0x0,0x0,0x0,0x44,0xf,0x22,0xc0,0x83,0x3c,0x25,0x0,0xa0,0x0,0x0,0x1,0x75,0xf6,0xc7,0x83,0x80,0x0,0x0,0x0,0x5b,0x0,0x0,0x0,0x44,0xf,0x20,0xc0,0x89,0x4,0x25,0x10,0xa0,0x0,0x0,0xfa,0xf4];
+    f.ram[crate::cpu::ENTRY..crate::cpu::ENTRY+code.len()].copy_from_slice(&code);
+    let handler=[0xff,0x04,0x25,0,0xa0,0,0,0xc7,0x83,0xb0,0,0,0,0,0,0,0,0x48,0xcf];
+    f.ram[0x9000..0x9000+handler.len()].copy_from_slice(&handler);
+    let gate=[0,0x90,8,0,0,0x8e,0,0,0,0,0,0,0,0,0,0];
+    f.ram[crate::cpu::IDT+0x400..crate::cpu::IDT+0x410].copy_from_slice(&gate);
+    unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+    configure_fixture(&partition,&f)?;
+    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{dma_failure:None,started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0)],io:crate::ioapic::IoApic::new()}));
+    let ((reason,_),expired)=timer_pump(&partition,||bounded(&partition,5000,||run_index(partition.0 as usize,0,memory.address as usize,memory.bytes,None,fabric,None)))?;
+    let mut evidence=[0u32;5];
+    unsafe {std::ptr::copy_nonoverlapping(memory.address.cast::<u8>().add(0xa000).cast::<u32>(),evidence.as_mut_ptr(),5);}
+    if expired||reason!=8||evidence!=[1,0x47,1,0,5] {return Err(format!("CR8/TPR deferred IPI failed: reason={reason} expired={expired} evidence={evidence:x?}"));}
+    println!("NATIVE_CR8_TPR_OK masked_irr=1 premature_delivery=0 delivered_after_lower=1 tpr_read=47 cr8_read=5");Ok(())
 }

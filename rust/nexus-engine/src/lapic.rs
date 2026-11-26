@@ -7,6 +7,11 @@ fn highest(bits:&[u32;8])->Option<u8> {
 }
 impl LocalApic {
     pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8],irr_level:[0;8],isr_level:[0;8],other_lvt:[1<<16;5],timer_lvt:1<<16,timer_initial:0,timer_current:0,timer_divide:0,timer_fraction:0}}
+    /// CR8 aliases TPR[7:4]; native CR8 writes must preserve TPR[3:0].
+    pub fn set_cr8(&mut self,value:u64)->Result<(),String> {
+        if value>15 {return Err("CR8 priority must be 0..15".into());}
+        self.tpr=(self.tpr&15)|((value as u8)<<4);Ok(())
+    }
     /// Advance monotonic virtual bus time, independent of host scheduling frequency.
     /// Fractional divider ticks survive rendezvous; missed periods coalesce in IRR.
     pub fn advance_ns(&mut self,ns:u64)->Result<(),String> {
@@ -99,6 +104,24 @@ fn send_fixed_mode(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn cr8_priority_classes_preserve_subpriority_and_defer_without_losing_irr() {
+        for low in 0..16 {
+            for class in 0..16 {
+                let mut a=LocalApic::new(0);a.write(0xf0,0x1ff).unwrap();a.write(0x80,low).unwrap();
+                a.set_cr8(class).unwrap();assert_eq!(a.read(0x80).unwrap(),((class as u32)<<4)|low);
+                for vector in 16..=255 {a.request_edge(vector).unwrap();}
+                for vector in (16..=255).rev() {
+                    if u64::from(vector>>4)>class {assert_eq!(a.pending(),Some(vector));a.acknowledge(vector).unwrap();assert_eq!(a.eoi(),Some(vector));}
+                }
+                assert_eq!(a.pending(),None);assert!(a.set_cr8(16).is_err());
+                a.set_cr8(0).unwrap();
+                for vector in (16..=255).rev() {
+                    if u64::from(vector>>4)<=class {assert_eq!(a.pending(),Some(vector));a.acknowledge(vector).unwrap();a.eoi();}
+                }
+                assert_eq!(a.pending(),None);
+            }
+        }
+    }
     #[test] fn trigger_mode_tracks_acknowledged_vector_and_clears_on_eoi() {
         let mut a=LocalApic::new(0);a.write(0xf0,0x1ff).unwrap();
         a.request_level(0x41).unwrap();assert!(!a.in_service_level(0x41));
