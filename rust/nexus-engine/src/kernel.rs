@@ -8,6 +8,15 @@ pub const CMDLINE:usize=0x20000;
 pub const GDT:usize=0x5000;
 pub const STACK:u64=0x90000;
 pub const DEFAULT_RAM:usize=256*1024*1024;
+// Contiguous low RAM must stay below the VirtIO MMIO page at GPA 0xd0000000.
+// >3 GiB requires a discontiguous GPA map and matching E820/initrd placement.
+pub const MAX_RAM:usize=3072*1024*1024;
+pub fn parse_ram_mib(value:&str)->Result<usize,String> {
+    if value.is_empty()||!value.bytes().all(|b|b.is_ascii_digit()) {return Err("RAM MiB must be an unsigned decimal integer".into());}
+    let mib=value.parse::<usize>().map_err(|_|"RAM MiB overflows host size")?;
+    if !(128..=3072).contains(&mib) {return Err("Kernel RAM must be 128..3072 MiB".into());}
+    Ok(mib*1024*1024)
+}
 pub const MAX_INPUT:usize=64*1024*1024;
 fn u16_at(b:&[u8],i:usize)->u16 {u16::from_le_bytes(b[i..i+2].try_into().unwrap())}
 fn u32_at(b:&[u8],i:usize)->u32 {u32::from_le_bytes(b[i..i+4].try_into().unwrap())}
@@ -29,7 +38,7 @@ pub struct KernelPlan {
 }
 impl KernelPlan {
     pub fn build(image:&[u8],initrd:Option<&[u8]>,command:&str,ram:usize)->Result<Self,String> {
-        if !(128*1024*1024..=512*1024*1024).contains(&ram)||ram%4096!=0 {return Err("Kernel RAM must be page-aligned 128..512 MiB".into());}
+        if !(128*1024*1024..=MAX_RAM).contains(&ram)||ram%4096!=0 {return Err("Kernel RAM must be page-aligned 128..3072 MiB".into());}
         if image.len()<0x268||image.len()>MAX_INPUT {return Err("Truncated/oversized Linux boot image".into());}
         if u16_at(image,0x1fe)!=0xaa55 || &image[0x202..0x206]!=b"HdrS" {return Err("Not an x86 Linux bzImage (AA55/HdrS missing)".into());}
         let protocol=u16_at(image,0x206);
@@ -125,11 +134,21 @@ mod tests {
     #[test] fn bounds_and_initrd_collision() {
         let b=contract_image();assert!(KernelPlan::build(&b,None,"nul\0line",DEFAULT_RAM).is_err());
         assert!(KernelPlan::build(&b,None,&"x".repeat(2048),DEFAULT_RAM).is_err());
-        for ram in [0,64*1024*1024,DEFAULT_RAM+1,1024*1024*1024] {assert!(KernelPlan::build(&b,None,"",ram).is_err());}
+        for ram in [0,64*1024*1024,DEFAULT_RAM+1,MAX_RAM+4096] {assert!(KernelPlan::build(&b,None,"",ram).is_err());}
         let mut bad=b.clone();put32(&mut bad,0x260,u32::MAX);assert!(KernelPlan::build(&bad,None,"",DEFAULT_RAM).is_err());
         bad=b.clone();put32(&mut bad,0x230,3);assert!(KernelPlan::build(&bad,None,"",DEFAULT_RAM).is_err());
         bad=b.clone();put32(&mut bad,0x22c,0x200000);assert!(KernelPlan::build(&bad,Some(b"INIT"),"",DEFAULT_RAM).is_err());
         assert!(KernelPlan::build(&b,Some(b""),"",DEFAULT_RAM).is_err());
+    }
+    #[test] fn larger_ram_e820_initrd_and_mmio_separation() {
+        for mib in [128,256,512,1024,2048,3072] {
+            let ram=parse_ram_mib(&mib.to_string()).unwrap();
+            let p=KernelPlan::build(&contract_image(),Some(b"INIT"),"nexus",ram).unwrap();
+            assert_eq!(p.ram_bytes,ram);assert_eq!(u64_at(&p.regions[0].bytes,0x300),(ram-0x100000) as u64);
+            let at=p.initrd_address.unwrap();assert!(at+4<=ram&&at+4<=0x38000000&&at>=p.runtime_end);
+            assert!(ram<0xd0000000);
+        }
+        for bad in ["","127","3073","-128","+256"," 256","256 ","1.5","0x100","184467440737095516160"] {assert!(parse_ram_mib(bad).is_err());}
     }
     #[test] fn nonrelocatable_runtime_is_separate_from_compressed_load() {
         let mut image=contract_image();image[0x234]=0;put64(&mut image,0x258,0x1000000);

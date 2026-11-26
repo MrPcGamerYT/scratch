@@ -89,6 +89,8 @@ def main():
         command=[exe,'boot-kernel',str(kernel),str(log),cmd,str(rd)]
         if disk_enabled:
             command=[exe,'boot-kernel-disk-create' if index==0 else 'boot-kernel-disk-open',str(kernel),str(log),cmd,str(rd),str(base),str(cow)]
+        ram_mib=[256,512,1024][index]
+        command.append(f'--ram-mib={ram_mib}')
         p=subprocess.run(command,capture_output=True,text=True,timeout=45)
         launch_to_exit_ms=(time.perf_counter_ns()-start)/1_000_000
         raw=log.read_bytes() if log.exists() else b''
@@ -97,7 +99,7 @@ def main():
         metrics=json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
         sample={'sample':index+1,'kind':'first_process_launch' if index==0 else 'repeat_process_launch',
             'host_cache_state':'uncontrolled; NOT a cold-cache measurement','engine_exit':p.returncode,
-            'virtio_disk_enabled':disk_enabled,'virtio_expected_operation':('write_fsync_read' if index==0 else 'separate_boot_read') if disk_enabled else None,
+            'ram_mib':ram_mib,'virtio_disk_enabled':disk_enabled,'virtio_expected_operation':('write_fsync_read' if index==0 else 'separate_boot_read') if disk_enabled else None,
             'launch_to_engine_exit_ms':launch_to_exit_ms,'full_boot_verified':False,
             'kernel_sha256':expected,'initramfs_sha256':rd_sha,'serial_sha256':hashlib.sha256(raw).hexdigest(),'serial_bytes':len(raw),
             'stderr':p.stderr,'metrics':metrics}

@@ -47,7 +47,7 @@ mod windows {
     struct Processor<'a>(&'a Partition);
     impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
     fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {
-        if bytes==0 || bytes%4096!=0 || bytes>512*1024*1024 {return Err("Invalid guest RAM mapping size".into());}
+        if bytes==0 || bytes%4096!=0 || bytes>crate::kernel::MAX_RAM {return Err("Invalid guest RAM mapping size".into());}
         let address=unsafe { VirtualAlloc(std::ptr::null_mut(),bytes,0x3000,4) };
         if address.is_null() { return Err("VirtualAlloc failed".into()); }
         let hr=unsafe { WHvMapGpaRange(partition.0,address,0,bytes as u64,7) };

@@ -1,6 +1,12 @@
 use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
+    let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"));
+    let (args,ram)=if boot_command {
+        if let Some(value)=args.last().and_then(|arg|arg.strip_prefix("--ram-mib=")) {
+            (&args[..args.len()-1],nexus_engine::kernel::parse_ram_mib(value)?)
+        } else {(args,nexus_engine::kernel::DEFAULT_RAM)}
+    } else {(args,nexus_engine::kernel::DEFAULT_RAM)};
     match args.get(1).map(String::as_str) {
         Some("import-raw") if args.len()==4 => {
             image::import_raw(Path::new(&args[2]),Path::new(&args[3])).map_err(|e|e.to_string())?;
@@ -31,7 +37,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             use nexus_engine::kernel;
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
-            let plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],kernel::DEFAULT_RAM)?;
+            let plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
             use std::io::Write;
             let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);
             let mut log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
@@ -55,7 +61,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             println!("Independent Rust foundation; QEMU dependency: none\nZLAG raw-disk import / validation / sector reads: implemented\nVerified ZLAG-backed ATA LBA28 PIO with optional persistent COW overlay: implemented and diagnostic-tested; no IRQ14, DMA or Android integration\nDirect Windows WHP partition lifecycle: implemented, host-dependent\nBounded real-mode WHP CPU/RAM smoke: implemented, host-dependent\nPrivate scalar port-I/O test bus / bounded cancellation: implemented, host-dependent\nZLAG first-sector test loader at 0000:7c00: implemented, no BIOS services\nSeeded protected/long-mode test startup with paging and guest software interrupt: implemented, host-dependent\nLinux bzImage loader, polled COM1, PIT0/IRQ0 and diagnostic PID1 checkpoint: implemented; no general Linux distribution or Android boot\nOpt-in VirtIO-MMIO block with dedicated IRQ5 and Linux vda/COW separate-boot raw-block persistence: diagnostic-tested; no filesystem or Android integration\nFirmware / full platform devices / Android boot: NOT IMPLEMENTED\nGuest DirectX / OpenGL / Vulkan acceleration: NOT IMPLEMENTED\nNo performance or game-compatibility certification"); Ok(())
         }
         Some("boot") => Err("Android boot is not implemented. Refusing to pretend this is a working emulator or launch QEMU.".into()),
-        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | kernel-contract-smoke | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | capabilities".into())
+        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | kernel-contract-smoke | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | capabilities (kernel boot commands accept trailing --ram-mib=128..3072)".into())
     }
 }
 fn main() { let start=std::time::Instant::now(); if let Err(error)=execute(&std::env::args().collect::<Vec<_>>(),start) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }
