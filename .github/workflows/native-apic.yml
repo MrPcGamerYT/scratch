@@ -1,5 +1,8 @@
 name: Native Linux APIC OS checkpoint
 on:
+  push:
+    paths:
+      - '.github/workflows/native-apic.yml'
   workflow_dispatch:
     inputs:
       kernel_run:
