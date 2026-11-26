@@ -51,7 +51,7 @@ impl AtaPio {
         for (word,value) in [(0,0x0040),(47,0),(49,1<<9),(60,sectors as u16),(61,(sectors>>16) as u16)] {
             data[word*2..word*2+2].copy_from_slice(&value.to_le_bytes());
         }
-        let model=if self.storage.writable() {b"NEXUS COW ZLAG PIO DISK                  "} else {b"NEXUS READ ONLY ZLAG PIO DISK             "};
+        let model=if self.storage.writable() {b"NEXUS COW ZLAG PIO DISK                 "} else {b"NEXUS READ ONLY ZLAG PIO DISK           "};
         for (index,pair) in model.chunks_exact(2).enumerate() {data[54+index*2]=pair[1];data[55+index*2]=pair[0];}
         data
     }
