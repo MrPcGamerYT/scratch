@@ -530,7 +530,7 @@ mod windows {
     }
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,memory,surface| {
-            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,None);}
+            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(None,plan.bridge_probe));}
 
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
@@ -539,10 +539,10 @@ mod windows {
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
-        if plan.apic_probe&&(plan.android_init_probe||plan.bridge_probe||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk requires headless Linux, no Android/bridge/player".into());}
+        if plan.apic_probe&&(plan.android_init_probe||plan.bridge_apk.is_some()||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk requires headless Linux, no Android/APK/player".into());}
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
         load_kernel_plan(plan,|partition,memory,surface| {
-            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,Some(backend));}
+            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(Some(backend),plan.bridge_probe));}
             let capacity=backend.disk_bytes()/512;
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};

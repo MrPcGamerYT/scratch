@@ -62,11 +62,11 @@ def disk_sequence(prefix,raw,filesystem=False,unclean=False):
     for index,(cpus,ram_mib) in enumerate(profiles):
         rd=Path(f'{prefix}-{index+1}.cpio')
         rd.write_bytes(initramfs(disk_write=index==0,filesystem=filesystem,
-                                clean_unmount=not(unclean and index==0),expected_cpus=cpus))
+                                clean_unmount=not(unclean and index==0),expected_cpus=cpus,bridge=True))
         log=Path(f'{prefix}-{index+1}.log')
         command='boot-kernel-disk-create' if index==0 else 'boot-kernel-disk-open'
         p=subprocess.run([exe,command,str(kernel),str(log),cmd+f' maxcpus={cpus} virtio_mmio.device=4K@0xd0000000:5',str(rd),str(base),str(cow),
-                          '--apic-probe',f'--cpus={cpus}',f'--ram-mib={ram_mib}'],capture_output=True,text=True,timeout=45)
+                          '--apic-probe',f'--cpus={cpus}',f'--ram-mib={ram_mib}','--bridge-probe'],capture_output=True,text=True,timeout=45)
         text=log.read_text(errors='replace') if log.exists() else ''
         marker=('NEXUS_EXT4_FILE_FSYNC_UNMOUNT_MATCH' if index==0 else 'NEXUS_EXT4_REBOOT_FILE_MATCH') if filesystem else (
                 'NEXUS_VDA_WRITE_FLUSH_READ_MATCH' if index==0 else 'NEXUS_VDA_REBOOT_READ_MATCH')
@@ -76,6 +76,8 @@ def disk_sequence(prefix,raw,filesystem=False,unclean=False):
                 'disk_completions_and_gsi5':'NATIVE_APIC_DISK_OK' in p.stdout and 'dma_rendezvous=' in p.stdout,
                 'selected_cpu_migration':f'NEXUS_SMP_AFFINITY_OK cpus={cpus}' in text,
                 'effective_config':f'cpus={cpus} ram_bytes={ram_mib*1024*1024} ' in p.stdout,
+                'com2_exact_query':'NEXUS_PRIVATE_COM2_EXACT_QUERY_MATCH' in text,
+                'com2_host_result':'NATIVE_APIC_BRIDGE_OK app=org.nexus.fixture ' in p.stdout,
                 'virtio_blk_bound':'virtio_blk virtio0: [vda]' in text,
                 'no_disk_error':'EXT4-fs error' not in text and 'I/O error' not in text,
                 'base_unchanged':hashlib.sha256(base.read_bytes()).hexdigest()==base_sha,

@@ -471,20 +471,23 @@ fn smp_cycle()->Result<u64,String> {
     Ok(ap_halts)
 }
 
-fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,backend:Option<crate::overlay::Overlay>)->Result<(),String> {
+fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,devices:(Option<crate::overlay::Overlay>,bool))->Result<(),String> {
+    let (backend,bridge_probe)=devices;
     let mut io=crate::ioapic::IoApic::new();io.write(0,0)?;io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;
     let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
     if let Some(backend)=backend {
         let device=crate::virtio_mmio::BlockMmio::new(backend.disk_bytes()/512,false)?;
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.disk=Some(ApicDisk{device,backend,accesses:0,completions:0});
     }
+    if bridge_probe {fabric.lock().map_err(|_|"LAPIC lock poisoned")?.platform.bridge=Some(crate::bridge::Device::default());}
     let mut emitted=0;
     trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);trace.vcpu_run_requested_ms=trace.vm_ready_ms;
     let mut observe=|state:&mut ApicState|->Result<bool,String> {
         let bytes=&state.platform.uart.output[emitted..];
         serial.write_all(bytes).map_err(|e|e.to_string())?;serial.flush().map_err(|e|e.to_string())?;
         trace.observe_serial(bytes,start.elapsed().as_millis() as u64);emitted=state.platform.uart.output.len();
-        Ok(trace.linux_userspace_ready_ms.is_some())
+        if let Some(bridge)=&mut state.platform.bridge {bridge.tick()?;}
+        Ok(trace.linux_userspace_ready_ms.is_some()&&state.platform.bridge.as_ref().is_none_or(|b|b.client.complete()))
     };
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
     let result=timer_pump(partition,||bounded(partition,30000,||std::thread::scope(|scope| {
@@ -532,6 +535,10 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     observe_serial_tail(&state.platform.uart.output,emitted,serial,trace,start)?;
     let ((reason,waits),expired)=result.map_err(|error|format!("{error}; APIC_DIAG injections={} pit_programs={} pit_edges={} cursor={} SVR={:x?} TPR={:x?} LDR={:x?} pending={:?}",state.injections,state.platform.pit0.programs,state.platform.pit0.edges,state.pit_edges,state[0].read(0xf0),state[0].read(0x80),state[0].read(0xd0),state[0].pending()))?;trace.halt_waits=waits;
     if trace.linux_userspace_ready_ms.is_none()||expired||reason!=0||state.io_accesses==0||state.injections==0||state.timer_injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
+    if let Some(bridge)=&state.platform.bridge {
+        if !bridge.client.complete()||state.io.delivery_count(3)?==0 {return Err("APIC COM2 query/interrupt incomplete".into());}
+        println!("NATIVE_APIC_BRIDGE_OK app={} ioapic_gsi3_deliveries={}",bridge.client.app().unwrap_or("-"),state.io.delivery_count(3)?);
+    }
     if let Some(disk)=&state.disk {
         if disk.completions==0||disk.accesses==0||state.io.delivery_count(5)?==0 {return Err("APIC disk checkpoint completed without real block work".into());}
         println!("NATIVE_APIC_DISK_OK completions={} mmio_accesses={} ioapic_gsi5_deliveries={} dma_rendezvous={}",disk.completions,disk.accesses,state.io.delivery_count(5)?,state.dma_rendezvous);
