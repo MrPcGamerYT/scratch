@@ -347,3 +347,50 @@ Production boot remains single-vCPU/PIC until firmware/enumeration and OS
 LAPIC/IOAPIC acceptance are implemented and verified. Step 1 still also needs
 production SMP, reset/failure stress and physical Windows 10 acceptance. No
 Step 2 work was started.
+
+## Sequential blocker: APIC-machine discovery data (2026-11-24)
+
+`src/firmware.rs` now generates Intel MP Specification 1.4 discovery data for
+the explicit APIC machine, not a BIOS/UEFI implementation. The 16-byte-aligned
+floating pointer is in the legacy BIOS search area at F0000, pointing to a
+checksummed PCMP configuration at F0100. Tables fit below 1 MiB, inside the
+existing loader's reserved E820 hole; they are currently installed only in the
+native APIC fixture, **not** the OS loader's PIC profile.
+
+The table describes 1..8 enabled CPUs with APIC IDs matching virtual CPUID,
+exactly one bootstrap CPU, LAPIC FEE00000, IOAPIC ID8/version11 at FEC00000, an
+ISA bus, and 15 fixed ISA interrupt routes. IRQ0 -> input2 matches the real PIT
+source adapter; IRQ2 is the absent cascade, not a conflicting second input2
+route. Other ISA IRQs map to corresponding inputs. Conforming ISA routes are
+active-high/edge; software may reprogram supported routes to level (as the UART
+fixture does). No unsupported NMI/ExtINT local-interrupt routes are advertised.
+CPU signature/feature fields are zero rather than inventing a host signature;
+virtual CPUID remains authoritative. No ACPI, AML, power-management or PCI
+firmware interfaces are supplied by this increment.
+
+Pure tests independently walk all entries for every CPU count 1..8, validate
+length/checksums, CPU IDs/bootstrap flags, IOAPIC identity/address, IRQ routes
+and table bounds, and reject unsupported CPU counts. In the native two-vCPU
+gate the guest itself scans the legacy BIOS area in 16-byte steps, finds `_MP_`,
+reads the configuration pointer, computes both checksums, walks the variable-
+length CPU/controller entries, and records enabled CPU count/ID bitset and
+controller addresses. It accesses the discovered controller addresses through
+actual MMIO, reading IOAPIC ID8/version/input-count and the BSP LAPIC ID. Host
+assertions require all of those values to agree with the actual two-vCPU
+machine and the existing guest CPUID/startup checks; host table serialization
+alone cannot satisfy the gate.
+
+Verification: initial tables/parser **45832112162** passed; final native
+discovery/controller-identity gate **45832450342** (code **4f9b81c**) passed
+Windows/Ubuntu strict tests/build and **48 two-vCPU cycles**, retaining real
+PIT/UART, IOAPIC level EOI, LAPIC timer and IPI coverage. Existing Linux
+regression **45832722130** passed early-entry acceptance, reusing kernel
+**45814022595** (kernel build skipped).
+
+Remaining blocker: connect an APIC-capable OS boot profile to these discovery
+tables, interrupt/MMIO runner and AP lifecycle, then obtain actual OS CPU/
+controller enumeration, timer calibration, interrupt and SMP acceptance. The
+existing Linux regression deliberately remains single-vCPU/PIC with APIC and
+ACPI disabled; it does **not** certify these tables under Linux. Reset/failure
+stress and physical Windows 10 acceptance also remain. Step 1 is incomplete;
+no graphics/Step 2 work was started.
