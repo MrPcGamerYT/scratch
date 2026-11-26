@@ -21,12 +21,35 @@ WHP repetitions and source-integrity checks passed in
 Repeated Linux diagnostic PID1 boots also passed with the new target in
 [checkpoint 45753956761](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956761).
 
-This is polled read-only bring-up, **not** writable Android storage, Linux
-filesystem mounting or player integration. No IRQ14/DMA/persistent overlay is
-implemented. The normal Linux boot still uses the initramfs and has no ATA disk
+The original read-only bring-up is now extended with an optional persistent
+sector overlay (see below), but is **not** Android filesystem mounting or player
+integration. No IRQ14/DMA is implemented. The normal Linux boot still uses the initramfs and has no ATA disk
 attached. See [native-ata-storage.md](native-ata-storage.md) for the exact contract
 and limitations. New-target evidence is in
 `deliverables/native-kernel/100s-target-checkpoint.json`.
+
+### New: persistent writable sector overlay
+
+At `a048d9e`, the optional ATA COW mode passed a real Windows guest test:
+write a sector -> flush -> exact guest readback -> tear down vCPU/device ->
+separately reopen the overlay and verify the saved bytes. This passed three
+times with the original ZLAG SHA256 unchanged. Base images remain read-only.
+
+The append-only overlay validates its base binding and record integrity, prevents
+a second writer, and defaults to rejecting incomplete/corrupt tails. Explicit
+recovery truncates only a short last record after all complete records validate.
+Injected host write errors poison the instance; prior committed data is verified
+after reopening. Partial sectors are discarded on reset. Writes are per-sector
+commits, not multi-sector transactions or physical power-loss certification.
+
+- [Final foundation 45755799925](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45755799925): Windows/Ubuntu unit tests, strict Clippy, release and repeated live WHP/COW contracts passed.
+- [Linux PID1 regression 45755800012](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45755800012): three diagnostic userspace boots passed; not a Linux disk mount or Android boot.
+- [Storage format, safety and remaining limits](native-writable-storage.md).
+
+The normal Linux/player paths still do not attach this disk. Android block-driver
+integration, IRQ/batched IO, quotas/compaction and filesystem-level validation
+remain necessary. The per-word PIO/per-sector-sync implementation is a correctness
+prototype, not a measured fast storage path or an app-freeze fix.
 
 ## Implemented and verified in this work
 
@@ -114,14 +137,14 @@ does not establish real-time timer accuracy, GPU speed or Android boot speed.
 |---|---|
 | Linux platform | Broader CPU/MSR capability contract and clock calibration; APIC/SMP and additional interrupts/devices; sustained userspace tests. Current support is one vCPU and a tiny initramfs, not a general Linux distribution. |
 | Android boot | Android-compatible kernel/device contract, system/vendor/data and init integration, usable storage device path, Android framework/services and repeatable Home readiness. |
-| `gustimg.zlag` | A read-only ATA PIO device now passes a live guest test; normal Linux/player attachment, writable data/overlays, guest block-driver integration and the Android disk lifecycle remain unfinished. |
+| `gustimg.zlag` | Read-only ATA and optional persistent COW writes pass live guest tests. Normal Linux/player attachment, IRQ/batched IO, guest block drivers, scalable overlay management and the Android disk lifecycle remain unfinished. |
 | App freezes | Capture and reproduce on the affected guest/player, correlate ANR traces with CPU/memory/IO/compositor behavior, apply a demonstrated root-cause fix and test sustained app interactions. No confirmed ANR fix yet. |
 | Slim guest | Inventory the exact candidate, review dependencies, test changes on a new overlay/image, retain file editor/launcher/core Android services and validate two boots plus applications. |
 | Graphics/GPU | Real virtual graphics device, matching Android drivers, host GPU-backed renderer and measured DirectX/OpenGL/Vulkan integration. No accelerated graphics was added in this work. |
 | Player/devices | Wire the new engine into the existing player; display, input, native controls, cursor alignment, audio/network and portable Windows packaging. Existing editor/player files are preserved, not migrated. |
 | Performance | Measure complete player launch through usable Android Home and post-boot responsiveness on representative low/high-end Windows 10 PCs. Optimize from those measurements, not the diagnostic PID1 number. |
 
-**Next dependency:** writable, interrupt-capable/batched Android storage plus the device/CPU platform, followed by
+**Next dependency:** connect the tested writable backend to an interrupt-capable/batched guest block device and Android drivers, plus the device/CPU platform, followed by
 Android init and Home. GPU/device and affected-guest stability work remain major
 engineering tasks; this report does not imply they can be completed by simply
 removing more applications.

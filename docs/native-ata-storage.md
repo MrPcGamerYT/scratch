@@ -1,6 +1,15 @@
 # ZLAG-backed ATA PIO storage bring-up
 
-## Verified result
+## Current writable extension
+
+The original read-only contract below remains the default. An optional
+persistent sector overlay now supports ATA WRITE SECTORS and FLUSH CACHE, with
+real guest write/readback/reopen tests. See
+[native-writable-storage.md](native-writable-storage.md). No IRQ14/DMA or normal
+Linux/player disk attachment is implied. Historical limits below describe the
+original read-only mode.
+
+## Original verified result
 
 At commit `899e843`, foundation run
 [45753956772](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45753956772)

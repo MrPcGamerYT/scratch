@@ -223,3 +223,13 @@ SHA preservation. Linux diagnostic PID1 regression run **45753956761** passed.
 See [native-ata-storage.md](native-ata-storage.md). No writable Android data,
 IRQ14, DMA, block-driver mount, player connection or accelerated graphics is
 implied. The ATA device is currently attached only by its explicit live fixture.
+
+
+## Persistent writable-backend milestone
+
+At `a048d9e`, optional per-sector append-only COW writes, flush and separate
+reopen/persistence passed real guest ATA tests three times; base ZLAG SHA was
+unchanged. Foundation **45755799925** and diagnostic Linux **45755800012** passed.
+See [native-writable-storage.md](native-writable-storage.md). This supersedes the
+absence of an overlay backend, not the pending Android disk integration,
+IRQ/batched block device, production overlay lifecycle or app-stability work.
