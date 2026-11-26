@@ -13,6 +13,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class GuestBridgeTests(unittest.TestCase):
+    def test_new_engine_com2_production_build(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary=pathlib.Path(folder)/'agent-com2'
+            subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-DNEXUS_BRIDGE_COM2',str(ROOT/'guest-tools/nexus-guest/agent.c'),'-o',str(binary)],check=True)
+
+
     def test_ramdisk_patch_preserves_original_metadata(self):
         fields=[7,0o100644,0,0,1,1234,0,0,0,0,0,0,0]
         original=record('init.rc',fields,b'on boot\n    hostname android\n')+record('keep',fields,b'unchanged')+record('TRAILER!!!',[0]*13,b'')

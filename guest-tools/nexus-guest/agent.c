@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <termios.h>
 #include <unistd.h>
 
 #ifndef NEXUS_SYSTEM_BIN
@@ -294,6 +295,20 @@ static int serve(int input, int output, int testing) {
 
 #if !defined(NEXUS_AGENT_TEST) && !defined(NEXUS_AGENT_HARNESS)
 static int open_port(void) {
+#ifdef NEXUS_BRIDGE_COM2
+    /* Explicit new-engine build only. Never mix protocol data with COM1 logs,
+     * enable a TCP/ADB listener, or silently fall back between transports. */
+    int fd=open("/dev/ttyS1",O_RDWR|O_CLOEXEC|O_NOCTTY|O_NONBLOCK);
+    if (fd<0) return -1;
+    struct termios settings;
+    if (tcgetattr(fd,&settings)) { close(fd); return -1; }
+    settings.c_iflag=0; settings.c_oflag=0; settings.c_lflag=0;
+    settings.c_cflag=CS8|CREAD|CLOCAL;
+    settings.c_cc[VMIN]=1; settings.c_cc[VTIME]=0;
+    if (cfsetispeed(&settings,B115200) || cfsetospeed(&settings,B115200)
+        || tcsetattr(fd,TCSANOW,&settings)) { close(fd); return -1; }
+    return fd;
+#else
     glob_t paths;
     if (glob("/sys/class/virtio-ports/*/name",0,NULL,&paths)) return -1;
     int fd = -1;
@@ -312,6 +327,7 @@ static int open_port(void) {
         fd = open(path,O_RDWR|O_CLOEXEC|O_NONBLOCK); break;
     }
     globfree(&paths); return fd;
+#endif
 }
 #endif
 

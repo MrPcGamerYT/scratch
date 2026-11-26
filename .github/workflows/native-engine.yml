@@ -6,6 +6,9 @@ on:
       - 'tests/native_engine_cli_test.py'
       - 'tests/native_android*'
       - 'tests/native_graphics_checkpoint.py'
+      - 'guest-tools/nexus-guest/agent.c'
+      - 'tests/guest_bridge_tests.py'
+      - 'tests/native_guest_integration_tests.py'
       - 'tests/whp_sdk_abi.cpp'
       - 'tests/build_native_engine.py'
       - '.github/workflows/native-engine.yml'
@@ -61,6 +64,11 @@ jobs:
         run: |
           import subprocess
           subprocess.run(['python','tests/native_graphics_checkpoint.py','rust/nexus-engine/target/release/nexus-engine.exe'],check=True)
+      - name: Guest bridge parser and explicit COM2 production build (not Android execution)
+        if: runner.os == 'Linux'
+        run: |
+          python tests/guest_bridge_tests.py
+          python tests/native_guest_integration_tests.py
       - name: Android manifest and read-only boot-contract host tests
         run: python tests/native_android_tools_tests.py
       - name: Independent CLI / disk-format reference checks
