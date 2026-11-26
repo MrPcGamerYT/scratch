@@ -27,7 +27,7 @@ def main():
     cmd=('earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 '
          'nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 '
          'root=/dev/ram0 ROOT=/dev/vda SRC=/android virtio_mmio.device=4K@0xd0000000:5 '
-         'rdinit=/bin/busybox -- sh -x /init')
+         'DEBUG=0 SWITCH=switch_root rdinit=/bin/busybox -- sh -x /init')
     p=subprocess.run([exe,'probe-android-init-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),
                       str(root/'android-system.zlag'),'android-system.cow','--ram-mib=2048',
                       '--framebuffer=android-system.ppm'],capture_output=True,text=True,timeout=150)
