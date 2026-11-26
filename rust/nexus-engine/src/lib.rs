@@ -31,3 +31,4 @@ compile_error!("The direct WHP engine currently supports Windows x64 only");
 mod virtio_block_tests;
 
 pub mod player;
+pub mod graphics;

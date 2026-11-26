@@ -5,6 +5,7 @@ on:
       - 'rust/nexus-engine/**'
       - 'tests/native_engine_cli_test.py'
       - 'tests/native_android*'
+      - 'tests/native_graphics_checkpoint.py'
       - 'tests/whp_sdk_abi.cpp'
       - 'tests/build_native_engine.py'
       - '.github/workflows/native-engine.yml'
@@ -54,6 +55,12 @@ jobs:
                   print('::error::'+p.stderr[-3000:].replace('\n','%0A'),flush=True)
                   raise SystemExit(p.returncode)
           print('::notice::NATIVE_WINDOW: three create/software-present/close cycles PASS; no Android, input or GPU success claimed')
+      - name: Direct3D host shader and synchronized readback (hardware or explicitly labeled WARP)
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import subprocess
+          subprocess.run(['python','tests/native_graphics_checkpoint.py','rust/nexus-engine/target/release/nexus-engine.exe'],check=True)
       - name: Android manifest and read-only boot-contract host tests
         run: python tests/native_android_tools_tests.py
       - name: Independent CLI / disk-format reference checks
@@ -72,6 +79,7 @@ jobs:
           name: native-engine-foundation-${{ matrix.os }}
           path: |
             native-engine*.log
+            native-engine-graphics.json
             rust/nexus-engine/target/release/nexus-engine
             rust/nexus-engine/target/release/nexus-engine.exe
             docs/native-engine-roadmap.md

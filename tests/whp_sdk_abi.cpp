@@ -62,3 +62,11 @@ static_assert(offsetof(MSG, lParam) == 24);
 static_assert(offsetof(MSG, pt) == 36);
 static_assert(sizeof(BITMAPINFOHEADER) == 40);
 static_assert(sizeof(RECT) == 16);
+
+#include <d3d11.h>
+static_assert(sizeof(D3D11_TEXTURE2D_DESC) == 44);
+static_assert(sizeof(D3D11_MAPPED_SUBRESOURCE) == 16);
+static_assert(sizeof(D3D11_VIEWPORT) == 24);
+static_assert(D3D_DRIVER_TYPE_HARDWARE == 1 && D3D_DRIVER_TYPE_WARP == 5);
+static_assert(D3D11_SDK_VERSION == 7 && DXGI_FORMAT_R8G8B8A8_UNORM == 28);
+static_assert(D3D11_BIND_RENDER_TARGET == 0x20 && D3D11_CPU_ACCESS_READ == 0x20000);
