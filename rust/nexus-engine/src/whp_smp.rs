@@ -45,7 +45,7 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             if a.direction!=0 {return Err("Concurrent APIC emulator RAM write refused".into());}
             unsafe {std::ptr::copy_nonoverlapping(c.ram.add(a.gpa as usize),a.data.as_mut_ptr(),n);}return Ok(());
         }
-        if !(0xfee00000..0xfee01000).contains(&a.gpa)||a.size!=4||a.gpa%16!=0 {return Err("Unsupported APIC MMIO address/width".into());}
+        if !(0xfee00000..0xfee01000).contains(&a.gpa)||a.size!=4||a.gpa%16!=0 {return Err(format!("Unsupported APIC MMIO address/width: cpu={} gpa=0x{:x} size={} direction={}",c.index,a.gpa,a.size,a.direction));}
         let offset=(a.gpa-0xfee00000) as u32;let name=0x3000+offset/16;
         if offset==0x310 {
             if a.direction==0 {a.data[..4].copy_from_slice(&c.icr_high.to_le_bytes());}
@@ -75,6 +75,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize)->Result<u32,String> {
     let callbacks=Box::new(EmulatorCallbacks{size:std::mem::size_of::<EmulatorCallbacks>() as u32,reserved:0,io:apic_io,memory:apic_memory,get:apic_get,set:apic_set,translate:apic_translate});
     let mut emulator=std::ptr::null_mut();
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
+    if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,error:None};
     for _ in 0..256 {
