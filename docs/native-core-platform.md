@@ -301,3 +301,49 @@ IOAPIC fixture specifically proves BSP physical **level** routing. Do not
 interpret the bounded fixture as full APIC/OS SMP completion. This section
 supersedes the earlier absence of an IOAPIC model/frontend, not those remaining
 acceptance requirements. No Step 2 work was started in this increment.
+
+## Sequential blocker: real platform sources into IOAPIC (2026-11-24)
+
+`EarlyPlatform::route_ioapic` now mirrors the existing device models into the
+APIC profile: PIT IRQ0 -> GSI2 (the conventional PC override), COM2 -> GSI3,
+COM1 -> GSI4, and caller-provided block IRQ -> GSI5. PIT monotonic edge counters
+are sampled with an explicit cursor, so repeated routing cannot duplicate the
+same edge. UART and block sources use their asserted/deasserted state. The
+legacy PIC continues observing sources, but a runner must select exactly one
+interrupt-injection profile; the APIC frontend never injects from the PIC.
+
+The two-vCPU native runner now handles real guest IN/OUT accesses through the
+same `EarlyPlatform` used for OS boot, with indexed register updates and proper
+CPU-mode-specific RIP advancement. In addition to the previous synthetic
+held-level test, the guest now performs these actual source sequences:
+
+- Programs IOAPIC GSI2/vector43 and PIT mode0/count11932 through ports 43/40,
+  waits in CLI/check/STI/HLT, and receives exactly one PIT interrupt. The host
+  requires one actual PIT edge and one consumed routing-cursor edge.
+- Programs GSI4/vector44 as a level route, enables COM1 OUT2 and THRE interrupts,
+  then receives an interrupt from the existing UART model. The guest handler
+  reads IIR (expected THRE ID2), clearing the device source **before** LAPIC EOI.
+- After the first UART return, guest OUT to THR sends `U` and must cause exactly
+  one additional interrupt. The handler preserves EAX/EDX and IRETD restores
+  its stack. Final checks require count2, IIR2, output exactly `U`, a deasserted
+  UART source, cleared IOAPIC remote IRR and empty LAPIC IRR/ISR.
+
+Additional pure adapter tests prove repeated routing does not duplicate a PIT
+one-shot edge and a block-source deassertion before EOI prevents reassertion.
+COM2/block mappings exist in the adapter, but this native gate does **not**
+certify an actual block completion or COM2 bridge transaction through IOAPIC.
+
+Verification: initial native source gate **45831022503**, then final code
+**cc8e41a** / foundation **45831322640**, passed both Windows and Ubuntu strict
+build/test gates, including **48 two-vCPU native cycles**. Existing Linux
+regression **45831555672** passed early-entry acceptance using reusable kernel
+**45814022595** (kernel build skipped). Automatic kernel rebuilds
+45831022301/45831322402 were canceled in favor of running the focused native
+gate first, then the single artifact-reusing Linux regression sequentially.
+
+This integrates real production device models into the APIC runner; it does
+**not** switch the production OS boot profile to APIC or prove OS enumeration.
+Production boot remains single-vCPU/PIC until firmware/enumeration and OS
+LAPIC/IOAPIC acceptance are implemented and verified. Step 1 still also needs
+production SMP, reset/failure stress and physical Windows 10 acceptance. No
+Step 2 work was started.
