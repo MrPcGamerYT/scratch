@@ -28,7 +28,10 @@ jobs:
             tail -8 native-engine-test.log | while IFS= read -r line; do echo "::error::$line"; done
             exit 1
           fi
-          cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings
+          if ! cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings 2>&1 | tee native-engine-clippy.log; then
+            tail -30 native-engine-clippy.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
           cargo build --locked --release --manifest-path rust/nexus-engine/Cargo.toml
       - name: Independent CLI / disk-format reference checks
         run: |
