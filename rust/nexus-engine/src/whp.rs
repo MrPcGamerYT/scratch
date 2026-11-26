@@ -296,6 +296,7 @@ mod windows {
                             let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                             let response=platform.access(io,now_ns);
                             trace.pit_programs=platform.pit.programs;trace.pit_accesses=platform.pit.accesses;
+                            trace.pic_accesses=platform.pic.accesses;trace.pic_initializations=platform.pic.initializations;
                             let input=response.map_err(|e|format!("{e}; mode={mode:?}, RIP=0x{:x}",io.rip))?;
                             let emitted=&platform.uart.output[before..];
                             if !emitted.is_empty() {
