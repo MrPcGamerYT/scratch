@@ -27,7 +27,7 @@ impl Bridge {
             if self.received>=1024*1024 {return Err("Native bridge receive budget exceeded".into());}self.received+=1;
             if byte==b'\n' {let line=std::mem::take(&mut self.line);self.frame(&line)?;}
             else {
-                if !byte.is_ascii_graphic()&&byte!=b' ' {return Err("Invalid native bridge text byte".into());}
+                if !byte.is_ascii_graphic()&&byte!=b' ' {return Err(format!("Invalid native bridge text byte 0x{byte:02x}"));}
                 if self.line.len()>=127 {return Err("Native bridge frame too long".into());}self.line.push(byte);
             }
         }Ok(())
@@ -66,9 +66,9 @@ impl Bridge {
     }
 }
 #[derive(Default)]
-pub struct Device {pub uart:EarlyUart,pub client:Bridge}
+pub struct Device {pub uart:EarlyUart,pub client:Bridge,probe_bytes:usize}
 impl Device {
-    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?})}
+    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?,probe_bytes:0})}
     pub fn tick(&mut self)->Result<(),String> {
         if self.uart.can_receive() {if let Some(byte)=self.client.next_byte() {self.uart.receive(byte)?;}}Ok(())
     }
@@ -77,7 +77,16 @@ impl Device {
         io.port+=0x100;
         let answer=self.uart.access(io)?;
         if !self.uart.output.is_empty() {
-            let bytes=std::mem::take(&mut self.uart.output);self.client.receive(&bytes)?;
+            let bytes=std::mem::take(&mut self.uart.output);
+            for byte in bytes {
+                // Linux 8250 autoconfig_irq deliberately transmits 0xff before
+                // a userspace port is opened. Bound this hardware probe preface;
+                // never discard bytes inside a frame or after the greeting.
+                if byte==0xff&&!self.client.greeted&&self.client.line.is_empty()&&self.probe_bytes<8 {
+                    self.probe_bytes+=1;println!("NATIVE_BRIDGE_UART_PROBE_FF count={}",self.probe_bytes);continue;
+                }
+                self.client.receive(&[byte])?;
+            }
         }Ok(answer)
     }
 }
@@ -94,6 +103,11 @@ impl Device {
         for line in [b"NEXUS 1 APP com.a;id\n".as_slice(),b"NEXUS 1 APP .bad\n",b"NEXUS 1 RESULT QUERY_APP OK\n",b"NEXUS 1 RESULT QUERY_APP FAILED\n"] {
             let mut b=Bridge::default();b.receive(GREETING).unwrap();b.receive(b"\n").unwrap();assert!(b.receive(line).is_err());
         }
+    }
+    #[test] fn hardware_irq_probe_preface_is_bounded_and_not_allowed_after_greeting() {
+        let mut d=Device::default();let io=|b|IoExit{port:0x2f8,size:1,write:true,rax:b,rip:0,instruction_len:1};
+        for _ in 0..8 {d.access(io(255)).unwrap();}assert!(d.access(io(255)).is_err());
+        let mut d=Device::default();d.access(io(255)).unwrap();for b in GREETING {d.access(io(u64::from(*b))).unwrap();}d.access(io(10)).unwrap();assert!(d.access(io(255)).is_err());
     }
     #[test] fn apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification() {
         let path=std::env::temp_dir().join(format!("nexus-apk-client-{}",std::process::id()));
