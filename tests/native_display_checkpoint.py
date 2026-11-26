@@ -43,8 +43,8 @@ def main():
         # Independently derive BGRX data actually submitted to GDI from RGB reference.
         rgb=reference.split(b'\n',3)[3]
         bgrx=bytearray()
-        for at in range(0,len(rgb),3): bgrx.extend([rgb[at+2],rgb[at+1],rgb[at],0])
-        # The final mmap sentinel writes X=0xef; all other writes use X=0.
+        for at in range(0,len(rgb),3): bgrx.extend([rgb[at+2],rgb[at+1],rgb[at],255])
+        # The final mmap sentinel writes X=0xef; all other writes use X=255.
         bgrx[-1]=0xef
         assert player['software_blits']>0
         assert player['last_submitted_bgrx_crc32']==zlib.crc32(bgrx),player
