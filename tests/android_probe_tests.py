@@ -23,9 +23,26 @@ class StabilityTests(unittest.TestCase):
         self.assertFalse(assess(records)['full_app_stability_verified'])
         records['events']['text'] = 'am_anr: [0,123,com.example.app]'
         self.assertEqual(assess(records)['status'], 'anr_observed')
+        records['events']['text'] = 'am_crash: [0,123,com.example.app]'
+        self.assertEqual(assess(records)['status'], 'app_crash_observed')
         records['events']['text'] = ''
         records['lastanr']['text'] = 'ANR in com.android.launcher3'
         self.assertEqual(assess(records)['status'], 'anr_observed')
+
+    def test_observation_catches_delayed_anr_and_refuses_invalid_windows(self):
+        from android_stability import observe
+        import subprocess
+        now = [0]
+        def sleep(seconds): now[0] += seconds
+        def runner(args, **kwargs):
+            text = 'No ANR since boot' if 'lastanr' in args else ('am_anr: [0,123,example]' if now[0] >= 10 else '')
+            return subprocess.CompletedProcess(args, 0, text, '')
+        with tempfile.TemporaryDirectory() as folder:
+            result = observe('test', pathlib.Path(folder) / 'observe', runner=runner, clock=lambda: now[0], sleep=sleep)
+            self.assertEqual(result['status'], 'observation_failed')
+            self.assertEqual(result['elapsed_seconds'], 10)
+            self.assertFalse(result['app_interaction_verified'])
+            with self.assertRaises(ValueError): observe('test', pathlib.Path(folder) / 'bad', seconds=0)
 
     def test_collection_survives_timeouts_and_never_changes_guest(self):
         from android_stability import capture, COMMANDS

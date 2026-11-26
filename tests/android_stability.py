@@ -10,6 +10,8 @@ import time
 
 COMMANDS = {
     'lastanr': ('dumpsys', 'activity', 'lastanr'),
+    'input': ('dumpsys', 'input'),
+    'surfaceflinger': ('dumpsys', 'SurfaceFlinger'),
     'activity': ('dumpsys', 'activity', 'activities'),
     'cpu': ('dumpsys', 'cpuinfo'),
     'memory': ('dumpsys', 'meminfo'),
@@ -32,7 +34,7 @@ def assess(records):
     signals = sorted(set(re.findall(r'\b(?:am_anr|am_crash|am_low_memory|am_kill)\b', text)))
     anr_observed = (anr.get('ok') and not clean and bool(re.search(r'\bANR in\s+\S+', anr.get('text', '')))) or 'am_anr' in signals
     return {
-        'status': 'anr_observed' if anr_observed else ('no_anr_in_capture' if clean and events.get('ok') else 'inconclusive'),
+        'status': 'anr_observed' if anr_observed else ('app_crash_observed' if 'am_crash' in signals else ('no_anr_in_capture' if clean and events.get('ok') else 'inconclusive')),
         'event_signals': signals,
         'root_cause': 'not established; correlate CPU, memory, IO, graphics and ANR traces',
         'full_app_stability_verified': False,
@@ -58,6 +60,36 @@ def capture(endpoint, output, runner=subprocess.run):
                     'guest_modified': False})
     (output / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     return summary
+
+
+def observe(endpoint, output, seconds=30, interval=5, runner=subprocess.run, clock=time.monotonic, sleep=time.sleep):
+    """Bounded post-Home observation, without clearing historical ANR/crash evidence.
+    This checks logs over time, not app interaction or GPU performance.
+    """
+    if not 1 <= seconds <= 300 or not 1 <= interval <= seconds:
+        raise ValueError('Observation must be 1..300 seconds with interval <= duration')
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=False)
+    start = clock()
+    samples = []
+    while True:
+        records = {}
+        for name in ['lastanr', 'events']:
+            try:
+                p = runner(['adb', '-s', endpoint, 'shell', *COMMANDS[name]], capture_output=True, text=True, timeout=10)
+                records[name] = {'ok': p.returncode == 0, 'text': p.stdout, 'error': p.stderr}
+            except (OSError, subprocess.TimeoutExpired) as error:
+                records[name] = {'ok': False, 'text': '', 'error': str(error)}
+        assessment = assess(records)
+        samples.append({'elapsed_seconds': clock() - start, 'assessment': assessment, 'records': records})
+        if assessment['status'] != 'no_anr_in_capture' or clock() - start >= seconds:
+            break
+        sleep(min(interval, max(0, seconds - (clock() - start))))
+    result = {'status': 'observation_passed' if all(s['assessment']['status'] == 'no_anr_in_capture' for s in samples) else 'observation_failed',
+              'requested_seconds': seconds, 'elapsed_seconds': clock() - start, 'samples': samples,
+              'app_interaction_verified': False, 'guest_modified': False}
+    (output / 'observation.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    return result
 
 
 if __name__ == '__main__':

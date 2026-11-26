@@ -8,7 +8,7 @@ import subprocess
 import time
 from android_frame_metrics import summarize
 from android_home_gate import check_home, install_boot_branding
-from android_stability import capture as capture_stability
+from android_stability import capture as capture_stability, observe as observe_stability
 
 
 def boot_recipe(tree):
@@ -238,9 +238,9 @@ def run(args):
                         except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                             result['ui_frame_metrics'] = {'status': 'measurement_failed', 'error': str(error)}
                 if getattr(args, 'require_home', False):
-                    if not ready:
-                        raise RuntimeError('Service readiness failed before Home gate')
                     try:
+                        if not ready:
+                            raise RuntimeError('Service readiness failed before Home gate')
                         result['home_gate'] = check_home(endpoint, output, getattr(args, 'prepare_home', False))
                     finally:
                         # Capture even when Home/ANR gating fails; never clear the evidence.
@@ -250,6 +250,9 @@ def run(args):
                             result['stability_snapshot'] = {'status': 'inconclusive', 'error': str(diagnostic_error)}
                     if result['stability_snapshot']['status'] != 'no_anr_in_capture':
                         raise RuntimeError('Post-Home ANR evidence failed or is incomplete; inspect stability diagnostics')
+                    result['stability_observation'] = observe_stability(endpoint, output / 'stability-observation')
+                    if result['stability_observation']['status'] != 'observation_passed':
+                        raise RuntimeError('Post-Home ANR/crash observation failed; inspect stability-observation')
                     if getattr(args, 'boot_animation', ''):
                         result['boot_branding'] = install_boot_branding(endpoint, args.boot_animation)
                 if args.profile == 'virgl':

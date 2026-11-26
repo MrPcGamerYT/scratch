@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'tests/android_stability.py'
+      - 'tests/guest_bridge_tests.py'
+      - 'guest-tools/install_bridge_ramdisk.py'
       - 'tests/android_boot_probe.py'
       - 'tests/android_probe_tests.py'
       - '.github/workflows/guest-stability-tests.yml'
@@ -15,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test missing-evidence, ANR, timeout and non-mutation safeguards
-        run: python3 tests/android_probe_tests.py
+        run: |
+          python3 tests/android_probe_tests.py
+          python3 tests/guest_bridge_tests.py
+          python3 tests/native_guest_integration_tests.py
       - name: Syntax check diagnostic and boot integration
         run: python3 -m py_compile tests/android_stability.py tests/android_boot_probe.py
