@@ -1,7 +1,8 @@
-//! Read-only UTC MC146818 clock subset. No alarms, periodic IRQs or guest time setting.
+//! UTC MC146818 clock plus disabled alarm-register storage. No alarm/periodic IRQs
+//! or guest time setting; interrupt-enable/SET modes still fail explicitly.
 //! Wall-clock epoch sampled once; subsequent updates use the engine monotonic clock.
 use std::time::{SystemTime,UNIX_EPOCH};
-pub struct Rtc {index:u8,nmi_disabled:bool,epoch:u64,shutdown:u8,pub accesses:u64}
+pub struct Rtc {index:u8,nmi_disabled:bool,epoch:u64,shutdown:u8,alarm:[u8;3],pub accesses:u64}
 impl Default for Rtc {
     fn default()->Self {Self::new(SystemTime::now().duration_since(UNIX_EPOCH).map_or(0,|d|d.as_secs()))}
 }
@@ -16,13 +17,14 @@ fn calendar(seconds:u64)->[u8;7] {
         bcd(((days+4)%7+1) as u8),bcd(d as u8),bcd(m as u8),bcd((y%100) as u8)]
 }
 impl Rtc {
-    pub fn new(epoch:u64)->Self {Self{index:0,nmi_disabled:false,epoch,shutdown:0,accesses:0}}
+    pub fn new(epoch:u64)->Self {Self{index:0,nmi_disabled:false,epoch,shutdown:0,alarm:[0;3],accesses:0}}
     pub fn access(&mut self,port:u16,write:bool,value:u8,now_ns:u64)->Result<Option<u8>,String> {
         self.accesses+=1;
         match (port,write) {
             (0x70,true)=>{self.index=value&0x7f;self.nmi_disabled=value&0x80!=0;Ok(None)}
             (0x70,false)=>Ok(Some(self.index|(u8::from(self.nmi_disabled)<<7))),
             (0x71,true)=>match self.index {
+                1|3|5=>{self.alarm[usize::from(self.index/2)]=value;Ok(None)},
                 0x0a if value==0x26=>Ok(None), // 32.768kHz divider, rate6; interrupts stay off.
                 0x0b if value==2=>Ok(None), // 24-hour BCD, no interrupts or SET.
                 0x0f=>{self.shutdown=value;Ok(None)}
@@ -32,6 +34,7 @@ impl Rtc {
                 let seconds=self.epoch.saturating_add(now_ns/1_000_000_000);
                 let date=calendar(seconds);
                 let result=match self.index {
+                    1|3|5=>self.alarm[usize::from(self.index/2)],
                     0=>date[0],2=>date[1],4=>date[2],6=>date[3],7=>date[4],8=>date[5],9=>date[6],
                     0x0a=>0x26|if now_ns%1_000_000_000>=999_756_000 {0x80} else {0},
                     0x0b=>2,0x0c=>0,0x0d=>0x80,0x0f=>self.shutdown,
@@ -52,6 +55,19 @@ mod tests {
         let mut r=Rtc::new(86399);
         assert_eq!(read(&mut r,0,0),0x59);assert_eq!(read(&mut r,4,0),0x23);
         assert_eq!(read(&mut r,0,1_000_000_000),0);assert_eq!(read(&mut r,7,1_000_000_000),2);
+    }
+    #[test] fn disabled_alarm_register_storage_never_claims_an_interrupt() {
+        let mut r=Rtc::new(0);
+        for index in [1,3,5] {
+            assert_eq!(read(&mut r,index,0),0);
+            for value in [0,0x59,0xc0,0xff] {
+                r.access(0x70,true,index,0).unwrap();r.access(0x71,true,value,0).unwrap();
+                assert_eq!(read(&mut r,index,0),value);assert_eq!(read(&mut r,0x0c,u64::MAX),0);
+            }
+        }
+        r.access(0x70,true,0x0b,0).unwrap();
+        for value in [0x12,0x22,0x42,0x82] {assert!(r.access(0x71,true,value,0).is_err());}
+        assert_eq!(read(&mut r,0x0b,0),2);
     }
     #[test] fn update_window_nmi_shadow_and_strict_modes() {
         let mut r=Rtc::new(0);
