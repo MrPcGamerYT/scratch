@@ -36,6 +36,8 @@ nexus-engine whp-probe
 nexus-engine cpu-smoke
 nexus-engine io-smoke
 nexus-engine cancel-smoke
+nexus-engine protected-smoke
+nexus-engine long-smoke
 nexus-engine boot-test-sector signed-test-sector.zlag
 ```
 
@@ -66,3 +68,8 @@ The guest debug output is escaped before printing to the host console.
 
 The separate `boot` command still refuses full OS boot until the actual machine
 backend exists. The first-sector test does not change that capability status.
+
+The protected/long-mode smoke commands are separate in-memory fixtures and do not
+reinterpret an Android ZLAG disk as a kernel. The existing first-sector command
+still starts in real mode without BIOS/UEFI services. A versioned Linux/Android
+boot-image contract and the actual kernel loader remain future work.

@@ -28,17 +28,22 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
 - Verified ZLAG first-sector test loader: checks image CRC/signature, maps private
   1 MiB RAM, copies the sector to `0000:7c00`, and executes it through WHP. No BIOS,
   UEFI, disk-device/INT 13h, interrupts, framebuffer or Android support is implied.
+- Seeded protected-mode 32-bit and paged 64-bit startup states, flat GDT,
+  mode-aware I/O RIP checks and private 2 MiB RAM fixtures. Long-mode fixture
+  tests a nonidentity page alias plus guest INT 80h/IRETQ and a restored stack.
+  This seeds register state through WHP; it is not a guest-driven mode transition.
 - Host-independent unit tests plus independent Python/zlib binary-format checks
   on Linux/Windows CI. No fabricated Android/GPU/FPS success condition.
 - `boot` explicitly refuses to start; no silent fallback to the old QEMU engine.
 
 ## Required next implementation gates (not delivered yet)
 
-1. **CPU + memory expansion:** general guest RAM layout and vCPU lifecycle,
-   protected/long-mode and SMP setup, interrupt delivery and instruction/MMIO
-   emulation. Scalar I/O, bounded execution, cancel/resume and real-mode RAM tests
-   now pass, but do not cover those missing pieces. Using WHP directly is
-   not a guarantee to fix a host WHPX/MMIO failure.
+1. **CPU + memory expansion:** general kernel RAM layout, SMP startup, external
+   interrupt/timer delivery and instruction/MMIO emulation. Seeded 16/32/64-bit
+   execution, paging, software interrupt/IRETQ, scalar I/O and cancel/resume tests
+   pass, but do not cover those missing pieces. There is no general guest-driven
+   real-to-protected-to-long mode bootstrap yet. Using WHP directly is not a
+   guarantee to fix a host WHPX/MMIO failure.
 2. **Machine + boot:** choose and document a machine ABI, firmware/loader,
    interrupts/timers/ACPI as required, PCI/virtio and block transport, persistence
    with separate safe write layers. The tiny first-sector test loader is complete;
@@ -111,7 +116,8 @@ firmware, physical Windows 10/GPU or performance certification.
 
 ### Ordered remaining work (all retained in scope)
 
-1. Protected/long-mode CPU startup, general RAM layout, MMIO/interrupt handling.
+1. Kernel-sized RAM layout, SMP, MMIO, external interrupts/timers. Seeded
+   protected/long-mode startup and a software interrupt path are now verified.
 2. A documented bootable machine ABI, Linux loader/firmware choice, disk and
    PCI/virtio devices plus safe persistence. First target: Linux kernel boot.
 3. Compatible Android kernel/drivers and a real bootable Android `gustimg.zlag`;
@@ -124,3 +130,43 @@ firmware, physical Windows 10/GPU or performance certification.
 
 The old player and user images remain unchanged. Native-only changes now use
 native CI without unnecessarily rebuilding the legacy QEMU engine.
+
+
+## Verified protected/long-mode CPU milestone
+
+[Run 45743244750](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45743244750)
+passed on Ubuntu 24.04 and Windows Server 2022. Twelve pure Rust tests, release
+builds, Clippy with warnings denied, independent CLI format checks and expanded
+Windows SDK ABI assertions passed. Windows executed the following three times:
+
+- **32-bit protected mode:** flat code/data segments and GDT, CR0.PE, 32-bit
+  instruction decoding, scalar debug I/O, store/reload at physical `0x18000`,
+  exact accumulator/data/control-register values, stack and clean HLT.
+- **64-bit long mode:** CR0.PG/PE, CR4.PAE, EFER.LME/LMA and long CS, valid PML4 /
+  PDPT / PD / PT, 2 MiB identity mapping and a separate 4 KiB mapping from virtual
+  `0x400000` to physical `0x18000`. A full 64-bit value was stored/reloaded through
+  that nonidentity alias and verified in host-mapped private guest RAM.
+- **Guest software interrupt:** IDT vector `0x80`, an interrupt gate to a guest
+  handler that increments a RAM counter and executes IRETQ, preserved accumulator
+  and restored original stack. This is NOT external IRQ/APIC/timer emulation.
+- **Negative paging gate:** removed the alias PTE in a separate fixture. The guest
+  faulted/triple-faulted as expected (no page-fault handler is installed), never
+  successfully halted and never wrote the target data. Host stayed responsive.
+- Earlier real-mode, I/O refusal/budget, cancellation/resume and actual ZLAG
+  first-sector execution tests remained green, with no QEMU involvement.
+
+The vCPU is initialized directly into the requested mode. This does not prove
+that a real guest bootloader performed the mode transition or that a Linux /
+Android kernel has booted. No boot time, FPS, GPU rendering, Windows 10 physical
+hardware or game performance claim is supported by these tests.
+
+### Next boot/performance gate
+
+Implement a version-checked direct Linux kernel boot path and its boot parameters /
+memory map, then the minimum required platform diagnostics, interrupt/timer and
+disk devices. Direct kernel startup is the path to evaluate before adding legacy
+firmware complexity; it is a design direction, **not a measured faster boot**.
+A Linux serial boot log and repeated stable boots are required before Android
+image integration and GPU-driver/renderer work can be certified. DirectX/OpenGL/
+Vulkan guest acceleration remains unimplemented; no graphics toggle substitutes
+for that bridge and the compatible Android drivers.
