@@ -15,12 +15,13 @@ if p.returncode:
     raise SystemExit(1)
 cmd='earlyprintk=serial,ttyS0,115200,keep earlycon=uart8250,io,0x3f8,115200n8 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1'
 p=subprocess.run([exe,'boot-kernel',str(kernel),'kernel-serial.log',cmd],capture_output=True,text=True,timeout=45)
-serial=Path('kernel-serial.log').read_text(errors='replace') if Path('kernel-serial.log').exists() else ''
+raw_serial=Path('kernel-serial.log').read_bytes() if Path('kernel-serial.log').exists() else b''
+serial=raw_serial.decode(errors='replace')
 report=f'engine_exit={p.returncode}\nfull_boot_verified=false\nkernel_sha256={expected}\nstdout={p.stdout}\nstderr={p.stderr}\nserial={serial}\n'
 Path('kernel-checkpoint.txt').write_text(report,encoding='utf-8')
 print(report,flush=True)
-print('::notice::KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(serial.encode()[:2048]).decode(),flush=True)
-print('::notice::KERNEL_SHA256='+expected+'; SERIAL_SHA256='+hashlib.sha256(serial.encode()).hexdigest()+'; SERIAL_UTF8_BYTES='+str(len(serial.encode())),flush=True)
+print('::notice::KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw_serial[:2048]).decode(),flush=True)
+print('::notice::KERNEL_SHA256='+expected+'; SERIAL_SHA256='+hashlib.sha256(raw_serial).hexdigest()+'; SERIAL_BYTES='+str(len(raw_serial)),flush=True)
 assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
 if 'Linux version 6.6.0' not in serial:
     text=(p.stderr+'\n'+serial[-2200:]).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
