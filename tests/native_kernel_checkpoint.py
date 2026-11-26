@@ -1,5 +1,6 @@
 """Actual source-built Linux image through WHP. Early banner != complete boot."""
 import hashlib
+import base64
 from pathlib import Path
 import subprocess
 
@@ -18,6 +19,8 @@ serial=Path('kernel-serial.log').read_text(errors='replace') if Path('kernel-ser
 report=f'engine_exit={p.returncode}\nfull_boot_verified=false\nkernel_sha256={expected}\nstdout={p.stdout}\nstderr={p.stderr}\nserial={serial}\n'
 Path('kernel-checkpoint.txt').write_text(report,encoding='utf-8')
 print(report,flush=True)
+print('::notice::KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(serial.encode()[:2048]).decode(),flush=True)
+print('::notice::KERNEL_SHA256='+expected+'; SERIAL_SHA256='+hashlib.sha256(serial.encode()).hexdigest()+'; SERIAL_UTF8_BYTES='+str(len(serial.encode())),flush=True)
 assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
 if 'Linux version 6.6.0' not in serial:
     text=(p.stderr+'\n'+serial[-2200:]).replace('%','%25').replace('\r','%0D').replace('\n','%0A')

@@ -7,6 +7,9 @@ on:
       - 'tests/build_native_engine.py'
       - 'tests/whp_sdk_abi.cpp'
       - '.github/workflows/native-engine.yml'
+      - '.github/workflows/native-kernel.yml'
+      - 'tests/native_kernel_checkpoint.py'
+      - 'docs/native-kernel-loader.md'
       - 'docs/native-engine-roadmap.md'
       - 'docs/zlag-image-format.md'
   pull_request:
