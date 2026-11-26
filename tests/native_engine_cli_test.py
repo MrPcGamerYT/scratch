@@ -35,6 +35,10 @@ with tempfile.TemporaryDirectory() as folder:
                             (['--ram-mib=-1'],'unsigned decimal')]:
         failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0',*options,ok=False)
         assert message in failure.stderr,failure.stderr
+    failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0','--bridge-apk-smoke=absent.apk',ok=False)
+    assert 'APK smoke requires probe-android-observe-create' in failure.stderr
+    failure=run('probe-android-init-open','absent-kernel','absent-log','console=ttyS0','absent-initrd','absent-base','existing.cow','--bridge-apk-smoke=absent.apk',ok=False)
+    assert 'new disposable COW overlay' in failure.stderr
     text=run('capabilities').stdout
     assert 'QEMU dependency: none' in text and 'NOT IMPLEMENTED' in text
     # DLL/API availability differs across hosted runners. Report it honestly.

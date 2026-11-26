@@ -1,5 +1,5 @@
 //! Private COM2 bridge bring-up, distinct from COM1 boot logs; no host sockets/ADB.
-//! Only QUERY_APP is sent by this probe. No arbitrary shell/file/installation API.
+//! Fixed QUERY_APP probe or signed-fixture APK smoke sequence; no arbitrary guest shell/path API.
 use std::collections::VecDeque;
 use std::io::{Read,Seek,SeekFrom};
 struct Apk {file:std::fs::File,total:u64,sent:u64,digest:String,phase:u8}

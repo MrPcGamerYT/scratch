@@ -5,7 +5,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;
     if boot_command {
         while let Some(option)=args.last() {
-            if let Some(path)=option.strip_prefix("--bridge-apk=") {
+            if let Some(path)=option.strip_prefix("--bridge-apk-smoke=") {
                 if bridge_apk.is_some()||path.is_empty() {return Err("Invalid/duplicate bridge APK path".into());}
                 bridge_apk=Some(std::path::PathBuf::from(path));args=&args[..args.len()-1];continue;
             }
@@ -48,6 +48,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             println!("Linux boot plan: protocol=0x{:x}, entry=0x{:x}, runtime_end=0x{:x}, regions={}. Header/layout validation only.",p.protocol,p.entry,p.runtime_end,p.regions.len());Ok(())
         }
         Some(command @ ("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create")) if (command=="boot-kernel"&&(args.len()==5||args.len()==6))||(command!="boot-kernel"&&args.len()==8) => {
+            if bridge_apk.is_some()&&command!="probe-android-observe-create" {return Err("APK smoke requires probe-android-observe-create with a new disposable COW overlay".into());}
             use nexus_engine::kernel;
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
