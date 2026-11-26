@@ -298,7 +298,15 @@ static int open_port(void) {
 #ifdef NEXUS_BRIDGE_COM2
     /* Explicit new-engine build only. Never mix protocol data with COM1 logs,
      * enable a TCP/ADB listener, or silently fall back between transports. */
-    int fd=open("/dev/ttyS1",O_RDWR|O_CLOEXEC|O_NOCTTY|O_NONBLOCK);
+#ifdef NEXUS_AGENT_COM2_TEST
+#ifndef NEXUS_COM2_TEST_PATH
+#error "COM2 test build requires an explicit compile-time PTY path"
+#endif
+    int fd=open(NEXUS_COM2_TEST_PATH,
+#else
+    int fd=open("/dev/ttyS1",
+#endif
+        O_RDWR|O_CLOEXEC|O_NOCTTY|O_NONBLOCK);
     if (fd<0) return -1;
     struct termios settings;
     if (tcgetattr(fd,&settings)) { close(fd); return -1; }

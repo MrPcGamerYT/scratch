@@ -14,6 +14,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativeGuestIntegrationTests(unittest.TestCase):
+    def test_production_com2_raw_mode_via_explicit_test_pty(self):
+        import pty
+        import termios
+        master,slave=pty.openpty()
+        process=None
+        try:
+            with tempfile.TemporaryDirectory(prefix='nexus-com2-') as directory:
+                root=Path(directory);utilities=root/'bin';utilities.mkdir()
+                for name,body in {'getprop':'echo 0','dumpsys':"echo 'topResumedActivity=ActivityRecord{abc u0 org.example.game/.Main t1}'"}.items():
+                    path=utilities/name;path.write_text('#!/bin/sh\n'+body+'\n');path.chmod(0o755)
+                executable=root/'agent'
+                subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-DNEXUS_BRIDGE_COM2','-DNEXUS_AGENT_COM2_TEST',
+                                f'-DNEXUS_COM2_TEST_PATH="{os.ttyname(slave)}"',f'-DNEXUS_SYSTEM_BIN="{utilities}/"',
+                                str(ROOT/'guest-tools/nexus-guest/agent.c'),'-o',str(executable)],check=True)
+                process=subprocess.Popen([str(executable)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
+                pending=bytearray()
+                def line():
+                    deadline=time.monotonic()+8
+                    while b'\n' not in pending:
+                        budget=deadline-time.monotonic()
+                        self.assertGreater(budget,0,'COM2 daemon reply timed out')
+                        self.assertTrue(select.select([master],[],[],budget)[0],'COM2 daemon reply timed out')
+                        pending.extend(os.read(master,4096))
+                    at=pending.index(10);result=bytes(pending[:at]);del pending[:at+1];return result
+                self.assertEqual(line(),b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK')
+                settings=termios.tcgetattr(slave)
+                self.assertEqual(settings[0],0);self.assertEqual(settings[1],0);self.assertEqual(settings[3],0)
+                os.write(master,b'NEXUS 1 QUERY_APP\n')
+                frames=[]
+                for _ in range(5):
+                    frames.append(line())
+                    if frames[-1]==b'NEXUS 1 RESULT QUERY_APP OK': break
+                self.assertIn(b'NEXUS 1 APP org.example.game',frames)
+                self.assertEqual(frames[-1],b'NEXUS 1 RESULT QUERY_APP OK')
+                self.assertNotIn(b'NEXUS 1 QUERY_APP',frames)  # no terminal echo into protocol
+        finally:
+            if process is not None:
+                process.terminate();process.wait(timeout=5);process.stderr.close()
+            os.close(master);os.close(slave)
+
+
     def test_binary_apk_integrity_async_heartbeat_and_disconnect_cleanup(self):
         with tempfile.TemporaryDirectory(prefix='nexus-ci-') as directory:
             root = Path(directory)
