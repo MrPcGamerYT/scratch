@@ -638,9 +638,54 @@ SIPIs to an already-started CPU are ignored architecturally. INIT after startup
 ignored reset into a worker that is already running. Destination validation
 precedes event sends. **This does not implement runtime INIT reset/hotplug**.
 
-Remaining Step 1 work includes runtime reset and failure-injection acceptance,
-concurrent multi-process disk/interrupt stress, broader CR8/advanced interrupt
+Remaining Step 1 work includes runtime reset, broader fault/interruption and
+long-duration concurrency coverage, broader CR8/advanced interrupt
 semantics and physical Windows 10 testing. Android SMP/disk/bridge, renderer
 selection, player settings integration and accelerated guest GPU remain outside
 this gate. Earlier statements that APIC disk/COM2 or SMP DMA are wholly absent
 are superseded only to the exact verified scope above; Step 1 is not complete.
+
+
+### DMA failure/unwind and concurrent direct-I/O acceptance
+
+Code **f16c14b** passed strict Windows/Ubuntu foundation **45856344205**,
+APIC OS **45856566117**, and legacy PIC Linux **45857282066**. Both OS gates
+reused the pinned kernel artifacts above. The APIC gate now comprises the
+previous 19 boots, **12 injected failures plus 12 same-overlay recovery boots**,
+and **four concurrent-I/O/persistence boots** (47 VM invocations total).
+Seven local Python initramfs structural tests pass.
+
+`--test-dma-failure=error|panic|error-after|panic-after` is deliberately limited
+to APIC SMP disk-create using a **new disposable overlay**, without Android,
+bridge or player options. At 2, 4 and 8 CPUs, error/panic is injected either
+on BSP before queue service or on the last AP after nonempty queue service,
+while holding the exclusive RAM gate and device/fabric lock. The latter
+exercises worker panic/unwind and poisoned-lock cleanup, not just BSP return.
+Every case requires a bounded nonzero exit, all APs started, zero AP workers
+remaining, a released RAM gate, final VM-resource-drop evidence and no reported
+WHP teardown API errors. A fresh SMP VM then opens that very overlay, migrates
+through every CPU and compares seeded disk data. The immutable base hash must
+remain unchanged. This is **not a mid-sector write, host power-loss, or runtime
+reset test**; the fault is at an explicit pre/post-service boundary.
+
+The concurrency fixture forks 4/8 separate child processes before waiting;
+each pins to its own selected CPU. Each performs 16 iterations of aligned
+512-byte `O_DIRECT` pwrite, fsync, pread and exact compare in a distinct disk
+region. PID1 requires every child to exit successfully. A fresh VM reopens the
+same overlay and concurrently checks all persisted per-CPU patterns using
+direct reads. Positive disk IRQ/completion evidence and immutable-base hashes
+remain mandatory. Structural tests check fork counts, readonly recovery and
+4096-byte user-buffer alignment; the guest run supplies actual execution proof.
+
+The first concurrent workload **failed** in **45855542117**. Inspection exposed
+a possible ACK/completion race: if a CPU acknowledged the block interrupt and
+another completed more work before the next host tick sampled the source,
+an edge-triggered GSI5 could remain logically high and lose a new rising edge.
+**f16c14b** now updates the block IRQ line under the same fabric lock as device
+MMIO acknowledgement, and samples platform IRQ changes under its I/O lock.
+The unchanged concurrent workload then passed along with the complete matrix.
+This is bounded functional coverage, not a throughput benchmark or exhaustive
+interrupt/reset/concurrency certification. Runtime INIT reset remains explicitly
+rejected; physical Windows 10 acceptance and the other Step 1 gaps above remain
+open. No Android Home, guest GPU, networking/audio, renderer selection or player
+settings acceptance is implied.
