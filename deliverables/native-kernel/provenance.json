@@ -1,0 +1,16 @@
+{
+  "kind": "actual Linux serial capture, not synthetic fixture or full boot certification",
+  "run": "https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45744847270",
+  "job_id": 139658300020,
+  "kernel_build_run": 45744144583,
+  "linux_source_commit": "ffc253263a1375a65fa6c9f62a893e9767fbebfa",
+  "kernel_sha256": "0b08e799e0f15e46d97fc94c5fa1b96be53c61c1dd04e479f47e64c4d0c9864a",
+  "serial_sha256": "5989ea3f7a2b625e8c9231ba1d58ebb175ed6555d0871943532fd620b440a9f5",
+  "serial_bytes": 774,
+  "complete_capture": true,
+  "guest": "tiny x86-64 Linux v6.6, not Android",
+  "backend": "independent Rust + direct Windows Hypervisor Platform, no QEMU",
+  "host": "GitHub Actions Windows Server 2022, not physical Windows 10 certification",
+  "full_boot_verified": false,
+  "blocker": "unimplemented byte read from PC PIT/speaker-control port 0x61"
+}

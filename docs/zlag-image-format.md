@@ -71,5 +71,7 @@ backend exists. The first-sector test does not change that capability status.
 
 The protected/long-mode smoke commands are separate in-memory fixtures and do not
 reinterpret an Android ZLAG disk as a kernel. The existing first-sector command
-still starts in real mode without BIOS/UEFI services. A versioned Linux/Android
-boot-image contract and the actual kernel loader remain future work.
+still starts in real mode without BIOS/UEFI services. A separate direct Linux
+bzImage loader now reaches a real early Linux banner; see native-kernel-loader.md.
+It takes separate kernel/initramfs files, not a disk filesystem. A versioned
+Android/ZLAG boot-asset contract and full kernel/platform boot remain future work.

@@ -32,6 +32,11 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
   mode-aware I/O RIP checks and private 2 MiB RAM fixtures. Long-mode fixture
   tests a nonidentity page alias plus guest INT 80h/IRETQ and a restored stack.
   This seeds register state through WHP; it is not a guest-driven mode transition.
+- Direct Linux bzImage loader with version/header checks, boot_params/E820,
+  command line, optional initramfs placement, 32-bit Linux entry and polled COM1.
+  An actual pinned Linux v6.6 kernel prints its early version/console/RAM-map log.
+  Full boot is BLOCKED at unsupported PIT/speaker-control port 0x61; see
+  [native-kernel-loader.md](native-kernel-loader.md) for evidence and limits.
 - Host-independent unit tests plus independent Python/zlib binary-format checks
   on Linux/Windows CI. No fabricated Android/GPU/FPS success condition.
 - `boot` explicitly refuses to start; no silent fallback to the old QEMU engine.
@@ -44,10 +49,11 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
    pass, but do not cover those missing pieces. There is no general guest-driven
    real-to-protected-to-long mode bootstrap yet. Using WHP directly is not a
    guarantee to fix a host WHPX/MMIO failure.
-2. **Machine + boot:** choose and document a machine ABI, firmware/loader,
-   interrupts/timers/ACPI as required, PCI/virtio and block transport, persistence
-   with separate safe write layers. The tiny first-sector test loader is complete;
-   a PC BIOS/UEFI implementation is NOT. Boot a Linux test kernel before Android.
+2. **Machine + boot:** complete timers/interrupts and required platform devices,
+   PCI/virtio and block transport, persistence with separate safe write layers.
+   Direct Linux loader and real early Linux entry now work, but boot is blocked
+   at unimplemented port 0x61. No BIOS/UEFI is provided or needed for that direct
+   entry. Verify real Linux userspace and stable boots before Android.
 3. **Android contract:** compatible guest kernel/initramfs and device drivers;
    new image provisioned from a verified raw disk, Home/ANR/persistence/shutdown
    gates across repeated boots without relying on QEMU's emulated machine.
@@ -118,8 +124,9 @@ firmware, physical Windows 10/GPU or performance certification.
 
 1. Kernel-sized RAM layout, SMP, MMIO, external interrupts/timers. Seeded
    protected/long-mode startup and a software interrupt path are now verified.
-2. A documented bootable machine ABI, Linux loader/firmware choice, disk and
-   PCI/virtio devices plus safe persistence. First target: Linux kernel boot.
+2. Complete the Linux platform: PIT/port 0x61 first, then interrupt/timer and
+   other device blockers. Direct kernel loading and actual early entry are now
+   verified. Disk/PCI/virtio devices, safe persistence and userspace boot remain.
 3. Compatible Android kernel/drivers and a real bootable Android `gustimg.zlag`;
    repeated Home, ANR, clean shutdown and persistence gates.
 4. Accelerated guest graphics transport and matching Android drivers; host GPU
@@ -162,11 +169,21 @@ hardware or game performance claim is supported by these tests.
 
 ### Next boot/performance gate
 
-Implement a version-checked direct Linux kernel boot path and its boot parameters /
-memory map, then the minimum required platform diagnostics, interrupt/timer and
-disk devices. Direct kernel startup is the path to evaluate before adding legacy
-firmware complexity; it is a design direction, **not a measured faster boot**.
-A Linux serial boot log and repeated stable boots are required before Android
-image integration and GPU-driver/renderer work can be certified. DirectX/OpenGL/
-Vulkan guest acceleration remains unimplemented; no graphics toggle substitutes
-for that bridge and the compatible Android drivers.
+The version-checked direct Linux loader, boot parameters and memory map are now
+implemented and an actual early Linux serial log is verified. Next implement the
+PIT/channel-2/port-0x61 blocker, remaining interrupts/timers and device requirements,
+then reach an explicit initramfs/userspace marker and stable repeated boots.
+Direct loading avoids requiring a BIOS here; **no faster boot has been measured**.
+Android image integration and GPU-driver/renderer certification remain pending.
+DirectX/OpenGL/Vulkan guest acceleration is unimplemented; no graphics toggle
+substitutes for that bridge and compatible Android drivers.
+
+## Verified kernel-loading milestone
+
+See [native-kernel-loader.md](native-kernel-loader.md). Foundation run 45744586601
+passes 20 unit tests and the three-repeat synthetic WHP boot-contract handshake.
+Actual-kernel run 45744847270 prints a genuine Linux v6.6 banner and supplied E820
+map via COM1 before stopping at unsupported port 0x61. Its complete, SHA-verified
+774-byte capture is committed under `deliverables/native-kernel/`. The checkpoint
+explicitly records full boot=false; no Android/GPU/Windows-10 performance claim.
+
