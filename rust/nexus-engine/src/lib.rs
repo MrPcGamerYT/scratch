@@ -17,6 +17,7 @@ pub mod pit0;
 pub mod pic;
 pub mod rtc;
 pub mod platform;
+pub mod pci;
 pub mod timing;
 pub mod cpu;
 pub mod boot;

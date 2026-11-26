@@ -23,6 +23,7 @@ on:
       - 'rust/nexus-engine/src/pic.rs'
       - 'rust/nexus-engine/src/rtc.rs'
       - 'rust/nexus-engine/src/platform.rs'
+      - 'rust/nexus-engine/src/pci.rs'
       - 'rust/nexus-engine/src/timing.rs'
   workflow_dispatch:
     inputs:
