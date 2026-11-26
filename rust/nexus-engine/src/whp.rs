@@ -34,16 +34,17 @@ mod windows {
     }
     #[repr(C,align(16))]
     struct ExitContext([u8;224]);
-    struct Mapping<'a> { partition:&'a Partition, address:*mut c_void }
-    impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,0,4096); VirtualFree(self.address,0,0x8000); } } }
+    struct Mapping<'a> { partition:&'a Partition, address:*mut c_void, bytes:usize }
+    impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,0,self.bytes as u64); VirtualFree(self.address,0,0x8000); } } }
     struct Processor<'a>(&'a Partition);
     impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
-    fn allocate(partition:&Partition)->Result<Mapping<'_>,String> {
-        let address=unsafe { VirtualAlloc(std::ptr::null_mut(),4096,0x3000,4) };
+    fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {
+        if bytes==0 || bytes%4096!=0 || bytes>1024*1024 {return Err("Invalid test RAM mapping size".into());}
+        let address=unsafe { VirtualAlloc(std::ptr::null_mut(),bytes,0x3000,4) };
         if address.is_null() { return Err("VirtualAlloc failed".into()); }
-        let hr=unsafe { WHvMapGpaRange(partition.0,address,0,4096,7) };
+        let hr=unsafe { WHvMapGpaRange(partition.0,address,0,bytes as u64,7) };
         if let Err(error)=check(hr,"WHvMapGpaRange") { unsafe { VirtualFree(address,0,0x8000); } return Err(error); }
-        Ok(Mapping{partition,address})
+        Ok(Mapping{partition,address,bytes})
 
     }
     fn check(hr:i32, operation:&str)->Result<(),String> {
@@ -68,14 +69,17 @@ mod windows {
     }
     pub fn probe()->Result<(),String> { let _partition=create()?; Ok(()) }
     fn with_guest<T>(code:&[u8], action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
-        if code.len()>4096 { return Err("Fixture exceeds private guest RAM".into()); }
+        with_guest_at(code,0,4096,action)
+    }
+    fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+        if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
         let partition=create()?;
-        let memory=allocate(&partition)?;
-        unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>(),code.len()); }
+        let memory=allocate(&partition,ram_bytes)?;
+        unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>().add(entry),code.len()); }
         unsafe { check(WHvCreateVirtualProcessor(partition.0,0,0),"WHvCreateVirtualProcessor")?; }
         let _processor=Processor(&partition);
         let names=[0x1c,0x1e,0x1f,0x13,0x15,0x12,0x14,0x10,0x11,0x00];
-        let values=[Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),Register::scalar(0),Register::scalar(2),Register::scalar(0)];
+        let values=[Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),Register::scalar(entry as u64),Register::scalar(2),Register::scalar(0)];
         set_registers(&partition,&names,&values)?;
         action(&partition,&memory)
     }
@@ -186,6 +190,14 @@ mod windows {
         }
         Ok(())
     }
+    pub fn boot_test_sector(path:&std::path::Path)->Result<Vec<u8>,String> {
+        let sector=crate::boot::read_test_sector(path)?;
+        with_guest_at(&sector,0x7c00,1024*1024,|partition,_| {
+            let mut bus=crate::io::TestBus::default();
+            run_to_halt(partition,&mut bus)?;
+            Ok(bus.console)
+        })
+    }
     pub fn cancel_smoke()->Result<(),String> {
         with_guest(&[0xeb,0xfe],|partition,memory| { // Deliberate no-exit infinite loop.
             let (context,canceled)=bounded(partition,250,||run_once(partition))?;
@@ -200,7 +212,7 @@ mod windows {
 
 }
 #[cfg(windows)]
-pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke};
+pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke,boot_test_sector};
 #[cfg(not(windows))]
 pub fn probe()->Result<(),String> { Err("Direct WHP backend requires Windows 10 x64".into()) }
 
@@ -211,3 +223,6 @@ pub fn cpu_smoke()->Result<(),String> { Err("Direct WHP CPU test requires Window
 pub fn io_smoke()->Result<(),String> {Err("Direct WHP port I/O requires Windows 10 x64".into())}
 #[cfg(not(windows))]
 pub fn cancel_smoke()->Result<(),String> {Err("Direct WHP cancellation requires Windows 10 x64".into())}
+
+#[cfg(not(windows))]
+pub fn boot_test_sector(_path:&std::path::Path)->Result<Vec<u8>,String> {Err("Direct WHP test-sector execution requires Windows 10 x64".into())}

@@ -38,6 +38,24 @@ with tempfile.TemporaryDirectory() as folder:
         for _ in range(3):
             run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
+        sector=bytearray(512); code=bytearray([0xba,0xe9,0])
+        for byte in b'NEXUS-ZLAG-BOOT':code.extend([0xb0,byte,0xee])
+        code.append(0xf4);sector[:len(code)]=code;sector[510:]=b'\x55\xaa'
+        boot_raw=root/'boot-test.raw'; boot_image=root/'boot-test.zlag'
+        boot_raw.write_bytes(sector);run('import-raw',boot_raw,boot_image)
+        boot_before=hashlib.sha256(boot_image.read_bytes()).hexdigest()
+        for _ in range(3):
+            output=run('boot-test-sector',boot_image).stdout
+            assert '0000:7c00' in output and 'NEXUS-ZLAG-BOOT' in output,output
+        assert hashlib.sha256(boot_image.read_bytes()).hexdigest()==boot_before
+        invalid_raw=root/'unsigned.raw';invalid_image=root/'unsigned.zlag'
+        invalid_raw.write_bytes(bytes(512));run('import-raw',invalid_raw,invalid_image)
+        failure=run('boot-test-sector',invalid_image,ok=False)
+        assert '55AA' in failure.stderr,failure.stderr
+        damaged=bytearray(boot_image.read_bytes());damaged[100]^=1;boot_image.write_bytes(damaged)
+        failure=run('boot-test-sector',boot_image,ok=False)
+        assert 'checksum mismatch' in failure.stderr,failure.stderr
+        print('::notice::PASS: real ZLAG file -> verified first-sector loader -> direct WHP execution at 0000:7c00 -> NEXUS-ZLAG-BOOT debug output -> HLT, three repetitions; source SHA unchanged, invalid signature/corruption refused; not Android boot',flush=True)
         print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
     else:
         for cmd in ['cpu-smoke','io-smoke','cancel-smoke']: run(cmd,ok=False)
