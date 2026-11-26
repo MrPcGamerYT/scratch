@@ -85,7 +85,7 @@ mod windows {
             let native=std::arch::x86_64::__cpuid(0);
             let clocks=crate::tsc::frequency_leaves(hz,[native.eax,native.ebx,native.ecx,native.edx])?;
             check(WHvSetPartitionProperty(partition.0,0x1004,clocks.as_ptr().cast(),(clocks.len()*32) as u32),"WHP TSC CPUID frequency contract")?;
-            let cpuid_exits=1u64;
+            let cpuid_exits=if apic {3u64} else {1u64};
             check(WHvSetPartitionProperty(partition.0,1,(&cpuid_exits as *const u64).cast(),8),"WHP CPUID exits")?;
             let leaves=crate::topology::EXIT_LEAVES;
             check(WHvSetPartitionProperty(partition.0,0x1003,leaves.as_ptr().cast(),(leaves.len()*4) as u32),"WHP topology exit leaves")?;
@@ -100,8 +100,11 @@ mod windows {
         with_guest_at(code,0,4096,action)
     }
     fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+        with_guest_profile(code,entry,ram_bytes,false,action)
+    }
+    fn with_guest_profile<T>(code:&[u8],entry:usize,ram_bytes:usize,apic:bool,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
-        let partition=create()?;
+        let partition=create_machine(1,apic)?;
         let memory=allocate(&partition,ram_bytes)?;
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>().add(entry),code.len()); }
         unsafe { check(WHvCreateVirtualProcessor(partition.0,0,0),"WHvCreateVirtualProcessor")?; }
@@ -348,9 +351,13 @@ mod windows {
         plan.validate_regions()?;
         // Claim the capture exclusively before starting a VM or allowing disk writes.
         let mut output=plan.framebuffer_output.as_ref().map(|path|std::fs::OpenOptions::new().create_new(true).write(true).open(path).map_err(|e|e.to_string())).transpose()?;
-        with_guest_at(&[],0,plan.ram_bytes,|partition,memory| {
+        with_guest_profile(&[],0,plan.ram_bytes,plan.apic_probe,|partition,memory| {
             for region in &plan.regions {
                 unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
+            }
+            if plan.apic_probe {
+                let tables=crate::firmware::mp_tables(1)?;
+                unsafe {std::ptr::copy_nonoverlapping(tables.as_ptr(),memory.address.cast::<u8>().add(crate::firmware::MP_BASE),tables.len());}
             }
             let clock_command=plan.command_with_tsc_hz(partition.1)?;
             unsafe {std::ptr::copy_nonoverlapping(clock_command.as_ptr(),memory.address.cast::<u8>().add(kernel::CMDLINE),clock_command.len());}
@@ -511,7 +518,9 @@ mod windows {
         })
     }
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
-        load_kernel_plan(plan,|partition,_,surface| {
+        load_kernel_plan(plan,|partition,memory,surface| {
+            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start);}
+
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
             if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}

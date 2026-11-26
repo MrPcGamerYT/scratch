@@ -2,13 +2,14 @@ use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create"));
-    let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;
+    let mut apic_probe=false;let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;
     if boot_command {
         while let Some(option)=args.last() {
             if let Some(path)=option.strip_prefix("--bridge-apk-smoke=") {
                 if bridge_apk.is_some()||path.is_empty() {return Err("Invalid/duplicate bridge APK path".into());}
                 bridge_apk=Some(std::path::PathBuf::from(path));args=&args[..args.len()-1];continue;
             }
+            if option=="--apic-probe" {if apic_probe {return Err("Duplicate --apic-probe".into());}apic_probe=true;args=&args[..args.len()-1];continue;}
             if option=="--bridge-probe" {if bridge_probe {return Err("Duplicate --bridge-probe".into());}bridge_probe=true;args=&args[..args.len()-1];continue;}
             if option=="--window" {if live {return Err("Duplicate --window".into());}live=true;args=&args[..args.len()-1];continue;}
             if let Some(value)=option.strip_prefix("--ram-mib=") {
@@ -56,6 +57,8 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let mut plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
+            if apic_probe&&(command!="boot-kernel"||live||surface.is_some()||bridge_probe||bridge_apk.is_some()) {return Err("--apic-probe supports only headless initramfs boot-kernel, not disks/Android/bridge/player".into());}
+            plan.apic_probe=apic_probe;
             plan.bridge_probe=bridge_probe||bridge_apk.is_some();plan.bridge_apk=bridge_apk;
             plan.android_init_probe=command.starts_with("probe-android-");
             plan.android_observe=command=="probe-android-observe-create";

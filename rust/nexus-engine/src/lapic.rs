@@ -1,12 +1,12 @@
 //! Edge-triggered local APIC interrupt arbitration. Includes a 100 MHz virtual bus timer; no level-source EOI yet.
 //! Device state is independent of WHP; acknowledge only after CPU injection succeeds.
-pub struct LocalApic {id:u8,svr:u32,tpr:u8,ldr:u8,irr:[u32;8],isr:[u32;8],irr_level:[u32;8],isr_level:[u32;8],timer_lvt:u32,timer_initial:u32,timer_current:u32,timer_divide:u32,timer_fraction:u64}
+pub struct LocalApic {id:u8,svr:u32,tpr:u8,ldr:u8,irr:[u32;8],isr:[u32;8],irr_level:[u32;8],isr_level:[u32;8],other_lvt:[u32;5],timer_lvt:u32,timer_initial:u32,timer_current:u32,timer_divide:u32,timer_fraction:u64}
 fn highest(bits:&[u32;8])->Option<u8> {
     for i in (0..8).rev() {if bits[i]!=0 {return Some((i*32+31-bits[i].leading_zeros() as usize) as u8);}}
     None
 }
 impl LocalApic {
-    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8],irr_level:[0;8],isr_level:[0;8],timer_lvt:1<<16,timer_initial:0,timer_current:0,timer_divide:0,timer_fraction:0}}
+    pub fn new(id:u8)->Self {Self{id,svr:255,tpr:0,ldr:0,irr:[0;8],isr:[0;8],irr_level:[0;8],isr_level:[0;8],other_lvt:[1<<16;5],timer_lvt:1<<16,timer_initial:0,timer_current:0,timer_divide:0,timer_fraction:0}}
     /// Advance monotonic virtual bus time, independent of host scheduling frequency.
     /// Fractional divider ticks survive rendezvous; missed periods coalesce in IRR.
     pub fn advance_ns(&mut self,ns:u64)->Result<(),String> {
@@ -51,6 +51,8 @@ impl LocalApic {
     }
     pub fn read(&self,offset:u32)->Result<u32,String> {
         match offset {
+            0x330..=0x370 if offset%16==0=>Ok(self.other_lvt[((offset-0x330)/16) as usize]),
+            0x280|0x300=>Ok(0),
             0x320=>Ok(self.timer_lvt),0x380=>Ok(self.timer_initial),0x390=>Ok(self.timer_current),0x3e0=>Ok(self.timer_divide),
             0x20=>Ok(u32::from(self.id)<<24),0x30=>Ok(0x00050014),
             0x80=>Ok(u32::from(self.tpr)),0xd0=>Ok(u32::from(self.ldr)<<24),0xe0=>Ok(0xffffffff),0xa0=>Ok(u32::from(self.ppr())),0xf0=>Ok(self.svr),
@@ -62,6 +64,8 @@ impl LocalApic {
     }
     pub fn write(&mut self,offset:u32,value:u32)->Result<(),String> {
         match offset {
+            0x280=>Ok(()), // no local APIC error source is generated
+            0x330..=0x370 if offset%16==0&&value&(1<<16)!=0=>{self.other_lvt[((offset-0x330)/16) as usize]=value;Ok(())},
             0x320 if value&!0x300ff==0&&value&(1<<18)==0&&((value&0xff)>=16||value&(1<<16)!=0)=>{self.timer_lvt=value;Ok(())},
             0x380=>{self.timer_initial=value;self.timer_current=value;self.timer_fraction=0;Ok(())},
             0x3e0 if value&!0xb==0=>{self.timer_divide=value;self.timer_fraction=0;Ok(())},
