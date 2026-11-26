@@ -1,0 +1,22 @@
+use nexus_engine::{image::{self,Image},whp};
+use std::path::Path;
+fn execute(args:&[String])->Result<(),String> {
+    match args.get(1).map(String::as_str) {
+        Some("import-raw") if args.len()==4 => {
+            image::import_raw(Path::new(&args[2]),Path::new(&args[3])).map_err(|e|e.to_string())?;
+            println!("Imported raw disk into ZLAG v1. This does not certify Android boot."); Ok(())
+        }
+        Some("verify") if args.len()==3 => {
+            let mut image=Image::open(Path::new(&args[2])).map_err(|e|e.to_string())?;
+            image.verify().map_err(|e|e.to_string())?;
+            println!("ZLAG v1 OK: {} disk bytes, CRC32 {:08x}. Integrity check only; not a boot test.",image.disk_bytes,image.payload_crc32); Ok(())
+        }
+        Some("whp-probe") if args.len()==2 => { whp::probe()?; println!("Direct WHP partition create/setup/delete succeeded. No guest CPU executed."); Ok(()) }
+        Some("capabilities") if args.len()==2 => {
+            println!("Independent Rust foundation; QEMU dependency: none\nZLAG raw-disk import / validation / sector reads: implemented\nDirect Windows WHP partition lifecycle: implemented, host-dependent\nGuest CPU execution / firmware / devices / Android boot: NOT IMPLEMENTED\nGuest DirectX / OpenGL / Vulkan acceleration: NOT IMPLEMENTED\nNo performance or game-compatibility certification"); Ok(())
+        }
+        Some("boot") => Err("Android boot is not implemented. Refusing to pretend this is a working emulator or launch QEMU.".into()),
+        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | capabilities".into())
+    }
+}
+fn main() { if let Err(error)=execute(&std::env::args().collect::<Vec<_>>()) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }

@@ -1,0 +1,52 @@
+name: Independent Rust engine foundation
+on:
+  push:
+    paths:
+      - 'rust/nexus-engine/**'
+      - 'tests/native_engine_cli_test.py'
+      - '.github/workflows/native-engine.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test library and build independent engine (zero QEMU dependencies)
+        run: |
+          set -o pipefail
+          if ! cargo test --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets 2>&1 | tee native-engine-test.log; then
+            tail -8 native-engine-test.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings
+          cargo build --locked --release --manifest-path rust/nexus-engine/Cargo.toml
+      - name: Independent CLI / disk-format reference checks
+        run: |
+          set -o pipefail
+          exe=rust/nexus-engine/target/release/nexus-engine
+          if [ "$RUNNER_OS" = Windows ]; then exe="${exe}.exe"; fi
+          if ! python tests/native_engine_cli_test.py "$exe" 2>&1 | tee native-engine-cli.log; then
+            tail -8 native-engine-cli.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          "$exe" capabilities
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-engine-foundation-${{ matrix.os }}
+          path: |
+            native-engine*.log
+            rust/nexus-engine/target/release/nexus-engine
+            rust/nexus-engine/target/release/nexus-engine.exe
+            docs/native-engine-roadmap.md
+            docs/zlag-image-format.md

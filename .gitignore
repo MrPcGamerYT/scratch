@@ -13,3 +13,6 @@ __pycache__/
 
 # Local CI evidence and downloaded inspection files
 .cache/
+
+# Native-engine local build/test containers
+*.zlag
