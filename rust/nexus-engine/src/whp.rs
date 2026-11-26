@@ -322,7 +322,7 @@ mod windows {
         let fixture=goal==RunGoal::TimerFixture;
         let limit=if goal==RunGoal::AndroidInit {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        let mut halted=false;
+        let mut halted=false;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
             let (result,timed_out)=bounded(partition,limit,|| {
                 for _ in 0..250000 {
@@ -335,6 +335,7 @@ mod windows {
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
                     let context=run_once(partition)?;trace.exits+=1;
+                    last.0=context.reason();last.1=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
                     match context.reason() {
                         1=>{
                             let disk=disk.as_mut().ok_or("Unmapped memory exit without a configured VirtIO device")?;
@@ -352,7 +353,7 @@ mod windows {
                             trace.halt_waits+=1;halted=true;
                         }
                         2=>{
-                            let io=crate::io::IoExit::decode(&context.0)?;
+                            let io=crate::io::IoExit::decode(&context.0)?;last.2=io.port;
                             let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
                             let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
                             let before=platform.uart.output.len();
@@ -377,7 +378,7 @@ mod windows {
                         }
                     }
                 }
-                Ok(Err("Kernel exit budget exceeded".to_string()))
+                Ok(Err(format!("Kernel exit budget exceeded; last reason=0x{:x}, RIP=0x{:x}, IO=0x{:x}",last.0,last.1,last.2)))
             })?;
             serial.flush().map_err(|e|e.to_string())?;
             if timed_out {return Err("Kernel wall deadline exceeded; no completed-boot claim".into());}

@@ -38,6 +38,7 @@ def main():
             'base_sha256_after':digest(root/'android-system.zlag')}
     Path('android-system-checkpoint.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2),flush=True)
+    print('::notice::ANDROID_SYSTEM_METRICS='+json.dumps(metrics),flush=True)
     for label,text in [('STDERR',p.stderr),('SERIAL_TAIL',serial[-12000:])]:
         for at in range(0,len(text),3000):
             message=f'ANDROID_SYSTEM_{label}_{at}='+text[at:at+3000]
