@@ -14,6 +14,7 @@ static_assert(WHvX64RegisterRax == 0 && WHvX64RegisterRip == 0x10);
 static_assert(WHvX64RegisterRflags == 0x11 && WHvX64RegisterCs == 0x13);
 static_assert(WHvX64RegisterEs == 0x12 && WHvX64RegisterSs == 0x14 && WHvX64RegisterDs == 0x15);
 static_assert(WHvX64RegisterCr0 == 0x1c && WHvX64RegisterCr3 == 0x1e && WHvX64RegisterCr4 == 0x1f);
+static_assert(WHvX64RegisterCr8 == 0x20);
 static_assert(WHvRunVpExitReasonX64Halt == 8);
 static_assert((WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute) == 7);
 

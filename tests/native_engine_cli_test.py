@@ -56,7 +56,9 @@ with tempfile.TemporaryDirectory() as folder:
     if sys.platform=='win32':
         assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
         for _ in range(3):
-            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke'); run('transition-smoke'); run('protection-smoke'); run('smp-smoke')
+            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke'); run('transition-smoke'); run('protection-smoke')
+            priority=run('smp-smoke')
+            assert 'NATIVE_CR8_TPR_OK masked_irr=1 premature_delivery=0 delivered_after_lower=1 tpr_read=47 cr8_read=5' in priority.stdout,priority.stdout
             run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke'); run('mmio-smoke')
         print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, forced instruction fetch through nonidentity guest paging, guest-notified write/flush/read DMA, used-ring/status and IRQ latch/ACK, COW reopen persistence/base integrity; three repetitions; protected32 external IRQ5 handler captures status, ACKs device, EOIs PIC and IRETD restores stack; fixture-seeded rings, not Linux discovery',flush=True)
         print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
@@ -65,6 +67,7 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
         print('::notice::PASS: guest-driven real16 -> protected32 -> long64 transition with GDT, CR0/CR3/CR4/EFER and nonidentity paging store/load, three independent partitions',flush=True)
         print('::notice::PASS: guest unmapped-read and write-protected-page faults delivered to guest handler, CR2/error code, unchanged protected RAM, two IRETQ recoveries and restored stack; three repetitions',flush=True)
+        print('::notice::PASS: three actual long64 MOV CR8/TPR alias cycles: low TPR bits preserved, masked self-IPI in IRR without early handler, delivery after lowering CR8, MMIO TPR reflected in MOV-from-CR8; not runtime reset certification',flush=True)
         print('::notice::PASS: 48 two-vCPU cycles: guest MP table discovery/checksums/CPU enumeration and actual controller identity, guest INIT/SIPI and AP protected-mode entry, virtual CPUID topology, self/physical/flat-logical fixed IPIs, TPR masking and IF deferral, one-shot/periodic timer IRQs waking HLT with guest masking/stop, IOAPIC held-level IRQ reassertion after EOI and guest route masking, real platform PIT and COM1 IOAPIC IRQs/device ACK, guest interrupt counters/EOIs/IRETD and both restored stacks; not production OS SMP or OS IOAPIC certification',flush=True)
         ata_raw=root/'ata-fixture.raw';ata_image=root/'ata-fixture.zlag'
         ata_payload=bytes((n*17+n//512)%251 for n in range(2048))
