@@ -4,6 +4,7 @@ on:
     paths:
       - 'rust/nexus-engine/**'
       - 'tests/native_engine_cli_test.py'
+      - 'tests/whp_sdk_abi.cpp'
       - '.github/workflows/native-engine.yml'
   workflow_dispatch:
 permissions:
@@ -21,6 +22,11 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Check Rust hypervisor ABI against Windows SDK
+        if: runner.os == 'Windows'
+        run: cl.exe /nologo /EHsc /std:c++17 /c tests/whp_sdk_abi.cpp /Fo:whp-sdk-abi.obj
       - name: Test library and build independent engine (zero QEMU dependencies)
         run: |
           set -o pipefail

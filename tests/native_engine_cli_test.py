@@ -9,7 +9,7 @@ import zlib
 
 exe=str(Path(sys.argv[1]).resolve())
 def run(*args,ok=True):
-    p=subprocess.run([exe,*map(str,args)],capture_output=True,text=True)
+    p=subprocess.run([exe,*map(str,args)],capture_output=True,text=True,timeout=20)
     assert (p.returncode==0)==ok,(args,p.returncode,p.stdout,p.stderr)
     return p
 with tempfile.TemporaryDirectory() as folder:
@@ -30,7 +30,12 @@ with tempfile.TemporaryDirectory() as folder:
     text=run('capabilities').stdout
     assert 'QEMU dependency: none' in text and 'NOT IMPLEMENTED' in text
     # DLL/API availability differs across hosted runners. Report it honestly.
-    p=subprocess.run([exe,'whp-probe'],capture_output=True,text=True)
+    p=subprocess.run([exe,'whp-probe'],capture_output=True,text=True,timeout=20)
     observation=f'WHP probe observation, NOT a CPU-execution test: exit={p.returncode}; '+(p.stdout+p.stderr).strip()
     print('::notice::'+observation.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+    if sys.platform=='win32':
+        assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
+        for _ in range(3): run('cpu-smoke')
+        print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
+    else: run('cpu-smoke',ok=False)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)
