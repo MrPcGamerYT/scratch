@@ -90,6 +90,23 @@ impl KernelPlan {
         }
         let p=Self{regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None};p.validate_regions()?;Ok(p)
     }
+    /// Linux early TSC calibration handoff for vendors which don't consume CPUID15.
+    /// Kernel versions lacking this parameter still need a verified clocksource gate.
+    pub fn command_with_tsc_hz(&self,hz:u64)->Result<Vec<u8>,String> {
+        crate::tsc::frequency_leaf(hz)?;
+        let command=&self.regions.iter().find(|r|r.address==CMDLINE).ok_or("Missing command line")?.bytes;
+        let text=command.strip_suffix(&[0]).ok_or("Unterminated command line")?;
+        let text=std::str::from_utf8(text).map_err(|_|"Invalid command line encoding")?;
+        if text.split_ascii_whitespace().any(|s|s.starts_with("tsc_early_khz=")) {return Err("tsc_early_khz is managed from the WHP clock, not user nominal MHz".into());}
+        let params=&self.regions.iter().find(|r|r.address==BOOT_PARAMS).ok_or("Missing boot_params")?.bytes;
+        if params.len()<0x23c {return Err("Truncated clock boot_params".into());}
+        let cap=(u32_at(params,0x238) as usize).min(4096);
+        let mut result=format!("{text} tsc_early_khz={}",hz/1000).into_bytes();result.push(0);
+        if result.len()>cap {return Err("TSC handoff exceeds kernel command-line capacity".into());}
+        let end=CMDLINE.checked_add(result.len()).ok_or("Clock command overflow")?;
+        if end>self.ram_bytes||self.regions.iter().any(|r|r.address!=CMDLINE&&r.address<end&&CMDLINE<r.address+r.bytes.len()) {return Err("Clock command overlaps another load region".into());}
+        Ok(result)
+    }
     pub fn with_framebuffer(mut self,path:&Path)->Result<Self,String> {
         let params=self.regions.iter_mut().find(|r|r.address==BOOT_PARAMS).ok_or("Missing boot_params")?;
         crate::framebuffer::configure(&mut params.bytes)?;
@@ -120,6 +137,16 @@ pub fn contract_image()->Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn clock_handoff_uses_actual_frequency_and_preserves_command_prefix() {
+        let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
+        assert_eq!(p.command_with_tsc_hz(2_600_123_000).unwrap(),b"nexus tsc_early_khz=2600123\0");
+        assert!(p.command_with_tsc_hz(0).is_err());
+        p.regions.iter_mut().find(|r|r.address==CMDLINE).unwrap().bytes=b"tsc_early_khz=1\0".to_vec();
+        assert!(p.command_with_tsc_hz(2_600_000_000).is_err());
+        p.regions.iter_mut().find(|r|r.address==CMDLINE).unwrap().bytes=vec![b'x';2047];
+        p.regions.iter_mut().find(|r|r.address==CMDLINE).unwrap().bytes.push(0);
+        assert!(p.command_with_tsc_hz(2_600_000_000).is_err());
+    }
     #[test] fn boot_params_and_layout() {
         let p=KernelPlan::build(&contract_image(),Some(b"INIT"),"nexus",DEFAULT_RAM).unwrap();
         assert_eq!(p.entry,0x200000);assert_eq!(p.runtime_end,0x300000);

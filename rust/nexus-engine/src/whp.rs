@@ -60,7 +60,7 @@ mod windows {
     fn check(hr:i32, operation:&str)->Result<(),String> {
         if hr < 0 { Err(format!("{operation}: HRESULT 0x{:08x}",hr as u32)) } else { Ok(()) }
     }
-    struct Partition(*mut c_void);
+    struct Partition(*mut c_void,u64);
     impl Drop for Partition { fn drop(&mut self) { unsafe { WHvDeletePartition(self.0); } } }
     fn create()->Result<Partition,String> {
         let mut present=0u32; let mut written=0u32;
@@ -69,7 +69,7 @@ mod windows {
         if written!=4 || present==0 { return Err("Windows hypervisor unavailable; this is not an Android boot test".into()); }
         let mut handle=std::ptr::null_mut();
         unsafe { check(WHvCreatePartition(&mut handle),"WHvCreatePartition")?; }
-        let partition=Partition(handle); let processors=1u32;
+        let mut partition=Partition(handle,0); let processors=1u32;
         // WHvPartitionPropertyCodeProcessorCount = 0x1fff (Windows SDK).
         unsafe {
             check(WHvSetPartitionProperty(partition.0,0x1fff,(&processors as *const u32).cast(),4),"WHvSetPartitionProperty")?;
@@ -78,6 +78,7 @@ mod windows {
             let mut hz=0u64;let mut clock_written=0u32;
             check(WHvGetCapability(0x1004,(&mut hz as *mut u64).cast(),8,&mut clock_written),"WHP processor clock frequency")?;
             if clock_written!=8 {return Err("WHP processor clock capability size mismatch".into());}
+            partition.1=hz;
             let native=std::arch::x86_64::__cpuid(0);
             let clocks=crate::tsc::frequency_leaves(hz,[native.eax,native.ebx,native.ecx,native.edx])?;
             check(WHvSetPartitionProperty(partition.0,0x1004,clocks.as_ptr().cast(),(clocks.len()*32) as u32),"WHP TSC CPUID frequency contract")?;
@@ -328,6 +329,8 @@ mod windows {
             for region in &plan.regions {
                 unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
             }
+            let clock_command=plan.command_with_tsc_hz(partition.1)?;
+            unsafe {std::ptr::copy_nonoverlapping(clock_command.as_ptr(),memory.address.cast::<u8>().add(kernel::CMDLINE),clock_command.len());}
             let code=Register::flat_segment(0x10,u32::MAX,0xc09b);
             let data=Register::flat_segment(0x18,u32::MAX,0xc093);
             set_registers(partition,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x16,0x17,0x1b,0x1a,0x10,4,0x11,0,1,2,3,5,6,7],&[
