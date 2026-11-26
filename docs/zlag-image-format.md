@@ -34,6 +34,9 @@ nexus-engine verify gustimg.zlag
 nexus-engine capabilities
 nexus-engine whp-probe
 nexus-engine cpu-smoke
+nexus-engine io-smoke
+nexus-engine cancel-smoke
+nexus-engine boot-test-sector signed-test-sector.zlag
 ```
 
 Import requires an offline source, creates a new destination exclusively, and
@@ -48,3 +51,18 @@ Existing guest QCOW2 images have NOT been converted by this work.
 Future format changes require versioning and compatibility tests, not silent
 reinterpretation of existing files. `boot` deliberately returns an error until
 there is an actual CPU, firmware, device and Android boot path.
+
+## Bounded first-sector test execution (not Android boot)
+
+`boot-test-sector` on Windows x64 verifies the entire image, reads sector zero,
+requires signature bytes `55 AA` at offsets 510/511, then loads those 512 bytes at
+real-mode address `0000:7c00` in 1 MiB of private guest RAM. Segments are zero-based,
+interrupts are disabled, and no BIOS/UEFI service, disk device or subsequent-sector
+read service is provided. The disk file is opened read-only and is not attached
+as a device. Only the private debug/test port bus is emulated; other exits/ports
+are refused. Execution has a 5-second deadline and 64-exit budget. This command
+is for tiny test programs, NOT the existing Android image or arbitrary PC OSes.
+The guest debug output is escaped before printing to the host console.
+
+The separate `boot` command still refuses full OS boot until the actual machine
+backend exists. The first-sector test does not change that capability status.

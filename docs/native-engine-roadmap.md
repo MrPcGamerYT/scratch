@@ -1,4 +1,4 @@
-# Independent Nexus engine — first foundation, not a working Android emulator
+# Independent Nexus engine — incremental implementation and test gates
 
 ## User request
 
@@ -20,6 +20,14 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
   watchdog, and RAII vCPU/mapping/partition cleanup. This is not a complete CPU
   exit emulator or boot machine. Windows SDK compile-time assertions validate the
   small hand-written Rust FFI layouts and constants.
+- Scalar IN/OUT exit dispatch for private test ports, AL/AX/EAX input semantics,
+  RIP advancement, strict unsupported-port/string/REP rejection and bounded output.
+  This is not a serial UART, PCI chipset or production machine/device ABI.
+- A whole-run deadline and 64-exit budget, live infinite-loop cancellation and
+  restart of the SAME vCPU after cancellation.
+- Verified ZLAG first-sector test loader: checks image CRC/signature, maps private
+  1 MiB RAM, copies the sector to `0000:7c00`, and executes it through WHP. No BIOS,
+  UEFI, disk-device/INT 13h, interrupts, framebuffer or Android support is implied.
 - Host-independent unit tests plus independent Python/zlib binary-format checks
   on Linux/Windows CI. No fabricated Android/GPU/FPS success condition.
 - `boot` explicitly refuses to start; no silent fallback to the old QEMU engine.
@@ -27,13 +35,14 @@ rename or bundle QEMU. Its initial CI artifacts are developer foundations only.
 ## Required next implementation gates (not delivered yet)
 
 1. **CPU + memory expansion:** general guest RAM layout and vCPU lifecycle,
-   long-mode/SMP setup, exit handling and instruction/MMIO emulation; bounded
-   I/O/interrupt and cancellation tests. A real-mode store/load/HLT test now
-   passes, but it does not cover these missing pieces. Using WHP directly is
+   protected/long-mode and SMP setup, interrupt delivery and instruction/MMIO
+   emulation. Scalar I/O, bounded execution, cancel/resume and real-mode RAM tests
+   now pass, but do not cover those missing pieces. Using WHP directly is
    not a guarantee to fix a host WHPX/MMIO failure.
 2. **Machine + boot:** choose and document a machine ABI, firmware/loader,
    interrupts/timers/ACPI as required, PCI/virtio and block transport, persistence
-   with separate safe write layers. Boot a Linux test kernel before Android.
+   with separate safe write layers. The tiny first-sector test loader is complete;
+   a PC BIOS/UEFI implementation is NOT. Boot a Linux test kernel before Android.
 3. **Android contract:** compatible guest kernel/initramfs and device drivers;
    new image provisioned from a verified raw disk, Home/ANR/persistence/shutdown
    gates across repeated boots without relying on QEMU's emulated machine.
@@ -73,3 +82,45 @@ certification. There is still no Android boot, firmware/device model, accelerate
 GPU backend, working converted Android `gustimg.zlag`, or speed comparison.
 No end-user emulator replacement is published. Existing player and guest files
 remain unchanged; all artifacts from this workflow are developer foundations.
+
+## Verified I/O, cancellation and file-loaded execution milestone
+
+[Run 45741571782](https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45741571782)
+passed on Ubuntu 24.04 and Windows Server 2022. Eight pure Rust image/boot/I/O tests,
+Clippy (warnings denied), release builds, independent Python binary-format checks
+and the expanded Windows SDK ABI assertions passed. Linux correctly refuses WHP
+execution commands rather than reporting emulation success.
+
+Windows also passed, each with three repetitions:
+
+- Existing CPU RAM store/load/HLT program, without regression.
+- Real scalar IN/OUT exits: six debug bytes, dword device write, AL/AX/EAX reads,
+  ten I/O exits, exact register and guest-RAM results, then HLT.
+- Rejection of actual REP OUTSB, unknown host-port requests and I/O exit storms.
+  Host port access is never forwarded to real hardware.
+- Cancellation of a guest `jmp $` loop after the 250 ms deadline; verified
+  `WHvRunVpExitReasonCanceled`, then ran the RAM program on the same vCPU.
+- A Python-generated raw test sector imported into a REAL ZLAG file, fully
+  verified and loaded at `0000:7c00`, executed by WHP, producing exactly
+  `NEXUS-ZLAG-BOOT` via the private debug port, then halting. Input image SHA256
+  unchanged. Invalid sector signatures and corrupt ZLAG payloads were refused.
+
+No QEMU executable, library, driver or device model participates in these tests.
+These are limited test-machine milestones, not Linux/Android boot, production
+firmware, physical Windows 10/GPU or performance certification.
+
+### Ordered remaining work (all retained in scope)
+
+1. Protected/long-mode CPU startup, general RAM layout, MMIO/interrupt handling.
+2. A documented bootable machine ABI, Linux loader/firmware choice, disk and
+   PCI/virtio devices plus safe persistence. First target: Linux kernel boot.
+3. Compatible Android kernel/drivers and a real bootable Android `gustimg.zlag`;
+   repeated Home, ANR, clean shutdown and persistence gates.
+4. Accelerated guest graphics transport and matching Android drivers; host GPU
+   enumeration/capability checks and actual DirectX/OpenGL/Vulkan renderer paths.
+5. Input, audio, networking and the native guest-control bridge; Qt player hookup.
+6. Physical Windows 10/GPU matrix, game/rendering correctness and measured CPU/GPU
+   performance/latency benchmarks. No speed claim before those measurements.
+
+The old player and user images remain unchanged. Native-only changes now use
+native CI without unnecessarily rebuilding the legacy QEMU engine.
