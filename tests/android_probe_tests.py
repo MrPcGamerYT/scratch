@@ -10,6 +10,23 @@ probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
 
 
+class CleanupPlanTests(unittest.TestCase):
+    def test_cleanup_is_inventory_only_and_preserves_editor_even_if_optional(self):
+        import json
+        sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1] / 'guest-tools'))
+        from plan_cleanup import plan
+        raw=json.dumps({'ok':True,'text':'package:/system/framework/framework-res.apk=android\npackage:/data/app/~~token==/base.apk=com.android.launcher3\npackage:/system/app/egg.apk=com.android.egg\npackage:/system/app/dream.apk=com.android.dreams.basic'})
+        result=plan(raw,'com.android.launcher3','com.android.egg')
+        self.assertEqual([c['package'] for c in result['review_candidates']],['com.android.dreams.basic'])
+        self.assertIn('com.android.egg',result['retained_packages'])
+        self.assertIn('android',result['retained_packages'])
+        self.assertFalse(result['image_modified'])
+        self.assertIsNone(result['size_saved_bytes'])
+        with self.assertRaises(ValueError): plan(raw,'com.android.launcher3','missing.editor')
+        with self.assertRaises(ValueError): plan(json.dumps({'ok':False}), 'com.android.launcher3','com.android.egg')
+        with self.assertRaises(ValueError): plan(raw,'com.android.launcher3;rm','com.android.egg')
+
+
 class StabilityTests(unittest.TestCase):
     def test_missing_evidence_is_not_a_pass(self):
         from android_stability import assess
