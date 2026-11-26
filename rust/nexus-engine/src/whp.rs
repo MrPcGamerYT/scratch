@@ -121,8 +121,9 @@ mod windows {
         use std::time::Duration;
         let handle=partition.0 as usize;
         let canceled=Arc::new(AtomicBool::new(false));let flag=Arc::clone(&canceled);
+        std::thread::scope(|scope| {
         let (tx,rx)=mpsc::channel();
-        let watchdog=std::thread::spawn(move || {
+        let watchdog=scope.spawn(move || {
             if matches!(rx.recv_timeout(Duration::from_millis(millis)),Err(mpsc::RecvTimeoutError::Timeout)) {
                 flag.store(true,Ordering::SeqCst);
                 unsafe { WHvCancelRunVirtualProcessor(handle as *mut c_void,0,0); }
@@ -135,6 +136,7 @@ mod windows {
         let result=action();
         let _=tx.send(());watchdog.join().map_err(|_|"WHP watchdog panicked")?;
         Ok((result?,canceled.load(Ordering::SeqCst)))
+        })
     }
     fn run_to_halt(partition:&Partition,bus:&mut crate::io::TestBus)->Result<usize,String> {
         run_to_halt_mode(partition,bus,crate::cpu::CpuMode::Real16)
@@ -337,17 +339,21 @@ mod windows {
         })
     }
     // Cancellation is only a scheduling rendezvous; it never fabricates a guest tick.
-    // Join before partition teardown even when action returns an error.
+    // Scoped workers join before partition teardown on success, error AND panic.
+    // Channels live inside the scope so unwinding disconnects them before join.
     fn timer_pump<T>(partition:&Partition,action:impl FnOnce()->Result<T,String>)->Result<T,String> {
         use std::sync::mpsc;
         use std::time::Duration;
-        let handle=partition.0 as usize;let (tx,rx)=mpsc::channel();
-        let worker=std::thread::spawn(move || {
+        let handle=partition.0 as usize;
+        std::thread::scope(|scope| {
+        let (tx,rx)=mpsc::channel();
+        let worker=scope.spawn(move || {
             while matches!(rx.recv_timeout(Duration::from_millis(1)),Err(mpsc::RecvTimeoutError::Timeout)) {
                 unsafe {WHvCancelRunVirtualProcessor(handle as *mut c_void,0,0);}
             }
         });
         let result=action();let _=tx.send(());worker.join().map_err(|_|"Timer rendezvous thread panicked")?;result
+        })
     }
     fn queue_interrupt(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<Option<u8>,String> {
         let Some(vector)=platform.pic.pending_vector() else {return Ok(None);};
