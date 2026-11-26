@@ -6,6 +6,9 @@ on:
       - 'tests/native_kernel_checkpoint.py'
       - 'rust/nexus-engine/src/kernel.rs'
       - 'rust/nexus-engine/src/uart.rs'
+      - 'rust/nexus-engine/src/pit.rs'
+      - 'rust/nexus-engine/src/platform.rs'
+      - 'rust/nexus-engine/src/timing.rs'
   workflow_dispatch:
     inputs:
       kernel_run:
@@ -80,7 +83,9 @@ jobs:
         with:
           name: native-kernel-entry-evidence
           path: |
-            kernel-serial.log
+            kernel-serial*.log
+            kernel-serial*.timing.json
+            boot-timing-summary.json
             kernel-checkpoint.txt
             native-engine-*.log
             kernel-artifact/SHA256SUMS.txt
