@@ -1,5 +1,8 @@
 name: Native Android kernel integration
 on:
+  push:
+    paths:
+      - '.github/workflows/native-android.yml'
   workflow_dispatch:
     inputs:
       assets_run:
