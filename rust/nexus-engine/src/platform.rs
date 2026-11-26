@@ -23,7 +23,7 @@ impl EarlyPlatform {
             if io.size!=1 {return Err("PIT/control accesses must be bytes".into());}
             return self.pit.access(io.port,io.write,io.rax as u8,now_ns).map(|value|value.map(|b|io.input_register(u32::from(b))));
         }
-        if [0x20,0x21,0xa0,0xa1].contains(&io.port) {
+        if [0x20,0x21,0xa0,0xa1,0x4d0,0x4d1].contains(&io.port) {
             if io.size!=1 {return Err("PIC accesses must be bytes".into());}
             return self.pic.access(io.port,io.write,io.rax as u8).map(|value|value.map(|b|io.input_register(u32::from(b))));
         }

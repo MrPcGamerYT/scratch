@@ -292,7 +292,7 @@ mod windows {
         });
         let result=action();let _=tx.send(());worker.join().map_err(|_|"Timer rendezvous thread panicked")?;result
     }
-    fn queue_irq0(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<bool,String> {
+    fn queue_interrupt(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<bool,String> {
         let Some(vector)=platform.pic.pending_vector() else {return Ok(false);};
         // Only inject in an open interrupt window. IF=0 or STI/MOV-SS shadow
         // would make external injection invalid on some WHP versions.
@@ -300,7 +300,7 @@ mod windows {
         // Never overwrite an event already queued in WHP.
         if scalar_register(partition,0x80000000)?&1!=0 {return Ok(false);}
         set_registers(partition,&[0x80000000],&[Register::scalar(1|(u64::from(vector)<<16))])?;
-        platform.pic.acknowledge_irq0()?;Ok(true)
+        platform.pic.acknowledge()?;Ok(true)
     }
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
@@ -313,7 +313,7 @@ mod windows {
                     if elapsed_ms()>=30000 {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
-                    if queue_irq0(partition,platform)? {trace.irq0_injections+=1;halted=false;}
+                    if queue_interrupt(partition,platform)? {trace.irq0_injections+=1;halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}

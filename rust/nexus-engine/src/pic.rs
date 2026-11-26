@@ -1,7 +1,7 @@
 //! Dual 8259 initialization/register subset for early PC bring-up.
-//! IRQ0 edge/acknowledge supported; no slave IRQ sources, auto-EOI, rotation, poll,
-//! special-mask or level-triggered operation. Never forwards host port I/O.
-//! External CPU injection belongs to the WHP backend. Other IRQ lines are not connected.
+//! IRQ0 edge and dedicated IRQ5 edge/ELCR-level input. No slave IRQ sources,
+//! auto-EOI, rotation, poll or special-mask mode. Host ports never exposed.
+//! External CPU injection belongs to the WHP backend.
 #[derive(Default)]
 struct Controller {
     mask:u8, vector:u8, cascade:u8, step:u8, read_isr:bool,irr:u8,isr:u8,initialized:bool,
@@ -42,28 +42,56 @@ impl Controller {
     }
 }
 
-pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64}
+pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,elcr:u8}
 impl Default for PicPair {
     fn default()->Self {
-        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0}
+        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,elcr:0}
     }
 }
 impl PicPair {
     pub fn raise_irq0(&mut self) {self.master.irr|=1;}
-    pub fn pending_vector(&self)->Option<u8> {
+    /// Device line input. ELCR bit 5 selects level mode; otherwise only rising edges latch.
+    pub fn set_irq5(&mut self,high:bool) {
+        if self.elcr&0x20!=0 {
+            if high {self.master.irr|=0x20;} else {self.master.irr&=!0x20;}
+        } else if high&&!self.irq5_high {self.master.irr|=0x20;}
+        self.irq5_high=high;
+    }
+    fn pending_irq(&self)->Option<u8> {
         let m=&self.master;
-        if m.initialized&&m.step==0&&m.irr&!m.mask&1!=0&&m.isr==0 {Some(m.vector)} else {None}
+        if !m.initialized||m.step!=0 {return None;}
+        let pending=m.irr&!m.mask&0x21;
+        if pending==0 {return None;}
+        let irq=pending.trailing_zeros() as u8;
+        if m.isr!=0&&u32::from(irq)>=m.isr.trailing_zeros() {return None;}
+        Some(irq)
+    }
+    pub fn pending_vector(&self)->Option<u8> {self.pending_irq().map(|irq|self.master.vector+irq)}
+    /// Acknowledge the selected request only after WHP accepted external injection.
+    pub fn acknowledge(&mut self)->Result<(),String> {
+        let irq=self.pending_irq().ok_or("PIC acknowledged without a deliverable request")?;
+        self.master.irr&=!(1<<irq);self.master.isr|=1<<irq;
+        Ok(())
     }
     pub fn acknowledge_irq0(&mut self)->Result<(),String> {
-        if self.pending_vector().is_none() {return Err("PIC IRQ0 acknowledged without a deliverable request".into());}
-        self.master.irr&=!1;self.master.isr|=1;Ok(())
+        if self.pending_irq()!=Some(0) {return Err("PIC IRQ0 acknowledged without a deliverable request".into());}
+        self.acknowledge()
     }
 
     pub fn access(&mut self,port:u16,write:bool,value:u8)->Result<Option<u8>,String> {
+        if port==0x4d0||port==0x4d1 {
+            self.accesses+=1;
+            if !write {return Ok(Some(if port==0x4d0 {self.elcr} else {0}));}
+            if (port==0x4d0&&value&!0x20!=0)||(port==0x4d1&&value!=0) {return Err("Only dedicated IRQ5 ELCR mode is supported".into());}
+            if port==0x4d0 {self.elcr=value;self.set_irq5(self.irq5_high);}
+            return Ok(None);
+        }
         let controller=match port {0x20|0x21=>&mut self.master,0xa0|0xa1=>&mut self.slave,_=>return Err(format!("Unsupported PIC port 0x{port:x}"))};
         self.accesses+=1;
         let result=controller.access(port&1!=0,write,value)?;
         if write&&port&1==0&&value==0x11 {self.initializations+=1;}
+        // Level requests remain asserted until device ACK, independent of PIC EOI.
+        if self.elcr&0x20!=0&&self.irq5_high&&self.master.isr&0x20==0 {self.master.irr|=0x20;}
         Ok(result)
     }
 }
@@ -83,6 +111,36 @@ mod tests {
         p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),Some(0x20));
         p.acknowledge_irq0().unwrap();assert!(p.acknowledge_irq0().is_err());
         p.access(0x20,true,0x60).unwrap();assert_eq!(p.pending_vector(),None);
+    }
+    fn initialized()->PicPair {
+        let mut p=PicPair::default();
+        for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0)] {p.access(port,true,value).unwrap();}
+        p
+    }
+    #[test] fn dedicated_level_irq_mask_ack_eoi_reassert_and_deassert() {
+        let mut p=initialized();p.access(0x4d0,true,0x20).unwrap();
+        p.access(0x21,true,0x20).unwrap();p.set_irq5(true);assert_eq!(p.pending_vector(),None);
+        p.access(0x21,true,0).unwrap();assert_eq!(p.pending_vector(),Some(0x25));
+        assert!(p.acknowledge_irq0().is_err());p.acknowledge().unwrap();assert_eq!(p.pending_vector(),None);
+        p.access(0x20,true,0x60).unwrap();assert_eq!(p.pending_vector(),None);
+        p.access(0x20,true,0x65).unwrap();assert_eq!(p.pending_vector(),Some(0x25));
+        p.acknowledge().unwrap();p.set_irq5(false);p.access(0x20,true,0x20).unwrap();
+        assert_eq!(p.pending_vector(),None);assert!(p.acknowledge().is_err());
+        p.set_irq5(true);p.set_irq5(false);assert_eq!(p.pending_vector(),None);
+    }
+    #[test] fn irq0_preempts_irq5_but_lower_priority_waits_for_eoi() {
+        let mut p=initialized();p.access(0x4d0,true,0x20).unwrap();p.set_irq5(true);p.acknowledge().unwrap();
+        p.raise_irq0();assert_eq!(p.pending_vector(),Some(0x20));p.acknowledge_irq0().unwrap();
+        p.set_irq5(false);p.set_irq5(true);assert_eq!(p.pending_vector(),None);
+        p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),None);
+        p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),Some(0x25));
+    }
+    #[test] fn irq5_edge_mode_and_elcr_restrictions() {
+        let mut p=initialized();p.set_irq5(true);p.set_irq5(false);assert_eq!(p.pending_vector(),Some(0x25));
+        p.acknowledge().unwrap();p.access(0x20,true,0x20).unwrap();assert_eq!(p.pending_vector(),None);
+        assert_eq!(p.access(0x4d0,false,0).unwrap(),Some(0));assert_eq!(p.access(0x4d1,false,0).unwrap(),Some(0));
+        for (port,value) in [(0x4d0,1),(0x4d0,0x80),(0x4d1,1)] {assert!(p.access(port,true,value).is_err());}
+        p.access(0x4d0,true,0x20).unwrap();assert_eq!(p.access(0x4d0,false,0).unwrap(),Some(0x20));
     }
     #[test] fn masks_roundtrip_and_reset() {
         let mut p=PicPair::default();

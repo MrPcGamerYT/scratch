@@ -134,6 +134,15 @@ pub fn mmio_smoke()->Result<(),String> {
         f.ram[0x22028..0x22030].copy_from_slice(&1u64.to_le_bytes());
         for (n,byte) in f.ram[0x23000..0x23200].iter_mut().enumerate() {*byte=(n as u8).wrapping_mul(37).wrapping_add(9);}
         f.ram[0x24000..0x24003].fill(0xff);
+        if !long {
+            f.idt_limit=0x12f;
+            f.ram[cpu::IDT+0x128..cpu::IDT+0x130].copy_from_slice(&[0,0x81,8,0,0,0x8e,0,0]);
+            // Preserve EAX; capture IRQ status; ACK device before PIC EOI; IRETD.
+            let handler=[0x50,0xa1,0x60,0,0,0xd0,0xa3,0x30,0xb0,1,0,
+                0xb8,1,0,0,0,0xa3,0x64,0,0,0xd0,0xff,0x05,0x34,0xb0,1,0,
+                0xb0,0x20,0xe6,0x20,0x58,0xcf];
+            f.ram[0x8100..0x8100+handler.len()].copy_from_slice(&handler);
+        }
         let mut code=Vec::new();
         let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
             if long {code.push(0x67);}code.push(if size==1 {0xa0} else {0xa1});code.extend_from_slice(&((MMIO_BASE as u32)+offset).to_le_bytes());
@@ -147,6 +156,7 @@ pub fn mmio_smoke()->Result<(),String> {
         write(&mut code,0,0);load(&mut code,0,4,0x1b018); // RO write must be ignored.
         for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,518),(0x24,1),(0x20,1),(0x70,11)] {write(&mut code,offset,value);}
         load(&mut code,0x70,4,0x1b01c);load(&mut code,0x108,1,0x1b020);
+        if !long {code.extend_from_slice(&[0xfb,0x90]);}
         for (offset,value) in [(0x30,0),(0x38,8),(0x80,0x20000),(0x90,0x21000),(0xa0,0x21800),(0x44,1),(0x70,15),(0x50,0)] {write(&mut code,offset,value);}
         load(&mut code,0x60,4,0x1b028);write(&mut code,0x64,1);load(&mut code,0x60,4,0x1b02c);
         write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b024);code.push(0xf4);
@@ -162,10 +172,18 @@ pub fn mmio_smoke()->Result<(),String> {
             crate::image::import_raw(&raw,&base).map_err(|e|e.to_string())?;
             let original=std::fs::read(&base).map_err(|e|e.to_string())?;
             let mut backend=crate::overlay::Overlay::create(&base,&cow)?;
-            let mut serviced=0;
+            let mut serviced=0;let mut injections=0;
+            let mut platform=crate::platform::EarlyPlatform::default();
+            if !long {
+                for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0xdf),(0x4d0,0x20)] {platform.pic.access(port,true,value)?;}
+            }
             let emulator=Emulator::new()?;let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:crate::virtio_mmio::BlockMmio::new(4,false)?,error:None,translations:0,accesses:0};
             let (result,timed_out)=bounded(partition,5000,|| {
                 for _ in 0..128 {
+                    if !long {
+                        platform.pic.set_irq5(ctx.device.irq_asserted());
+                        if queue_interrupt(partition,&mut platform)? {injections+=1;}
+                    }
                     let exit=run_once(partition)?;
                     match exit.reason() {8=>return Ok(Ok(())),1=>{
                         emulator.emulate(&mut ctx,&exit,long)?;
@@ -177,13 +195,26 @@ pub fn mmio_smoke()->Result<(),String> {
                             if done.iter().any(|c|c.status!=0) {return Err("Live MMIO block request failed".into());}
                             serviced+=done.len();
                         }
+                    },2=>{
+                        let io=crate::io::IoExit::decode(&exit.0)?;
+                        if io.port!=0x20||!io.write||io.size!=1 {return Err("Unexpected MMIO fixture port access".into());}
+                        let mode=crate::cpu::CpuMode::from_exit(&exit.0)?;
+                        platform.pic.set_irq5(ctx.device.irq_asserted());
+                        platform.access(io,0)?;
+                        set_registers(partition,&[0x10],&[Register::scalar(mode.next_rip(io.rip,io.instruction_len)?)])?;
                     },reason=>return Err(format!("Unexpected MMIO fixture exit 0x{reason:x}"))}
                 }Ok(Err("MMIO fixture exit budget exceeded".to_string()))
             })?;
             if timed_out {return Err("MMIO fixture deadline exceeded".into());}result?;
             let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),48)};
-            for (n,expected) in [0x74726976,2,2,518,131072,1,0x74726976,11,0,0,1,0].into_iter().enumerate() {
+            for (n,expected) in [0x74726976,2,2,518,131072,1,0x74726976,11,0,0,u32::from(long),0].into_iter().enumerate() {
                 let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("MMIO register {n} mismatch 0x{actual:x}"));}
+            }
+            if !long {
+                let captured=unsafe {std::slice::from_raw_parts(ctx.ram.add(0x1b030),8)};
+                if captured!=[1,0,0,0,1,0,0,0]||injections!=1||platform.pic.pending_vector().is_some()||scalar_register(partition,4)?!=cpu::STACK {
+                    return Err("VirtIO external IRQ5 delivery/ACK/EOI/IRETD contract failed".into());
+                }
             }
             if serviced!=3 {return Err("Missing live write/flush/read completions".into());}
             let ram=unsafe {std::slice::from_raw_parts(ctx.ram,ctx.bytes)};
