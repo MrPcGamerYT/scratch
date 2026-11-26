@@ -5,7 +5,7 @@ PID1 proves getpid and two real nanosleep returns via /dev/kmsg markers.
 import struct
 
 
-def init_elf(disk_write=None, filesystem=False):
+def init_elf(disk_write=None, filesystem=False, clean_unmount=True):
     if filesystem and disk_write is None:
         raise ValueError("Filesystem fixture requires an explicit write/read mode")
     base = 0x400000
@@ -103,11 +103,14 @@ def init_elf(disk_write=None, filesystem=False):
                 branch(b'\x0f\x85', 'fail')
                 emit(b'\x44\x89\xe7\xb8\x03\x00\x00\x00\x0f\x05\x85\xc0')
                 branch(b'\x0f\x85', 'fail')
-            emit(b'\xb8\xa6\x00\x00\x00')
-            address(b'\x48\xbf', 'mountpoint')
-            emit(b'\x31\xf6\x0f\x05\x85\xc0')
-            branch(b'\x0f\x85', 'fail')
+            if clean_unmount:
+                emit(b'\xb8\xa6\x00\x00\x00')
+                address(b'\x48\xbf', 'mountpoint')
+                emit(b'\x31\xf6\x0f\x05\x85\xc0')
+                branch(b'\x0f\x85', 'fail')
         disk_marker=(b'NEXUS_EXT4_FILE_FSYNC_UNMOUNT_MATCH\n' if disk_write else b'NEXUS_EXT4_REBOOT_FILE_MATCH\n') if filesystem else (b'NEXUS_VDA_WRITE_FLUSH_READ_MATCH\n' if disk_write else b'NEXUS_VDA_REBOOT_READ_MATCH\n')
+        if filesystem and disk_write and not clean_unmount:
+            disk_marker=b'NEXUS_EXT4_FSYNC_UNCLEAN_STOP_READY\n'
         log('diskmarker', disk_marker)
     log('ready', ready)
     label('pause')
@@ -148,11 +151,11 @@ def newc(name, mode, body=b'', rmajor=0, rminor=0, inode=1):
     return data + bytes(-len(data) % 4)
 
 
-def initramfs(disk_write=None, filesystem=False):
+def initramfs(disk_write=None, filesystem=False, clean_unmount=True):
     return (newc('dev', 0o40755, inode=1) + newc('dev/console', 0o20600, rmajor=5, rminor=1, inode=2)
             + newc('dev/kmsg', 0o20600, rmajor=1, rminor=11, inode=3)
             + (newc('mnt', 0o40755, inode=6) if filesystem else b'')
-            + newc('init', 0o100755, init_elf(disk_write, filesystem), inode=4) + newc('TRAILER!!!', 0, inode=5))
+            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount), inode=4) + newc('TRAILER!!!', 0, inode=5))
 
 
 if __name__ == '__main__':

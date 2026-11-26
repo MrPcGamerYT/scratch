@@ -104,8 +104,8 @@ jobs:
             kernel-serial*.log
             kernel-serial*.timing.json
             diagnostic-initramfs.cpio
-            filesystem-initramfs*.cpio
-            filesystem-checkpoint.json
+            filesystem*-initramfs*.cpio
+            filesystem*-checkpoint.json
             boot-timing-summary.json
             kernel-checkpoint.txt
             native-engine-*.log
