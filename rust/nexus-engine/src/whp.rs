@@ -361,7 +361,7 @@ mod windows {
                     if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,3=>trace.irq3_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
-                    if runs>=250000 {break;}
+                    if runs>=if goal==RunGoal::NativeBridge {1_000_000} else {250000} {break;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
                     let context=run_once(partition)?;trace.exits+=1;runs+=1;
                     last.0=context.reason();last.1=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
