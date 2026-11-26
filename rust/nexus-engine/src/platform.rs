@@ -71,6 +71,26 @@ mod tests {
     fn io(port:u16,size:u8,write:bool,rax:u64)->IoExit {
         IoExit{port,size,write,rax,rip:0x100000,instruction_len:1}
     }
+    fn route(io:&mut crate::ioapic::IoApic,pin:u32,low:u32) {
+        io.write(0,0x10+pin*2).unwrap();io.write(0x10,low).unwrap();
+    }
+    #[test] fn pit_ioapic_edge_is_not_duplicated_by_repeated_routing() {
+        let mut bus=EarlyPlatform::default();let mut ioapic=crate::ioapic::IoApic::new();let mut edges=0;
+        let mut cpus=vec![crate::lapic::LocalApic::new(0)];cpus[0].write(0xf0,0x1ff).unwrap();
+        route(&mut ioapic,2,0x43);
+        bus.access(io(0x43,1,true,0x30),0).unwrap();bus.access(io(0x40,1,true,0xa9),0).unwrap();bus.access(io(0x40,1,true,4),0).unwrap();
+        bus.tick(1_000_000);bus.route_ioapic(&mut ioapic,&mut edges,false).unwrap();ioapic.service(&mut cpus).unwrap();
+        assert_eq!(cpus[0].pending(),Some(0x43));cpus[0].acknowledge(0x43).unwrap();assert!(!cpus[0].in_service_level(0x43));cpus[0].eoi();
+        for _ in 0..100 {bus.tick(2_000_000);bus.route_ioapic(&mut ioapic,&mut edges,false).unwrap();ioapic.service(&mut cpus).unwrap();}
+        assert_eq!(edges,1);assert_eq!(cpus[0].pending(),None);
+    }
+    #[test] fn block_source_deassert_before_eoi_does_not_retrigger() {
+        let bus=EarlyPlatform::default();let mut ioapic=crate::ioapic::IoApic::new();let mut edges=0;
+        let mut cpus=vec![crate::lapic::LocalApic::new(0)];cpus[0].write(0xf0,0x1ff).unwrap();route(&mut ioapic,5,0x8045);
+        bus.route_ioapic(&mut ioapic,&mut edges,true).unwrap();ioapic.service(&mut cpus).unwrap();cpus[0].acknowledge(0x45).unwrap();
+        assert!(cpus[0].in_service_level(0x45));bus.route_ioapic(&mut ioapic,&mut edges,false).unwrap();
+        cpus[0].eoi();ioapic.eoi(0x45);ioapic.service(&mut cpus).unwrap();assert_eq!(cpus[0].pending(),None);
+    }
     #[test] fn chipset_reads_preserve_upper_rax_and_do_not_touch_uart() {
         let mut bus=EarlyPlatform::default();
         assert_eq!(bus.access(io(0xa1,1,false,0x123400),0).unwrap(),Some(0x1234ff));
