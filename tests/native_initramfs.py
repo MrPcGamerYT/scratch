@@ -5,7 +5,9 @@ PID1 proves getpid and two real nanosleep returns via /dev/kmsg markers.
 import struct
 
 
-def init_elf(disk_write=None):
+def init_elf(disk_write=None, filesystem=False):
+    if filesystem and disk_write is None:
+        raise ValueError("Filesystem fixture requires an explicit write/read mode")
     base = 0x400000
     entry = base + 120
     code = bytearray()
@@ -59,21 +61,30 @@ def init_elf(disk_write=None):
         address(b'\x48\xba', 'devfs')
         emit(b'\x45\x31\xd2\x45\x31\xc0\x0f\x05\x85\xc0')
         branch(b'\x0f\x85', 'fail')
+        if filesystem:
+            emit(b'\xb8\xa5\x00\x00\x00')
+            address(b'\x48\xbf', 'blockdev')
+            address(b'\x48\xbe', 'mountpoint')
+            address(b'\x48\xba', 'fstype')
+            emit(b'\x41\xba'+struct.pack('<I', 0 if disk_write else 1))
+            emit(b'\x45\x31\xc0\x0f\x05\x85\xc0')
+            branch(b'\x0f\x85', 'fail')
         emit(b'\xb8\x02\x00\x00\x00')
-        address(b'\x48\xbf', 'blockdev')
-        emit(b'\xbe\x02\x00\x00\x00\x31\xd2\x0f\x05\x85\xc0')
+        address(b'\x48\xbf', 'filename' if filesystem else 'blockdev')
+        emit(b'\xbe'+struct.pack('<I', (0x242 if disk_write else 0) if filesystem else 2))
+        emit(b'\xba\x80\x01\x00\x00\x0f\x05\x85\xc0')
         branch(b'\x0f\x88', 'fail')
         emit(b'\x41\x89\xc4')  # r12d = block fd, ebp still holds kmsg fd
         if disk_write:
             emit(b'\xb8\x12\x00\x00\x00\x44\x89\xe7')  # pwrite64
             address(b'\x48\xbe', 'pattern')
-            emit(b'\xba\x00\x02\x00\x00\x41\xba\x00\x10\x00\x00\x0f\x05\x3d\x00\x02\x00\x00')
+            emit(b'\xba\x00\x02\x00\x00\x41\xba'+struct.pack('<I', 0 if filesystem else 4096)+b'\x0f\x05\x3d\x00\x02\x00\x00')
             branch(b'\x0f\x85', 'fail')
             emit(b'\xb8\x4a\x00\x00\x00\x44\x89\xe7\x0f\x05\x85\xc0')  # fsync
             branch(b'\x0f\x85', 'fail')
         emit(b'\xb8\x11\x00\x00\x00\x44\x89\xe7')  # pread64
         address(b'\x48\xbe', 'readbuffer')
-        emit(b'\xba\x00\x02\x00\x00\x41\xba\x00\x10\x00\x00\x0f\x05\x3d\x00\x02\x00\x00')
+        emit(b'\xba\x00\x02\x00\x00\x41\xba'+struct.pack('<I', 0 if filesystem else 4096)+b'\x0f\x05\x3d\x00\x02\x00\x00')
         branch(b'\x0f\x85', 'fail')
         address(b'\x48\xbe', 'pattern')
         address(b'\x48\xbf', 'readbuffer')
@@ -81,7 +92,22 @@ def init_elf(disk_write=None):
         branch(b'\x0f\x85', 'fail')
         emit(b'\xb8\x03\x00\x00\x00\x44\x89\xe7\x0f\x05\x85\xc0')
         branch(b'\x0f\x85', 'fail')
-        disk_marker=b'NEXUS_VDA_WRITE_FLUSH_READ_MATCH\n' if disk_write else b'NEXUS_VDA_REBOOT_READ_MATCH\n'
+        if filesystem:
+            if disk_write:
+                # fsync the parent directory as well as the file, then cleanly unmount.
+                emit(b'\xb8\x02\x00\x00\x00')
+                address(b'\x48\xbf', 'mountpoint')
+                emit(b'\xbe\x00\x00\x01\x00\x31\xd2\x0f\x05\x85\xc0')
+                branch(b'\x0f\x88', 'fail')
+                emit(b'\x41\x89\xc4\x89\xc7\xb8\x4a\x00\x00\x00\x0f\x05\x85\xc0')
+                branch(b'\x0f\x85', 'fail')
+                emit(b'\x44\x89\xe7\xb8\x03\x00\x00\x00\x0f\x05\x85\xc0')
+                branch(b'\x0f\x85', 'fail')
+            emit(b'\xb8\xa6\x00\x00\x00')
+            address(b'\x48\xbf', 'mountpoint')
+            emit(b'\x31\xf6\x0f\x05\x85\xc0')
+            branch(b'\x0f\x85', 'fail')
+        disk_marker=(b'NEXUS_EXT4_FILE_FSYNC_UNMOUNT_MATCH\n' if disk_write else b'NEXUS_EXT4_REBOOT_FILE_MATCH\n') if filesystem else (b'NEXUS_VDA_WRITE_FLUSH_READ_MATCH\n' if disk_write else b'NEXUS_VDA_REBOOT_READ_MATCH\n')
         log('diskmarker', disk_marker)
     log('ready', ready)
     label('pause')
@@ -96,6 +122,10 @@ def init_elf(disk_write=None):
     if disk_write is not None:
         for name,data in [('devdir',b'/dev\0'),('devfs',b'devtmpfs\0'),('blockdev',b'/dev/vda\0'),
                           ('pattern',bytes((n*37+9)%256 for n in range(512))),('readbuffer',bytes(512)),('diskmarker',disk_marker)]:
+            label(name)
+            emit(data)
+    if filesystem:
+        for name,data in [('mountpoint',b'/mnt\0'),('fstype',b'ext4\0'),('filename',b'/mnt/probe.bin\0')]:
             label(name)
             emit(data)
     for offset, name in absolute:
@@ -118,10 +148,11 @@ def newc(name, mode, body=b'', rmajor=0, rminor=0, inode=1):
     return data + bytes(-len(data) % 4)
 
 
-def initramfs(disk_write=None):
+def initramfs(disk_write=None, filesystem=False):
     return (newc('dev', 0o40755, inode=1) + newc('dev/console', 0o20600, rmajor=5, rminor=1, inode=2)
             + newc('dev/kmsg', 0o20600, rmajor=1, rminor=11, inode=3)
-            + newc('init', 0o100755, init_elf(disk_write), inode=4) + newc('TRAILER!!!', 0, inode=5))
+            + (newc('mnt', 0o40755, inode=6) if filesystem else b'')
+            + newc('init', 0o100755, init_elf(disk_write, filesystem), inode=4) + newc('TRAILER!!!', 0, inode=5))
 
 
 if __name__ == '__main__':

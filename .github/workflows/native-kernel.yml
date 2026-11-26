@@ -42,16 +42,16 @@ jobs:
           repository: torvalds/linux
           ref: ffc253263a1375a65fa6c9f62a893e9767fbebfa
           path: kernel-source
-      - run: sudo apt-get update && sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev e2fsprogs
       - name: Build pinned tiny x86-64 Linux kernel, not an Android image
         shell: bash
         run: |
           set -o pipefail
           cd kernel-source
           make tinyconfig
-          scripts/config -e 64BIT -e PRINTK -e TTY -e EARLY_PRINTK -e SERIAL_8250 -e SERIAL_8250_CONSOLE -e BINFMT_ELF -e BLK_DEV_INITRD -e RD_GZIP -e DEVTMPFS -e PROC_FS -e SYSFS -e DEBUG_KERNEL -e BLOCK -e PARTITION_ADVANCED -e MSDOS_PARTITION -e VIRTIO_MENU -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_MMIO_CMDLINE_DEVICES -e VIRTIO_BLK -d RANDOMIZE_BASE -d SMP -d HYPERV -d PARAVIRT -d X86_5LEVEL
+          scripts/config -e 64BIT -e PRINTK -e TTY -e EARLY_PRINTK -e SERIAL_8250 -e SERIAL_8250_CONSOLE -e BINFMT_ELF -e BLK_DEV_INITRD -e RD_GZIP -e DEVTMPFS -e PROC_FS -e SYSFS -e DEBUG_KERNEL -e BLOCK -e PARTITION_ADVANCED -e MSDOS_PARTITION -e VIRTIO_MENU -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_MMIO_CMDLINE_DEVICES -e VIRTIO_BLK -e EXT4_FS -d RANDOMIZE_BASE -d SMP -d HYPERV -d PARAVIRT -d X86_5LEVEL
           make olddefconfig
-          for setting in BLOCK MSDOS_PARTITION VIRTIO VIRTIO_MMIO VIRTIO_MMIO_CMDLINE_DEVICES VIRTIO_BLK; do
+          for setting in BLOCK MSDOS_PARTITION VIRTIO VIRTIO_MMIO VIRTIO_MMIO_CMDLINE_DEVICES VIRTIO_BLK EXT4_FS; do
             grep -q "CONFIG_${setting}=y" .config || { echo "Missing $setting"; exit 1; }
           done
           if ! make -j4 bzImage 2>&1 | tee ../kernel-build.log; then
@@ -64,7 +64,10 @@ jobs:
           cp COPYING ../kernel-artifact/
           echo 'Linux v6.6 source: https://github.com/torvalds/linux/tree/ffc253263a1375a65fa6c9f62a893e9767fbebfa; tinyconfig + explicit flags in native-kernel.yml. TEST KERNEL ONLY; no Android certification.' > ../kernel-artifact/SOURCE.txt
           cd ../kernel-artifact
-          sha256sum bzImage > SHA256SUMS.txt
+          truncate -s 32M filesystem.ext4
+          mkfs.ext4 -F -b 4096 -L NEXUSTEST -O ^64bit,^metadata_csum_seed,^orphan_file filesystem.ext4
+          e2fsck -fn filesystem.ext4
+          sha256sum bzImage filesystem.ext4 > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: native-test-linux-kernel
@@ -101,6 +104,8 @@ jobs:
             kernel-serial*.log
             kernel-serial*.timing.json
             diagnostic-initramfs.cpio
+            filesystem-initramfs*.cpio
+            filesystem-checkpoint.json
             boot-timing-summary.json
             kernel-checkpoint.txt
             native-engine-*.log

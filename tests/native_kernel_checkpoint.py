@@ -16,6 +16,44 @@ def notice(text):
     print('::notice::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
 
 
+def filesystem_checkpoint(exe,kernel,cmd,config):
+    if 'CONFIG_EXT4_FS=y' not in config:
+        return {'verified':False,'reason':'legacy kernel lacks EXT4_FS'}
+    raw=Path('kernel-artifact/filesystem.ext4').resolve()
+    checksums={line.split()[1]:line.split()[0] for line in Path('kernel-artifact/SHA256SUMS.txt').read_text().splitlines()}
+    assert raw.is_file() and hashlib.sha256(raw.read_bytes()).hexdigest()==checksums['filesystem.ext4']
+    base=Path('filesystem-disk.zlag').resolve();cow=Path('filesystem-disk.cow').resolve()
+    subprocess.run([exe,'import-raw',str(raw),str(base)],check=True,capture_output=True)
+    digest=hashlib.sha256(base.read_bytes()).hexdigest()
+    samples=[]
+    for index in range(3):
+        rd=Path(f'filesystem-initramfs-{index+1}.cpio')
+        rd.write_bytes(initramfs(disk_write=index==0,filesystem=True))
+        log=Path(f'kernel-serial-fs-{index+1}.log')
+        p=subprocess.run([exe,'boot-kernel-disk-create' if index==0 else 'boot-kernel-disk-open',
+                          str(kernel),str(log),cmd,str(rd),str(base),str(cow)],capture_output=True,text=True,timeout=45)
+        serial=log.read_text(errors='replace') if log.exists() else ''
+        timing=Path(str(log)+'.timing.json')
+        metrics=json.loads(timing.read_text()) if timing.exists() else {}
+        marker='NEXUS_EXT4_FILE_FSYNC_UNMOUNT_MATCH' if index==0 else 'NEXUS_EXT4_REBOOT_FILE_MATCH'
+        sample={'sample':index+1,'operation':'create_write_fsync_dirsync_unmount' if index==0 else 'readonly_remount_read_unmount',
+                'engine_exit':p.returncode,'marker':marker,'marker_seen':marker in serial,'metrics':metrics,
+                'stderr':p.stderr,'serial_sha256':hashlib.sha256(log.read_bytes()).hexdigest() if log.exists() else None}
+        samples.append(sample)
+        Path('filesystem-checkpoint.json').write_text(json.dumps({'verified':False,'samples':samples},indent=2))
+        notice('EXT4_SAMPLE='+json.dumps(sample))
+        notice('EXT4_SERIAL_TAIL='+serial[-3500:])
+        assert p.returncode==0 and marker in serial,(p.stderr,serial[-3500:])
+        assert 'virtio_blk virtio0: [vda]' in serial and metrics.get('irq5_injections',0)>0
+        assert 'EXT4-fs error' not in serial and 'I/O error' not in serial,serial[-3500:]
+        assert metrics.get('linux_userspace_ready_ms') is not None and metrics['total_boot_verified'] is False
+        assert hashlib.sha256(base.read_bytes()).hexdigest()==digest
+        assert hashlib.sha256(raw.read_bytes()).hexdigest()==checksums['filesystem.ext4']
+    result={'verified':True,'scope':'ext4 clean file/directory fsync, unmount, two separate guest/process readonly remounts; no crash or Android certification','samples':samples}
+    Path('filesystem-checkpoint.json').write_text(json.dumps(result,indent=2))
+    return result
+
+
 def main():
     exe=str(Path('rust/nexus-engine/target/release/nexus-engine.exe').resolve())
     kernel=Path('kernel-artifact/bzImage').resolve()
@@ -100,11 +138,13 @@ def main():
             notice('KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw[:2048]).decode())
             notice(f'KERNEL_SHA256={expected}; SERIAL_SHA256={hashlib.sha256(raw).hexdigest()}; SERIAL_BYTES={len(raw)}')
         notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; userspace={metrics["linux_userspace_ready_ms"]} ms; IRQ0 injections={metrics["irq0_injections"]}; stopped={metrics["stopped_ms"]} ms; ANDROID BOOT=false; engine output: '+p.stderr[-1300:])
+    filesystem=filesystem_checkpoint(exe,kernel,cmd,config) if disk_enabled else {'verified':False,'reason':'no VirtIO drivers'}
     summary={'schema':1,'target':'approximately 100 seconds from emulator launch to usable, verified Android Home',
         'target_ms':100000,'target_verified':False,'android_home_ready_ms':None,
         'scope':'hosted Windows Server 2022, tiny Linux diagnostic PID1 only; no general Linux distribution; NOT Windows 10/Android boot performance',
         'linux_userspace_checkpoint_verified':True,
         'virtio_linux_block_persistence_verified':disk_enabled,
+        'ext4_file_persistence':filesystem,
         'virtio_scope':'raw block device IO and separate engine/guest boots; no filesystem, crash or Android certification' if disk_enabled else 'legacy kernel regression only; VirtIO drivers absent',
         'linux_userspace_median_ms':statistics.median(s['metrics']['linux_userspace_ready_ms'] for s in samples),
         'linux_banner_median_ms':statistics.median(s['metrics']['linux_banner_ms'] for s in samples),
