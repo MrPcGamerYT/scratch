@@ -45,6 +45,7 @@ def main():
         assert 'Unsupported kernel port 0x61' not in p.stderr,p.stderr
         assert not any(word in metrics['stop_reason'].lower() for word in ['deadline','exit budget']),metrics
         assert metrics['pic_accesses']>0,metrics
+        assert metrics['pit0_programs']>0 and metrics['irq0_injections']>0,metrics
         assert 'Unsupported kernel port 0xa1' not in p.stderr,p.stderr
         assert 'Unsupported kernel port 0x70' not in p.stderr,p.stderr
         assert metrics['total_boot_verified'] is False
@@ -56,6 +57,8 @@ def main():
         assert metrics['serial_bytes']==len(raw)
         assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
         if index==0:
+            notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-5000:]).decode())
+            notice('NATIVE_TIMING='+json.dumps(metrics))
             notice('KERNEL_SERIAL_PREFIX_BASE64='+base64.b64encode(raw[:2048]).decode())
             notice(f'KERNEL_SHA256={expected}; SERIAL_SHA256={hashlib.sha256(raw).hexdigest()}; SERIAL_BYTES={len(raw)}')
         notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; PIT programs={metrics["pit_channel2_programs"]}; stopped={metrics["stopped_ms"]} ms; FULL BOOT=false; blocker: '+p.stderr[-1300:])

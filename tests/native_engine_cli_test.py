@@ -38,6 +38,7 @@ with tempfile.TemporaryDirectory() as folder:
         for _ in range(3):
             run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
             run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke')
+        print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
         print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
         print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)

@@ -24,6 +24,11 @@ impl EarlyPlatform {
             if io.size!=1 {return Err("RTC accesses must be bytes".into());}
             return self.rtc.access(io.port,io.write,io.rax as u8,now_ns).map(|value|value.map(|b|io.input_register(u32::from(b))));
         }
+        // No ISA DMA device is present. Linux i8237A probes PAGE_0 for 0xff.
+        // These are absent-device reads, not a DMA transfer implementation.
+        if [0x81,0x82,0x83,0x87,0x89,0x8a,0x8b,0x8f].contains(&io.port)&&!io.write&&io.size==1 {
+            return Ok(Some(io.input_register(0xff)));
+        }
         self.uart.access(io)
     }
 }
@@ -40,6 +45,14 @@ mod tests {
         bus.access(io(0x70,1,true,0x0d),0).unwrap();
         assert_eq!(bus.access(io(0x71,1,false,0xab00),0).unwrap(),Some(0xab80));
         assert!(bus.uart.output.is_empty());assert_eq!(bus.pic.accesses,1);
+    }
+    #[test] fn absent_isa_dma_probes_never_expose_host_hardware() {
+        let mut bus=EarlyPlatform::default();
+        for port in [0x81,0x82,0x83,0x87,0x89,0x8a,0x8b,0x8f] {
+            assert_eq!(bus.access(io(port,1,false,0x1200),0).unwrap(),Some(0x12ff));
+            assert!(bus.access(io(port,1,true,0),0).is_err());
+            assert!(bus.access(io(port,2,false,0),0).is_err());
+        }
     }
     #[test] fn chipset_rejects_wide_io_and_unknown_ports() {
         let mut bus=EarlyPlatform::default();
