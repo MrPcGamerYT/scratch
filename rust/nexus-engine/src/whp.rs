@@ -323,13 +323,13 @@ mod windows {
         platform.pic.acknowledge()?;Ok(Some(vector))
     }
     #[derive(Clone,Copy,PartialEq)]
-    enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve}
+    enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve,NativeBridge}
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
         run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>)->Result<(),String> {
         let (goal,display)=run;let mut last_frame=std::time::Instant::now();
         let fixture=goal==RunGoal::TimerFixture;
-        let limit=if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve) {120000} else {30000};
+        let limit=if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
@@ -346,11 +346,18 @@ mod windows {
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
+                    if let Some(bridge)=&mut platform.bridge {
+                        bridge.tick()?;
+                        if goal==RunGoal::NativeBridge&&bridge.client.complete() {
+                            println!("NATIVE_BRIDGE_QUERY_OK app={} transport=private-COM2; Android actions/install/network/audio not verified",bridge.client.app().unwrap_or("-"));
+                            return Ok(Ok(()));
+                        }
+                    }
                     if let Some((_,session))=display {
                         if platform.uart.can_receive() {if let Some(byte)=session.next_byte() {platform.uart.receive(byte)?;}}
                     }
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
-                    if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
+                    if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,3=>trace.irq3_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
                     if runs>=250000 {break;}
@@ -409,7 +416,9 @@ mod windows {
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,_,surface| {
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,(RunGoal::Diagnostic,surface.zip(plan.player.as_deref())),None)
+            let mut platform=crate::platform::EarlyPlatform::default();
+            if plan.bridge_probe {platform.bridge=Some(crate::bridge::Device::default());}
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None)
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -419,9 +428,10 @@ mod windows {
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
             let mut platform=crate::platform::EarlyPlatform::default();
+            if plan.bridge_probe {platform.bridge=Some(crate::bridge::Device::default());}
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk))
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk))
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}

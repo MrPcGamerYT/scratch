@@ -5,7 +5,7 @@ PID1 proves getpid and two real nanosleep returns via /dev/kmsg markers.
 import struct
 
 
-def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False):
+def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False):
     if filesystem and disk_write is None:
         raise ValueError("Filesystem fixture requires an explicit write/read mode")
     base = 0x400000
@@ -158,6 +158,34 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
         branch(b'\x0f\x85', 'fail')
         display_marker=b'NEXUS_FB0_PATTERN_WRITTEN\n'
         log('displaymarker',display_marker)
+    if bridge:
+        emit(b'\xb8\x02\x00\x00\x00')
+        address(b'\x48\xbf','bridgepath')
+        emit(b'\xbe\x02\x00\x00\x00\x31\xd2\x0f\x05\x85\xc0')
+        branch(b'\x0f\x88','fail')
+        emit(b'\x41\x89\xc4')  # r12d=private tty fd
+        emit(b'\xb8\x10\x00\x00\x00\x44\x89\xe7\xbe\x02\x54\x00\x00')
+        address(b'\x48\xba','bridgetermios')
+        emit(b'\x0f\x05\x85\xc0');branch(b'\x0f\x85','fail')
+        def bridge_write(name,body):
+            emit(b'\xb8\x01\x00\x00\x00\x44\x89\xe7')
+            address(b'\x48\xbe',name)
+            emit(b'\xba'+struct.pack('<I',len(body))+b'\x0f\x05\x3d'+struct.pack('<I',len(body)))
+            branch(b'\x0f\x85','fail')
+        greeting=b'NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK\n'
+        answer=b'NEXUS 1 APP org.nexus.fixture\nNEXUS 1 RESULT QUERY_APP OK\n'
+        query=b'NEXUS 1 QUERY_APP\n'
+        bridge_write('bridgehello',greeting)
+        address(b'\x49\xbe','bridgequery')  # r14 expected pointer
+        emit(b'\x41\xbf'+struct.pack('<I',len(query)))
+        label('bridgeread')
+        emit(b'\x31\xc0\x44\x89\xe7');address(b'\x48\xbe','bridgebyte')
+        emit(b'\xba\x01\x00\x00\x00\x0f\x05\x48\x83\xf8\x01');branch(b'\x0f\x85','fail')
+        address(b'\x48\xbb','bridgebyte');emit(b'\x8a\x03\x41\x3a\x06');branch(b'\x0f\x85','fail')
+        emit(b'\x49\xff\xc6\x41\xff\xcf');branch(b'\x0f\x85','bridgeread')
+        bridge_marker=b'NEXUS_PRIVATE_COM2_EXACT_QUERY_MATCH\n'
+        log('bridgemarker',bridge_marker)
+        bridge_write('bridgeanswer',answer)
     log('ready', ready)
     label('pause')
     emit(b'\xb8\x22\x00\x00\x00\x0f\x05')
@@ -187,6 +215,12 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
                           ('displaymarker',display_marker)]:
             label(name)
             emit(data)
+    if bridge:
+        cc=bytearray(20);cc[7]=1  # c_line then NCCS: VMIN index 6.
+        for name,body in [('bridgepath',b'/dev/ttyS1\0'),('bridgetermios',struct.pack('<IIII',0,0,0x8bd,0)+cc),
+                          ('bridgehello',greeting),('bridgequery',query),('bridgeanswer',answer),
+                          ('bridgebyte',bytes(1)),('bridgemarker',bridge_marker)]:
+            label(name);emit(body)
     for offset, name in absolute:
         struct.pack_into('<Q', code, offset, entry + labels[name])
     for offset, name in relative:
@@ -194,7 +228,7 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
     size = 120 + len(code)
     header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01\x01'+bytes(9), 2, 62, 1,
                          entry, 64, 0, 0, 64, 56, 1, 0, 0, 0)
-    segment = struct.pack('<IIQQQQQQ', 1, 7 if disk_write is not None or display else 5, 0, base, base, size, size, 4096)
+    segment = struct.pack('<IIQQQQQQ', 1, 7 if disk_write is not None or display or bridge else 5, 0, base, base, size, size, 4096)
     return header + segment + code
 
 
@@ -207,11 +241,12 @@ def newc(name, mode, body=b'', rmajor=0, rminor=0, inode=1):
     return data + bytes(-len(data) % 4)
 
 
-def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False):
+def initramfs(disk_write=None, filesystem=False, clean_unmount=True, display=False, bridge=False):
     return (newc('dev', 0o40755, inode=1) + newc('dev/console', 0o20600, rmajor=5, rminor=1, inode=2)
             + newc('dev/kmsg', 0o20600, rmajor=1, rminor=11, inode=3)
+            + (newc('dev/ttyS1',0o20600,rmajor=4,rminor=65,inode=7) if bridge else b'')
             + (newc('mnt', 0o40755, inode=6) if filesystem else b'')
-            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display), inode=4) + newc('TRAILER!!!', 0, inode=5))
+            + newc('init', 0o100755, init_elf(disk_write, filesystem, clean_unmount, display, bridge), inode=4) + newc('TRAILER!!!', 0, inode=5))
 
 
 if __name__ == '__main__':

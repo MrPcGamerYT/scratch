@@ -1,14 +1,16 @@
 //! Early bring-up platform; not a complete PC chipset. Host ports never exposed.
 use crate::{ata::AtaPio,io::IoExit,pit::Pit2,pit0::Pit0,pic::PicPair,rtc::Rtc,uart::EarlyUart};
 #[derive(Default)]
-pub struct EarlyPlatform {pub pci:crate::pci::EmptyPci,pub uart:EarlyUart,pub pit:Pit2,pub pit0:Pit0,pub pic:PicPair,pub rtc:Rtc,pub ata:Option<AtaPio>}
+pub struct EarlyPlatform {pub bridge:Option<crate::bridge::Device>,pub pci:crate::pci::EmptyPci,pub uart:EarlyUart,pub pit:Pit2,pub pit0:Pit0,pub pic:PicPair,pub rtc:Rtc,pub ata:Option<AtaPio>}
 impl EarlyPlatform {
     pub fn tick(&mut self,now_ns:u64) {
+        if let Some(bridge)=&self.bridge {self.pic.set_irq3(bridge.uart.irq_asserted());}
         self.pic.set_irq4(self.uart.irq_asserted());
         if self.pit0.poll(now_ns) {self.pic.raise_irq0();}
     }
     pub fn access(&mut self,io:IoExit,now_ns:u64)->Result<Option<u64>,String> {
         self.tick(now_ns);
+        if (0x2f8..=0x2ff).contains(&io.port) {if let Some(bridge)=&mut self.bridge {return bridge.access(io);}}
         if io.port==0xcf8||(0xcfc..=0xcff).contains(&io.port) {return self.pci.access(io);}
         if (0x1f0..=0x1f7).contains(&io.port)||io.port==0x3f6 {
             if let Some(ata)=&mut self.ata {return ata.access(io);}
