@@ -21,9 +21,9 @@ impl IoApic {
                     if self.select%2==1 {self.entries[n]=(self.entries[n]&0xffffffff)|(u64::from(value&0xff000000)<<32);}
                     else {
                         // Do not silently accept lowest-priority/NMI/ExtINT delivery.
-                        if value&0x700!=0||value&!0x1efff!=0 {return Err("Unsupported IOAPIC delivery mode/reserved bits".into());}
+                        if (value&0x700>0x100&&value&(1<<16)==0)||value&!0x1efff!=0 {return Err(format!("Unsupported IOAPIC delivery mode/reserved bits: reg=0x{:x} value=0x{value:x}",self.select));}
                         if value&255<16&&value&(1<<16)==0 {return Err("Invalid IOAPIC fixed vector".into());}
-                        self.entries[n]=(self.entries[n]&!0xffffffff)|u64::from(value&0x1a8ff);
+                        self.entries[n]=(self.entries[n]&!0xffffffff)|u64::from(value&0x1afff);
                     }Ok(())},
                 _=>Err("Read-only or unsupported IOAPIC register".into())},
             _=>Err("Invalid IOAPIC MMIO write".into())}
@@ -49,8 +49,16 @@ impl IoApic {
                 if selected {owners|=1<<index;}
             }
             if owners==0 {continue;}
-            if level {
-                for (index,cpu) in cpus.iter_mut().enumerate() {if owners&(1<<index)!=0 {cpu.request_level(e as u8)?;}}
+            if e&0x700==0x100 {
+                let mut best=None;
+                for (index,cpu) in cpus.iter().enumerate() {if owners&(1<<index)!=0 {
+                    let priority=cpu.read(0xa0)?;
+                    if best.is_none_or(|(_,p)|priority<p) {best=Some((index,priority));}
+                }}
+                owners=1<<best.ok_or("Lowest-priority route has no destination")?.0;
+            } else if e&0x700!=0 {return Err("Unsupported active IOAPIC delivery mode".into());}
+            if level||e&0x700==0x100 {
+                for (index,cpu) in cpus.iter_mut().enumerate() {if owners&(1<<index)!=0 {if level {cpu.request_level(e as u8)?;} else {cpu.request_edge(e as u8)?;}}}
             } else if logical {send_fixed_logical(cpus,0,destination,0,e as u8)?;} else {send_fixed(cpus,0,destination,0,e as u8)?;}
             self.edges[pin]=false;if level {self.owners[pin]=owners;self.vectors[pin]=e as u8;}
         }Ok(())
@@ -91,7 +99,7 @@ mod tests {
         reg(&mut io,0x11,2<<24);reg(&mut io,0x10,0x2842); // active-low logical edge
         io.set_line(0,true).unwrap();io.set_line(0,false).unwrap();io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x42));
         c[1].acknowledge(0x42).unwrap();c[1].eoi();io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
-        assert!(io.write(0x10,0x142).is_err());assert!(io.set_line(24,true).is_err());assert!(io.read(4).is_err());
+        assert!(io.write(0x10,0x242).is_err());assert!(io.set_line(24,true).is_err());assert!(io.read(4).is_err());
         io.write(0,1).unwrap();assert_eq!(io.read(0x10).unwrap(),0x170011);
     }
 }
