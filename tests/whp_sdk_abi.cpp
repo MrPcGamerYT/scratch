@@ -50,3 +50,15 @@ static_assert(offsetof(WHV_EMULATOR_MEMORY_ACCESS_INFO, Data) == 10);
 static_assert(sizeof(WHV_EMULATOR_CALLBACKS) == 48);
 static_assert(offsetof(WHV_EMULATOR_CALLBACKS, WHvEmulatorTranslateGvaPage) == 40);
 static_assert(sizeof(WHV_TRANSLATE_GVA_RESULT) == 8);
+
+// Native software player FFI; mirrored by Rust's windows-only layout tests.
+static_assert(sizeof(WNDCLASSW) == 72);
+static_assert(offsetof(WNDCLASSW, lpfnWndProc) == 8);
+static_assert(offsetof(WNDCLASSW, hInstance) == 24);
+static_assert(offsetof(WNDCLASSW, lpszClassName) == 64);
+static_assert(sizeof(MSG) == 48);
+static_assert(offsetof(MSG, wParam) == 16);
+static_assert(offsetof(MSG, lParam) == 24);
+static_assert(offsetof(MSG, pt) == 36);
+static_assert(sizeof(BITMAPINFOHEADER) == 40);
+static_assert(sizeof(RECT) == 16);
