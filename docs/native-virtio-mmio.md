@@ -4,8 +4,9 @@
 
 `virtio_mmio.rs` implements a transport-independent modern VirtIO-MMIO v2
 register and queue-service model over the validated split queue/COW block core.
-It is **not yet mapped into a WHP guest**. The tests call the register API directly;
-no Linux VirtIO driver or WHP memory instruction emulator accessed these registers.
+The model tests call the register API directly. A separate live WHP fixture now
+maps the device page through the Windows SDK instruction emulator; the normal
+Linux boot path does not yet expose it.
 
 Tested commit `028056d`:
 
@@ -21,7 +22,7 @@ memory and storage tests remain green. No Android image or user disk was modifie
 
 - Magic `0x74726976`, version 2, device ID 2 (block), local NEXS vendor label.
 - Feature selectors and negotiated lower/upper feature words. Advertises
-  VERSION_1 and FLUSH, plus RO for a read-only device. No packed rings, indirect
+  VERSION_1, FLUSH, SIZE_MAX (128 KiB) and SEG_MAX (one data segment), plus RO for a read-only device. No packed rings, indirect
   descriptors, EVENT_IDX, multiple queues or asynchronous workers advertised.
 - ACKNOWLEDGE/DRIVER/FEATURES_OK/DRIVER_OK status handling. Unsupported/missing
   version features clear FEATURES_OK. Features lock after acceptance; invalid
@@ -66,10 +67,30 @@ COW, resets/tears down the model, reopens the overlay and reads the saved bytes
 through a newly negotiated model. The base bytes remain unchanged. This is a
 host model/integration test, **not guest MMIO execution or a filesystem test**.
 
+## Live WHP register bridge
+
+Commit `c06ccaa` passed foundation **45759109225** on Windows and Ubuntu, including
+strict Clippy, SDK ABI assertions, release builds and three repetitions of the
+new live `mmio-smoke` contract. Actual protected32 and long64 guests read/write
+registers at GPA `0xd0000000`, negotiate features, ignore read-only writes and
+reset the device. Long-mode execution forces the SDK emulator to fetch instructions
+through a nonidentity virtual mapping, exercising translation and RAM callbacks.
+The adapter owns its SDK callback table for the emulator lifetime and contains
+callback errors/panics. RAM callbacks support up to eight bytes; register callbacks
+are limited explicitly to one, two or four bytes.
+
+This does **not** exercise queue DMA, disk requests, VirtIO interrupt delivery or
+Linux device discovery. The separate model tests still provide queue/COW evidence.
+
+Hardening commit `64296d8` additionally rejects oversized register accesses before
+scalar conversion. Foundation **45759258169** and Linux regression **45759258205**
+both passed at that exact commit; the latter reached diagnostic PID1 in three
+boots, not Android Home or VirtIO disk discovery.
+
 ## Remaining integration gates
 
-1. WHP unmapped-GPA memory-access exits and instruction-emulator callbacks, with
-   exact SDK ABI/lifetime checks and a real vCPU register-access test.
+1. Connect the verified WHP instruction-emulator adapter to the real Linux run
+   loop and queue service; the current live fixture only tests registers.
 2. A safe adapter from host-mapped guest RAM to the checked memory API. All vCPUs
    and workers must be stopped for current service; concurrent DMA/Acquire-Release
    atomics and SMP support are not implemented by adding ordinary Rust slices.

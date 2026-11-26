@@ -6,6 +6,19 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## WHP MMIO register bridge checkpoint
+
+Code `64296d8` passed Windows/Ubuntu foundation **45759258169** and the three-boot
+Linux diagnostic regression **45759258205**. The new live CPU fixture verifies
+modern VirtIO-MMIO register reads/writes in protected32 and long64, negotiation,
+reset, read-only write handling and forced SDK instruction fetching through a
+nonidentity mapping. Transfer limits are advertised as SIZE_MAX=128 KiB and
+SEG_MAX=1. See `native-virtio-mmio.md` for evidence and integration boundaries.
+
+The normal Linux loop still has no VirtIO disk: queue DMA/service, dedicated
+interrupt routing and `/dev/vda` persistence remain integration gates. This is
+not Android readiness, an ANR fix or achievement of the 100-second goal.
+
 ## Latest update: storage bring-up and revised target
 
 The user has revised the goal to **approximately 100 seconds from launch to
