@@ -3,6 +3,9 @@
 pub mod image;
 pub mod kernel;
 pub mod uart;
+pub mod pit;
+pub mod platform;
+pub mod timing;
 pub mod cpu;
 pub mod boot;
 pub mod io;

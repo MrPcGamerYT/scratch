@@ -278,20 +278,31 @@ mod windows {
             Ok(())
         })
     }
-    pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write)->Result<(),String> {
+    pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,_| {
-            let mut uart=crate::uart::EarlyUart::default();
+            let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+            trace.vm_ready_ms=Some(elapsed_ms());
+            let mut platform=crate::platform::EarlyPlatform::default();
             let (result,timed_out)=bounded(partition,30000,|| {
                 for _ in 0..250000 {
-                    let context=run_once(partition)?;
+                    if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
+                    let context=run_once(partition)?;trace.exits+=1;
                     match context.reason() {
                         2=>{
                             let io=crate::io::IoExit::decode(&context.0)?;
                             let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
                             let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
-                            let before=uart.output.len();let input=uart.access(io)?;
-                            serial.write_all(&uart.output[before..]).map_err(|e|e.to_string())?;
-                            if uart.output.last()==Some(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
+                            let before=platform.uart.output.len();
+                            let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                            let response=platform.access(io,now_ns);
+                            trace.pit_programs=platform.pit.programs;trace.pit_accesses=platform.pit.accesses;
+                            let input=response.map_err(|e|format!("{e}; mode={mode:?}, RIP=0x{:x}",io.rip))?;
+                            let emitted=&platform.uart.output[before..];
+                            if !emitted.is_empty() {
+                                serial.write_all(emitted).map_err(|e|e.to_string())?;
+                                trace.observe_serial(emitted,elapsed_ms());
+                                if emitted.contains(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
+                            }
                             if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
                             else {set_registers(partition,&[0x10],&[rip])?;}
                         }
@@ -353,4 +364,4 @@ pub fn long_smoke()->Result<(),String> {Err("Direct WHP long-mode test requires 
 #[cfg(not(windows))]
 pub fn kernel_contract_smoke()->Result<(),String> {Err("Direct WHP kernel contract test requires Windows 10 x64".into())}
 #[cfg(not(windows))]
-pub fn boot_kernel(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write)->Result<(),String> {Err("Direct WHP kernel execution requires Windows 10 x64".into())}
+pub fn boot_kernel(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant)->Result<(),String> {Err("Direct WHP kernel execution requires Windows 10 x64".into())}

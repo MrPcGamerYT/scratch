@@ -1,6 +1,6 @@
 use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
-fn execute(args:&[String])->Result<(),String> {
+fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     match args.get(1).map(String::as_str) {
         Some("import-raw") if args.len()==4 => {
             image::import_raw(Path::new(&args[2]),Path::new(&args[3])).map_err(|e|e.to_string())?;
@@ -28,9 +28,17 @@ fn execute(args:&[String])->Result<(),String> {
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()==6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],kernel::DEFAULT_RAM)?;
+            use std::io::Write;
+            let mut trace=nexus_engine::timing::BootTrace {header_validated_ms:Some(start.elapsed().as_millis() as u64),..Default::default()};
             let mut log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
+            let mut timings=std::fs::OpenOptions::new().create_new(true).write(true).open(format!("{}.timing.json",args[3])).map_err(|e|e.to_string())?;
             eprintln!("Starting experimental Linux entry at 0x{:x}; polled serial log: {}. Full kernel/platform boot is NOT implemented.",plan.entry,args[3]);
-            whp::boot_kernel(&plan,&mut log)
+            let result=whp::boot_kernel(&plan,&mut log,&mut trace,start);
+            trace.stopped_ms=Some(start.elapsed().as_millis() as u64);
+            trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||"No completed-boot protocol implemented".into());
+            timings.write_all(trace.json().as_bytes()).map_err(|e|e.to_string())?;
+            timings.flush().map_err(|e|e.to_string())?;
+            result
         }
         Some("boot-test-sector") if args.len()==3 => {
             let console=whp::boot_test_sector(Path::new(&args[2]))?;
@@ -38,10 +46,10 @@ fn execute(args:&[String])->Result<(),String> {
             println!("No BIOS, UEFI or disk-device services. This is NOT an Android boot."); Ok(())
         }
         Some("capabilities") if args.len()==2 => {
-            println!("Independent Rust foundation; QEMU dependency: none\nZLAG raw-disk import / validation / sector reads: implemented\nDirect Windows WHP partition lifecycle: implemented, host-dependent\nBounded real-mode WHP CPU/RAM smoke: implemented, host-dependent\nPrivate scalar port-I/O test bus / bounded cancellation: implemented, host-dependent\nZLAG first-sector test loader at 0000:7c00: implemented, no BIOS services\nSeeded protected/long-mode test startup with paging and guest software interrupt: implemented, host-dependent\nLinux bzImage validation, boot-parameter loader and experimental entry: implemented; full Linux boot NOT VERIFIED\nFirmware / full platform devices / Android boot: NOT IMPLEMENTED\nGuest DirectX / OpenGL / Vulkan acceleration: NOT IMPLEMENTED\nNo performance or game-compatibility certification"); Ok(())
+            println!("Independent Rust foundation; QEMU dependency: none\nZLAG raw-disk import / validation / sector reads: implemented\nDirect Windows WHP partition lifecycle: implemented, host-dependent\nBounded real-mode WHP CPU/RAM smoke: implemented, host-dependent\nPrivate scalar port-I/O test bus / bounded cancellation: implemented, host-dependent\nZLAG first-sector test loader at 0000:7c00: implemented, no BIOS services\nSeeded protected/long-mode test startup with paging and guest software interrupt: implemented, host-dependent\nLinux bzImage loader, polled COM1, clocked PIT channel2 mode0 and boot checkpoints: implemented; full Linux boot NOT VERIFIED\nFirmware / full platform devices / Android boot: NOT IMPLEMENTED\nGuest DirectX / OpenGL / Vulkan acceleration: NOT IMPLEMENTED\nNo performance or game-compatibility certification"); Ok(())
         }
         Some("boot") => Err("Android boot is not implemented. Refusing to pretend this is a working emulator or launch QEMU.".into()),
         _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | boot-test-sector <test.zlag> | kernel-contract-smoke | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | capabilities".into())
     }
 }
-fn main() { if let Err(error)=execute(&std::env::args().collect::<Vec<_>>()) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }
+fn main() { let start=std::time::Instant::now(); if let Err(error)=execute(&std::env::args().collect::<Vec<_>>(),start) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }
