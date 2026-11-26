@@ -233,3 +233,14 @@ unchanged. Foundation **45755799925** and diagnostic Linux **45755800012** passe
 See [native-writable-storage.md](native-writable-storage.md). This supersedes the
 absence of an overlay backend, not the pending Android disk integration,
 IRQ/batched block device, production overlay lifecycle or app-stability work.
+
+
+## VirtIO block request-core milestone
+
+At `5ad788c`, checked scatter/gather RAM, bounded split descriptor parsing and
+IN/OUT/FLUSH request execution over the persistent COW backend passed 16 new
+tests. Foundation **45757147913** and diagnostic Linux regression **45757147928**
+passed. These do not expose a VirtIO device to Linux or prove `/dev/vda` access.
+MMIO transport, negotiation, WHP adaptation and level IRQ routing remain next.
+See [native-virtio-block.md](native-virtio-block.md); Android/GPU/Home timing and
+app-stability claims remain unverified.

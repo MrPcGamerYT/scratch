@@ -51,6 +51,25 @@ integration, IRQ/batched IO, quotas/compaction and filesystem-level validation
 remain necessary. The per-word PIO/per-sector-sync implementation is a correctness
 prototype, not a measured fast storage path or an app-freeze fix.
 
+### New: validated VirtIO block queue/request core
+
+At `5ad788c`, a new checked scatter/gather RAM API, bounded split queue parser and
+VirtIO IN/OUT/FLUSH executor passed **16 new tests**. Requests reach the existing
+COW backend; a file-backed write/flush/close/reopen/read test preserves base bytes.
+Malformed GPA ranges, loops, aliasing, bad permissions and oversized requests
+are rejected before backend access. Invalid status tails are never guessed.
+
+Foundation **45757147913** passed Windows/Ubuntu tests and existing WHP contracts;
+Linux regression **45757147928** passed the existing diagnostic PID1 boots.
+These are host-side VirtIO core tests, **not** Linux `/dev/vda` discovery.
+The memory API requires stopped vCPUs/workers; concurrent DMA memory ordering
+is not implemented. MMIO transport, negotiation, queue lifecycle and level IRQ
+routing are the next dependencies. No VirtIO disk is advertised to Linux yet.
+
+See [native-virtio-block.md](native-virtio-block.md) for the exact implemented
+subset and remaining acceptance gate. Android Home, app-freeze diagnosis,
+slimming, GPU/player integration and the 100-second target remain unfinished.
+
 ## Implemented and verified in this work
 
 ### 1. Linux timer, interrupts and userspace
