@@ -100,15 +100,15 @@ mod windows {
         with_guest_at(code,0,4096,action)
     }
     fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
-        with_guest_profile(code,entry,ram_bytes,false,action)
+        with_guest_profile(code,entry,ram_bytes,(1,false),action)
     }
-    fn with_guest_profile<T>(code:&[u8],entry:usize,ram_bytes:usize,apic:bool,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+    fn with_guest_profile<T>(code:&[u8],entry:usize,ram_bytes:usize,profile:(u32,bool),action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
-        let partition=create_machine(1,apic)?;
+        let partition=create_machine(profile.0,profile.1)?;
         let memory=allocate(&partition,ram_bytes)?;
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>().add(entry),code.len()); }
-        unsafe { check(WHvCreateVirtualProcessor(partition.0,0,0),"WHvCreateVirtualProcessor")?; }
-        let _processor=Processor(&partition,0);
+        let mut processors=Vec::new();
+        for index in 0..profile.0 {unsafe {check(WHvCreateVirtualProcessor(partition.0,index,0),"WHvCreateVirtualProcessor")?;}processors.push(Processor(&partition,index));}
         let names=[0x1c,0x1e,0x1f,0x13,0x15,0x12,0x14,0x10,0x11,0x00];
         let values=[Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),Register::scalar(entry as u64),Register::scalar(2),Register::scalar(0)];
         set_registers(&partition,&names,&values)?;
@@ -351,12 +351,12 @@ mod windows {
         plan.validate_regions()?;
         // Claim the capture exclusively before starting a VM or allowing disk writes.
         let mut output=plan.framebuffer_output.as_ref().map(|path|std::fs::OpenOptions::new().create_new(true).write(true).open(path).map_err(|e|e.to_string())).transpose()?;
-        with_guest_profile(&[],0,plan.ram_bytes,plan.apic_probe,|partition,memory| {
+        with_guest_profile(&[],0,plan.ram_bytes,(plan.cpu_count,plan.apic_probe),|partition,memory| {
             for region in &plan.regions {
                 unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
             }
             if plan.apic_probe {
-                let tables=crate::firmware::mp_tables(1)?;
+                let tables=crate::firmware::mp_tables(plan.cpu_count)?;
                 unsafe {std::ptr::copy_nonoverlapping(tables.as_ptr(),memory.address.cast::<u8>().add(crate::firmware::MP_BASE),tables.len());}
             }
             let clock_command=plan.command_with_tsc_hz(partition.1)?;
