@@ -22,7 +22,7 @@ mod windows {
     #[link(name="d3d11")] extern "system" {
         fn D3D11CreateDevice(adapter:Ptr,driver:u32,software:Ptr,flags:u32,levels:*const u32,count:u32,sdk:u32,device:*mut Ptr,level:*mut u32,context:*mut Ptr)->i32;
     }
-    #[link(name="d3dcompiler_47")] extern "system" {
+    #[link(name="d3dcompiler")] extern "system" {
         fn D3DCompile(source:*const u8,bytes:usize,name:*const u8,defines:Ptr,include:Ptr,entry:*const u8,target:*const u8,flags:u32,effect_flags:u32,code:*mut Ptr,errors:*mut Ptr)->i32;
     }
     struct Com(Ptr);
