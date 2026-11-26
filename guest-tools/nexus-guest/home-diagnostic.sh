@@ -6,7 +6,10 @@ candidates=$(timeout 10 cmd package query-activities --brief --components --user
 printf '%s\n' "$candidates"
 echo NEXUS_HOME_CANDIDATES_END
 # Use only a component returned by PackageManager, not an invented package name.
-component=$(printf '%s\n' "$candidates" | grep -E '^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$' | grep -v '^android/' | head -n 1)
+eligible=$(printf '%s\n' "$candidates" | grep -E '^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$' | grep -v -E '^(android|com.android.provision|com.android.settings)/')
+# PackageManager ordering is not a preference; provision/fallback aren't launchers.
+component=$(printf '%s\n' "$eligible" | grep '^com.android.launcher3/' | head -n 1)
+if [ -z "$component" ]; then component=$(printf '%s\n' "$eligible" | head -n 1); fi
 if [ -n "$component" ]; then
     echo "NEXUS_HOME_SELECTED $component"
     if ! timeout 10 cmd package set-home-activity --user 0 "$component"; then
