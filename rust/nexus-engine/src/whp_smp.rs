@@ -80,6 +80,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize)->Result<u32,String> {
     for _ in 0..256 {
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
+        if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()!=1 {return Ok(exit.reason());}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
         let hr=unsafe {WHvEmulatorTryMmioEmulation(emulator.handle,(&mut ctx as *mut ApicContext).cast(),exit.0[8..].as_ptr(),access.0.as_ptr(),&mut status)};

@@ -87,3 +87,12 @@ static_assert(WHvX64LocalApicEmulationModeXApic == 1);
 static_assert(WHvX64RegisterApicBase == 0x2003);
 static_assert(WHvRegisterInternalActivityState == 0x80000005);
 static_assert(sizeof(WHV_INTERNAL_ACTIVITY_REGISTER) == 8);
+
+static_assert(WHvPartitionPropertyCodeExtendedVmExits == 1);
+static_assert(WHvPartitionPropertyCodeCpuidExitList == 0x1003);
+static_assert(WHvRunVpExitReasonX64Cpuid == 0x1001);
+static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, CpuidAccess) == 48);
+static_assert(sizeof(WHV_X64_CPUID_ACCESS_CONTEXT) == 64);
+static_assert(sizeof(WHV_INTERRUPT_CONTROL) == 16);
+static_assert(offsetof(WHV_INTERRUPT_CONTROL, Destination) == 8);
+static_assert(offsetof(WHV_INTERRUPT_CONTROL, Vector) == 12);

@@ -61,7 +61,7 @@ mod windows {
     fn check(hr:i32, operation:&str)->Result<(),String> {
         if hr < 0 { Err(format!("{operation}: HRESULT 0x{:08x}",hr as u32)) } else { Ok(()) }
     }
-    struct Partition(*mut c_void,u64,u32);
+    struct Partition(*mut c_void,u64,u32,bool);
     impl Drop for Partition { fn drop(&mut self) { unsafe { WHvDeletePartition(self.0); } } }
     fn create()->Result<Partition,String> {create_machine(1,false)}
     fn create_machine(processors:u32,apic:bool)->Result<Partition,String> {
@@ -72,7 +72,7 @@ mod windows {
         if written!=4 || present==0 { return Err("Windows hypervisor unavailable; this is not an Android boot test".into()); }
         let mut handle=std::ptr::null_mut();
         unsafe { check(WHvCreatePartition(&mut handle),"WHvCreatePartition")?; }
-        let mut partition=Partition(handle,0,processors);
+        let mut partition=Partition(handle,0,processors,apic);
         // WHvPartitionPropertyCodeProcessorCount = 0x1fff (Windows SDK).
         unsafe {
             check(WHvSetPartitionProperty(partition.0,0x1fff,(&processors as *const u32).cast(),4),"WHvSetPartitionProperty")?;
@@ -85,6 +85,10 @@ mod windows {
             let native=std::arch::x86_64::__cpuid(0);
             let clocks=crate::tsc::frequency_leaves(hz,[native.eax,native.ebx,native.ecx,native.edx])?;
             check(WHvSetPartitionProperty(partition.0,0x1004,clocks.as_ptr().cast(),(clocks.len()*32) as u32),"WHP TSC CPUID frequency contract")?;
+            let cpuid_exits=1u64;
+            check(WHvSetPartitionProperty(partition.0,1,(&cpuid_exits as *const u64).cast(),8),"WHP CPUID exits")?;
+            let leaves=crate::topology::EXIT_LEAVES;
+            check(WHvSetPartitionProperty(partition.0,0x1003,leaves.as_ptr().cast(),(leaves.len()*4) as u32),"WHP topology exit leaves")?;
             if apic {
                 let mode=1u32;
                 check(WHvSetPartitionProperty(partition.0,0x1005,(&mode as *const u32).cast(),4),"WHP xAPIC mode")?;
@@ -121,10 +125,24 @@ mod windows {
         unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,0,&name,1,&mut result),"WHvGetVirtualProcessorRegisters")?;}
         Ok(u64::from_le_bytes(result.0[..8].try_into().unwrap()))
     }
+    fn handle_cpuid(partition:*mut c_void,index:u32,count:u32,apic:bool,context:&ExitContext)->Result<bool,String> {
+        if context.reason()!=0x1001 {return Ok(false);}
+        let value=|at|u64::from_le_bytes(context.0[at..at+8].try_into().unwrap()) as u32;
+        let d=crate::topology::result(value(48),value(56),index,count,apic,[value(80),value(104),value(88),value(96)])?;
+        let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+        let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
+        let names=[0,3,1,2,0x10];
+        let values=[Register::scalar(u64::from(d[0])),Register::scalar(u64::from(d[1])),Register::scalar(u64::from(d[2])),Register::scalar(u64::from(d[3])),Register::scalar(mode.next_rip(rip,context.0[10]&15)?)];
+        unsafe {check(WHvSetVirtualProcessorRegisters(partition,index,names.as_ptr(),5,values.as_ptr()),"WHP topology CPUID result")?;}
+        Ok(true)
+    }
     fn run_once(partition:&Partition)->Result<ExitContext,String> {
-        let mut context=ExitContext([0;224]);
-        unsafe { check(WHvRunVirtualProcessor(partition.0,0,context.0.as_mut_ptr().cast(),224),"WHvRunVirtualProcessor")?; }
-        Ok(context)
+        for _ in 0..256 {
+            let mut context=ExitContext([0;224]);
+            unsafe { check(WHvRunVirtualProcessor(partition.0,0,context.0.as_mut_ptr().cast(),224),"WHvRunVirtualProcessor")?; }
+            if !handle_cpuid(partition.0,0,partition.2,partition.3,&context)? {return Ok(context);}
+        }
+        Err("Consecutive CPUID exit budget exceeded".into())
     }
     impl ExitContext {
         fn reason(&self)->u32 {u32::from_le_bytes(self.0[..4].try_into().unwrap())}
