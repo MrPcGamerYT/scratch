@@ -1,6 +1,6 @@
 //! Modern VirtIO-MMIO block register/service model. No WHP MMIO interception or IRQ wiring yet.
 //! Synchronous service with all guest CPUs/workers stopped; one direct split queue.
-use crate::{guest_memory::GuestMemory,virtqueue::{SplitQueue,MAX_QUEUE},virtio_block::{BlockBackend,Completion,process_one_negotiated}};
+use crate::{guest_memory::GuestMemory,virtqueue::{SplitQueue,MAX_QUEUE,MAX_TRANSFER},virtio_block::{BlockBackend,Completion,process_one_negotiated}};
 const VERSION_1:u64=1<<32;
 const FLUSH:u64=1<<9;
 const RO:u64=1<<5;
@@ -22,13 +22,16 @@ impl BlockMmio {
         Ok(Self{capacity:capacity_sectors,readonly,features_sel:0,driver_sel:0,driver_features:0,invalid_feature_page:false,
             queue_sel:0,queue:QueueConfig::default(),status:0,interrupt:0,pending:false})
     }
-    fn offered(&self)->u64 {VERSION_1|FLUSH|if self.readonly {RO} else {0}}
+    fn offered(&self)->u64 {VERSION_1|FLUSH|6|if self.readonly {RO} else {0}}
     pub fn irq_asserted(&self)->bool {self.interrupt!=0}
     pub fn work_pending(&self)->bool {self.pending}
     pub fn read(&self,offset:u64,size:u8)->Result<u32,String> {
-        if (0x100..0x108).contains(&offset)&&[1,2,4].contains(&size) {
-            if offset+u64::from(size)>0x108 {return Err("Config read crosses capacity".into());}
-            let bytes=self.capacity.to_le_bytes();let mut out=[0;4];let at=(offset-0x100) as usize;
+        if (0x100..0x200).contains(&offset)&&[1,2,4].contains(&size) {
+            if offset+u64::from(size)>0x200 {return Err("Config read crosses device config space".into());}
+            let mut bytes=[0;256];bytes[..8].copy_from_slice(&self.capacity.to_le_bytes());
+            bytes[8..12].copy_from_slice(&(MAX_TRANSFER as u32).to_le_bytes());
+            bytes[12..16].copy_from_slice(&1u32.to_le_bytes()); // one data segment bounds aggregate request size.
+            let mut out=[0;4];let at=(offset-0x100) as usize;
             out[..size as usize].copy_from_slice(&bytes[at..at+size as usize]);return Ok(u32::from_le_bytes(out));
         }
         if size!=4||offset%4!=0 {return Err("VirtIO registers require aligned 32-bit access".into());}

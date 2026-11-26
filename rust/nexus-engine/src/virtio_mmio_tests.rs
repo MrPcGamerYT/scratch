@@ -17,10 +17,11 @@ impl BlockBackend for Disk {
 }
 #[test] fn identity_selectors_config_byte_reads_and_access_shapes() {
     let mut d=BlockMmio::new(0x123456789,false).unwrap();
-    for (offset,value) in [(0,0x74726976),(4,2),(8,2),(0x10,512),(0x34,256),(0xfc,0)] {assert_eq!(d.read(offset,4).unwrap(),value);}
+    for (offset,value) in [(0,0x74726976),(4,2),(8,2),(0x10,518),(0x34,256),(0xfc,0)] {assert_eq!(d.read(offset,4).unwrap(),value);}
     write(&mut d,0x14,1);assert_eq!(d.read(0x10,4).unwrap(),1);write(&mut d,0x14,u32::MAX);assert_eq!(d.read(0x10,4).unwrap(),0);
     assert_eq!(d.read(0x100,4).unwrap(),0x23456789);assert_eq!(d.read(0x104,4).unwrap(),1);assert_eq!(d.read(0x101,1).unwrap(),0x67);
-    assert!(d.read(0x107,2).is_err());assert!(d.read(0,1).is_err());assert!(d.read(1,4).is_err());assert!(d.write(0x100,4,0).is_err());assert!(d.write(0x14,2,0).is_err());
+    assert_eq!(d.read(0x108,4).unwrap(),128*1024);assert_eq!(d.read(0x10c,4).unwrap(),1);assert_eq!(d.read(0x10a,1).unwrap(),2);
+    assert!(d.read(0x1ff,2).is_err());assert!(d.read(0,1).is_err());assert!(d.read(1,4).is_err());assert!(d.write(0x100,4,0).is_err());assert!(d.write(0x14,2,0).is_err());
     write(&mut d,0x30,1);assert_eq!(d.read(0x34,4).unwrap(),0);assert_eq!(d.read(0x44,4).unwrap(),0);
     assert!(BlockMmio::new(0,false).is_err());assert!(BlockMmio::new(u64::MAX,false).is_err());
 }

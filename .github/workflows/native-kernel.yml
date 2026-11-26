@@ -16,6 +16,7 @@ on:
       - 'rust/nexus-engine/src/pit.rs'
       - 'rust/nexus-engine/src/pit0.rs'
       - 'rust/nexus-engine/src/whp.rs'
+      - 'rust/nexus-engine/src/whp_mmio.rs'
       - 'rust/nexus-engine/src/pic.rs'
       - 'rust/nexus-engine/src/rtc.rs'
       - 'rust/nexus-engine/src/platform.rs'

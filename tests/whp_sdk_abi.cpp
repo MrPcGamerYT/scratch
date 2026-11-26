@@ -38,3 +38,15 @@ static_assert(offsetof(WHV_X64_SEGMENT_REGISTER, Selector) == 12);
 static_assert(WHvRegisterPendingInterruption == 0x80000000);
 static_assert(WHvX64PendingInterrupt == 0);
 static_assert(sizeof(WHV_X64_PENDING_INTERRUPTION_REGISTER) == 8);
+
+#include <WinHvEmulation.h>
+static_assert(WHvRunVpExitReasonMemoryAccess == 1);
+static_assert(sizeof(WHV_MEMORY_ACCESS_CONTEXT) == 40);
+static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, MemoryAccess) == 48);
+static_assert(offsetof(WHV_MEMORY_ACCESS_CONTEXT, Gpa) == 24);
+static_assert(offsetof(WHV_MEMORY_ACCESS_CONTEXT, Gva) == 32);
+static_assert(sizeof(WHV_EMULATOR_MEMORY_ACCESS_INFO) == 24);
+static_assert(offsetof(WHV_EMULATOR_MEMORY_ACCESS_INFO, Data) == 10);
+static_assert(sizeof(WHV_EMULATOR_CALLBACKS) == 48);
+static_assert(offsetof(WHV_EMULATOR_CALLBACKS, WHvEmulatorTranslateGvaPage) == 40);
+static_assert(sizeof(WHV_TRANSLATE_GVA_RESULT) == 8);

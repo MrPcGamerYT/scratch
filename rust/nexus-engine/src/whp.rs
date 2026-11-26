@@ -3,6 +3,7 @@
 #[cfg(windows)]
 mod windows {
     use std::ffi::c_void;
+    include!("whp_mmio.rs");
     #[link(name = "WinHvPlatform")]
     extern "system" {
         fn WHvGetCapability(code:u32, buffer:*mut c_void, size:u32, written:*mut u32)->i32;
@@ -523,3 +524,8 @@ pub fn ata_pio_smoke(_path:&std::path::Path)->Result<(),String> {Err("ATA guest 
 pub use windows::ata_cow_smoke;
 #[cfg(not(windows))]
 pub fn ata_cow_smoke(_base:&std::path::Path,_overlay:&std::path::Path)->Result<(),String> {Err("ATA COW execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::mmio_smoke;
+#[cfg(not(windows))]
+pub fn mmio_smoke()->Result<(),String> {Err("WHP MMIO execution requires Windows x64".into())}

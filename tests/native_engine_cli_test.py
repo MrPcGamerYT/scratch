@@ -37,7 +37,8 @@ with tempfile.TemporaryDirectory() as folder:
         assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
         for _ in range(3):
             run('cpu-smoke'); run('io-smoke'); run('cancel-smoke')
-            run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke')
+            run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke'); run('mmio-smoke')
+        print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, and forced instruction fetch through nonidentity guest paging; three repetitions; not Linux VirtIO disk discovery or IRQ routing',flush=True)
         print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
         print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
         print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
@@ -80,5 +81,5 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
     else:
         run('ata-pio-smoke',target,ok=False)
-        for cmd in ['cpu-smoke','io-smoke','cancel-smoke','protected-smoke','long-smoke','kernel-contract-smoke','timer-irq-smoke']: run(cmd,ok=False)
+        for cmd in ['cpu-smoke','io-smoke','cancel-smoke','protected-smoke','long-smoke','kernel-contract-smoke','timer-irq-smoke','mmio-smoke']: run(cmd,ok=False)
 print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)
