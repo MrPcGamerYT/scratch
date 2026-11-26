@@ -12,6 +12,7 @@ on:
       - 'rust/nexus-engine/src/guest_memory.rs'
       - 'rust/nexus-engine/src/virtqueue.rs'
       - 'rust/nexus-engine/src/virtio_block.rs'
+      - 'rust/nexus-engine/src/virtio_mmio.rs'
       - 'rust/nexus-engine/src/pit.rs'
       - 'rust/nexus-engine/src/pit0.rs'
       - 'rust/nexus-engine/src/whp.rs'

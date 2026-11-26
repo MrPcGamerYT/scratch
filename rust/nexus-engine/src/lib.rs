@@ -6,6 +6,9 @@ pub mod overlay;
 pub mod guest_memory;
 pub mod virtqueue;
 pub mod virtio_block;
+pub mod virtio_mmio;
+#[cfg(test)]
+mod virtio_mmio_tests;
 pub mod kernel;
 pub mod uart;
 pub mod pit;

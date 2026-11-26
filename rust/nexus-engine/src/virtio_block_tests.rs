@@ -1,20 +1,20 @@
 use crate::{guest_memory::{GuestMemory,RamRegion},virtqueue::SplitQueue,virtio_block::{BlockBackend,process_one},image,overlay::Overlay};
-fn put16(r:&mut [u8],at:usize,v:u16) {r[at..at+2].copy_from_slice(&v.to_le_bytes());}
-fn desc(r:&mut [u8],n:usize,address:u64,len:u32,flags:u16,next:u16) {
+pub(super) fn put16(r:&mut [u8],at:usize,v:u16) {r[at..at+2].copy_from_slice(&v.to_le_bytes());}
+pub(super) fn desc(r:&mut [u8],n:usize,address:u64,len:u32,flags:u16,next:u16) {
     let at=0x100+16*n;r[at..at+8].copy_from_slice(&address.to_le_bytes());r[at+8..at+12].copy_from_slice(&len.to_le_bytes());put16(r,at+12,flags);put16(r,at+14,next);
 }
-fn ram(operation:u32)->Vec<u8> {
+pub(super) fn ram(operation:u32)->Vec<u8> {
     let mut r=vec![0;0x8000];desc(&mut r,0,0x1000,16,1,1);desc(&mut r,1,0x2000,512,if operation==0 {3} else {1},2);desc(&mut r,2,0x3000,1,2,0);
     r[0x1000..0x1004].copy_from_slice(&operation.to_le_bytes());r[0x1008..0x1010].copy_from_slice(&1u64.to_le_bytes());r[0x3000]=0xaa;put16(&mut r,0x202,1);r
 }
-fn memory(r:&mut [u8])->GuestMemory<'_> {GuestMemory::new(vec![RamRegion{gpa:0,bytes:r,writable:true}]).unwrap()}
+pub(super) fn memory(r:&mut [u8])->GuestMemory<'_> {GuestMemory::new(vec![RamRegion{gpa:0,bytes:r,writable:true}]).unwrap()}
 fn queue(m:&GuestMemory<'_>)->SplitQueue {SplitQueue::new(m,8,0x100,0x200,0x300).unwrap()}
-fn read(m:&GuestMemory<'_>,at:u64,n:usize)->Vec<u8> {let mut data=vec![0;n];m.read(at,&mut data).unwrap();data}
+pub(super) fn read(m:&GuestMemory<'_>,at:u64,n:usize)->Vec<u8> {let mut data=vec![0;n];m.read(at,&mut data).unwrap();data}
 struct Disk {data:[u8;2048],ops:u32,flushes:u32,fail:bool}
 impl Default for Disk {fn default()->Self {Self{data:[7;2048],ops:0,flushes:0,fail:false}}}
 impl BlockBackend for Disk {
     fn capacity_sectors(&self)->u64 {4}
-    fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}d.copy_from_slice(&self.data[s as usize*512..s as usize*512+d.len()]);Ok(())}
+    pub(super) fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}d.copy_from_slice(&self.data[s as usize*512..s as usize*512+d.len()]);Ok(())}
     fn write(&mut self,s:u64,d:&[u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}self.data[s as usize*512..s as usize*512+d.len()].copy_from_slice(d);Ok(())}
     fn flush(&mut self)->Result<(),String> {self.flushes+=1;if self.fail {Err("injected flush failure".into())} else {Ok(())}}
 }

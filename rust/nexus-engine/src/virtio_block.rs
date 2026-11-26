@@ -30,7 +30,7 @@ pub struct Completion {pub head:u16,pub status:u8,pub written:u32,pub notify:boo
 enum Failure {Unsupported,Io(String)}
 impl From<String> for Failure {fn from(e:String)->Self {Self::Io(e)}}
 impl From<&str> for Failure {fn from(e:&str)->Self {Self::Io(e.into())}}
-fn execute(m:&mut GuestMemory<'_>,chain:&Chain,backend:&mut dyn BlockBackend)->Result<u32,Failure> {
+fn execute(m:&mut GuestMemory<'_>,chain:&Chain,backend:&mut dyn BlockBackend,allow_flush:bool)->Result<u32,Failure> {
     let descriptors=&chain.descriptors;
     if descriptors.len()<2 {return Err("Block request needs header and status".into());}
     let header=descriptors[0];
@@ -38,6 +38,7 @@ fn execute(m:&mut GuestMemory<'_>,chain:&Chain,backend:&mut dyn BlockBackend)->R
     let mut raw=[0;16];m.read(header.address,&mut raw)?;
     let operation=u32::from_le_bytes(raw[..4].try_into().unwrap());let sector=u64::from_le_bytes(raw[8..].try_into().unwrap());
     let data=&descriptors[1..descriptors.len()-1];
+    if operation==4&&!allow_flush {return Err(Failure::Unsupported);}
     if operation==4 { // FLUSH: header + status only; sector is unused by the specification.
         if !data.is_empty() {return Err("FLUSH must not contain data descriptors".into());}
         backend.flush()?;return Ok(1);
@@ -63,11 +64,14 @@ fn execute(m:&mut GuestMemory<'_>,chain:&Chain,backend:&mut dyn BlockBackend)->R
     }
 }
 pub fn process_one(m:&mut GuestMemory<'_>,queue:&mut SplitQueue,backend:&mut dyn BlockBackend)->Result<Option<Completion>,String> {
+    process_one_negotiated(m,queue,backend,true)
+}
+pub fn process_one_negotiated(m:&mut GuestMemory<'_>,queue:&mut SplitQueue,backend:&mut dyn BlockBackend,allow_flush:bool)->Result<Option<Completion>,String> {
     let Some(chain)=queue.peek(m)? else {return Ok(None);};
     // Never report IOERR through an unvalidated/guessed status address.
     let status=chain.descriptors.last().ok_or("Missing status descriptor")?;
     if chain.descriptors.len()<2||!status.writable||status.length!=1 {return Err("Missing valid one-byte writable status tail".into());}
-    let (status_byte,written,error)=match execute(m,&chain,backend) {
+    let (status_byte,written,error)=match execute(m,&chain,backend,allow_flush) {
         Ok(written)=>(0,written,None),Err(Failure::Unsupported)=>(2,1,Some("Unsupported block operation".into())),Err(Failure::Io(e))=>(1,1,Some(e)),
     };
     m.write(status.address,&[status_byte])?;
