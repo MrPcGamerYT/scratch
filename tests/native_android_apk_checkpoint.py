@@ -31,13 +31,15 @@ def main():
             'apk_begin_acknowledged':'NATIVE_BRIDGE_EVENT NEXUS 1 APK NEXT' in p.stdout.splitlines(),
             'anr_baseline_captured':all(marker in serial for marker in ['NEXUS_ANR_BASELINE_BEGIN','NEXUS_ANR_BASELINE_END']) and 'NEXUS_ANR_BASELINE_UNAVAILABLE' not in serial,
             'anr_reproduction_verified':False,
+            'home_candidate_diagnostics_captured':all(marker in serial for marker in ['NEXUS_HOME_CANDIDATES_BEGIN','NEXUS_HOME_CRASH_LOG_END']),
+            'android_home_verified':False,
             'installer_reported_ok':'NATIVE_BRIDGE_EVENT NEXUS 1 RESULT APK_INSTALL OK' in p.stdout.splitlines(),
             'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],
             'base_unchanged':digest(root/'android-system.zlag')==manifest['android-system.zlag']['sha256']}
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
     diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
     critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
-    for label,text in [('HOST',p.stdout+'\n'+p.stderr),('ANR_HOME_INVENTORY',diagnostic[:30000]),('BOOT_DIAGNOSTICS',critical[-60000:]),('SERIAL_TAIL',serial[-12000:])]:
+    for label,text in [('HOST',p.stdout+'\n'+p.stderr),('ANR_HOME_INVENTORY',diagnostic[:30000]),('HOME_DIAGNOSTICS',serial[serial.find('NEXUS_HOME_CANDIDATES_BEGIN'):serial.find('NEXUS_HOME_CRASH_LOG_END')+len('NEXUS_HOME_CRASH_LOG_END')] if 'NEXUS_HOME_CANDIDATES_BEGIN' in serial else 'Home candidate diagnostics absent'),('BOOT_DIAGNOSTICS',critical[-60000:]),('SERIAL_TAIL',serial[-12000:])]:
         for at in range(0,len(text),2800):
             message=f'REAL_APK_{label}_{at}='+text[at:at+2800]
             print('::notice::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)

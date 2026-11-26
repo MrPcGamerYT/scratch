@@ -50,6 +50,7 @@ echo NEXUS_ANDROID_REAL_APK_UNINSTALLED
 echo NEXUS_ANR_BASELINE_BEGIN
 if ! timeout 15 dumpsys activity lastanr; then echo NEXUS_ANR_BASELINE_UNAVAILABLE; fi
 echo NEXUS_ANR_BASELINE_END
+/system/bin/sh /system/bin/nexus-home-check.sh
 echo NEXUS_HOME_REPRO_BEGIN
 if ! timeout 20 am start -W -a android.intent.action.MAIN -c android.intent.category.HOME; then echo NEXUS_HOME_REPRO_UNAVAILABLE; fi
 sleep 10
@@ -79,6 +80,7 @@ done
     sources=[]
     for name,(text,target,mode) in payloads.items():
         source=work/name;source.write_text(text);sources.append((source,target,mode))
+    sources.append((Path('guest-tools/nexus-guest/home-diagnostic.sh'),'/system/bin/nexus-home-check.sh',0o755))
     sources.append((Path('nexus-native-agent'),'/system/bin/nexus-native-agent',0o755))
     context=work/'file-context';context.write_bytes(b'u:object_r:system_file:s0\0')
     def debug(command,write=False):
