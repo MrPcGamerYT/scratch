@@ -25,7 +25,7 @@ def main():
     exe=str(Path('rust/nexus-engine/target/release/nexus-engine.exe').resolve())
     log=Path('android-system-serial.log')
     cmd=('earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 '
-         'nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 '
+         'ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 '
          'root=/dev/ram0 ROOT=/dev/vda SRC=/android virtio_mmio.device=4K@0xd0000000:5 '
          'DEBUG=0 SWITCH=switch_root rdinit=/bin/busybox -- sh -x /init')
     p=subprocess.run([exe,'probe-android-init-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),
