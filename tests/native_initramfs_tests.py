@@ -65,6 +65,8 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual('mnt' in files, fs)
                 self.assertEqual(files['dev/kmsg'][0][9:11], [1, 11])
                 self.assertIn(b'NEXUS_USERSPACE_READY\n', elf)
+                self.assertIn(b'NEXUS_MONOTONIC_4096_NO_BACKWARD_SUBMS_DELTA\n',elf)
+                self.assertIn(b'\xb8\xe4\x00\x00\x00',elf) # real clock_gettime syscall
                 self.assertIn(b'\x0f\x0b', elf)  # failure branch cannot emit success
 
     def test_read_boots_never_rewrite_expected_data(self):

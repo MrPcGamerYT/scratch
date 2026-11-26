@@ -43,6 +43,28 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
     tick = b'NEXUS_USERSPACE_TICK\n'
     ready = b'NEXUS_USERSPACE_READY\n'
     log('started', started)
+    # Exercise the real kernel clock syscall, not RDTSC or a host timestamp.
+    # Stack output remains writable even for the default read/execute ELF.
+    emit(b'\x48\x83\xec\x10\x45\x31\xf6')  # reserve timespec; r14d=fine delta seen
+    def clock_sample():
+        emit(b'\xb8\xe4\x00\x00\x00\xbf\x01\x00\x00\x00\x48\x89\xe6\x0f\x05\x85\xc0')
+        branch(b'\x0f\x85','fail')
+        emit(b'\x48\x8b\x04\x24\x48\x69\xc0'+struct.pack('<I',1_000_000_000)+b'\x48\x03\x44\x24\x08')
+    clock_sample()
+    emit(b'\x49\x89\xc4\xbb\x00\x10\x00\x00')  # previous timestamp, 4096 samples
+    label('clocksample')
+    clock_sample()
+    emit(b'\x4c\x39\xe0');branch(b'\x0f\x82','fail')  # no backward clock
+    emit(b'\x49\x89\xc5\x4c\x29\xe0\x48\x85\xc0')
+    branch(b'\x0f\x84','clocknext')  # equality allowed, but not for every sample
+    emit(b'\x48\x3d'+struct.pack('<I',1_000_000));branch(b'\x0f\x83','clocknext')
+    emit(b'\x41\xbe\x01\x00\x00\x00')  # observed positive delta below 1 ms
+    label('clocknext')
+    emit(b'\x4d\x89\xec\xff\xcb');branch(b'\x0f\x85','clocksample')
+    emit(b'\x45\x85\xf6');branch(b'\x0f\x84','fail')
+    emit(b'\x48\x83\xc4\x10')
+    clockmarker=b'NEXUS_MONOTONIC_4096_NO_BACKWARD_SUBMS_DELTA\n'
+    log('clockmarker',clockmarker)
     emit(b'\xbb\x02\x00\x00\x00')  # two successful sleeps
     label('sleep')
     emit(b'\xb8\x23\x00\x00\x00')
@@ -193,7 +215,7 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
     label('fail')
     emit(b'\x0f\x0b')  # visible PID1 failure, never a success marker
     for name, data in [('device', b'/dev/kmsg\0'), ('timespec', struct.pack('<qq', 0, 100_000_000)),
-                       ('started', started), ('tick', tick), ('ready', ready)]:
+                       ('started', started), ('tick', tick), ('ready', ready), ('clockmarker',clockmarker)]:
         label(name)
         emit(data)
     if disk_write is not None:

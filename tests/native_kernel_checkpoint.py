@@ -134,6 +134,7 @@ def main():
         assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
         clock_lines='\n'.join(line for line in serial.splitlines() if any(term in line.lower() for term in ['clocksource:','tsc:']))
         notice('CORE_GUEST_CLOCK='+clock_lines)
+        assert 'NEXUS_MONOTONIC_4096_NO_BACKWARD_SUBMS_DELTA' in serial,('Guest monotonic clock did not pass fine-resolution sampling',serial[-2200:])
         assert 'clocksource: Switched to clocksource tsc' in serial,('Guest did not select high-resolution TSC',clock_lines)
         assert 'Marking TSC unstable' not in serial,('Guest TSC remains unstable',clock_lines)
         if index==0:
