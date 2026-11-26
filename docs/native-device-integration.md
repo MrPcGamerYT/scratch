@@ -89,3 +89,41 @@ Android userspace/display boot. Networking and audio also require their own
 independent devices/backends; they do not become working by fixing graphics.
 No performance, working internet/sound, APK delivery, or finished-player release
 is claimed by this increment.
+
+## Real Android APK acceptance and initial freeze diagnosis
+
+Native workflow **45804869216** (b949954) and repeated run **45806838925**
+(019ca9b) passed on Windows/WHP with the original Android 11 kernel and a
+new derived guest image/disposable COW. The host streamed a signed benign
+`org.nexus.smoke` APK over COM2; Android PackageManager installed it, the guest
+verified package presence, uninstalled it and confirmed package absence.
+Both runs report `NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK`.
+The first real attempt exposed Android 11 rejecting a trailing `-` in the
+stdin installer arguments; removing that argument, rebuilding the embedded
+daemon and rerunning actual Android resolved that installer failure.
+This supersedes the earlier table's unimplemented host-streaming/real-APK gate;
+the integrated player action, broader bridge lifecycle, networking and audio
+remain incomplete. These runs use HWACCEL=0 and a software scanout, not a
+verified accelerated guest GPU or a usable-Home/performance certification.
+
+Step 5 began with a bounded Home launch, last-ANR/event capture and read-only
+`pm list packages -f` inventory in run **45806838925**. Last-ANR explicitly
+reported **no ANR since boot** before and after the short observation window.
+However Home resolved to `android/com.android.internal.app.ResolverActivity`,
+not verified usable Launcher3; events recorded repeated native Launcher3
+crashes. The captured RenderThread SIGABRT is:
+
+```
+Abort message: 'Impossible totalDuration 0'
+libhwui.so android::uirenderer::JankTracker::finishFrame
+libhwui.so android::uirenderer::renderthread::CanvasContext::draw
+```
+
+This establishes a specific launcher rendering/timing crash, **not** a
+reproduction or fix of the user's earlier Not responding failures. Investigate
+guest clocksource/timestamp resolution and frame timing before changing Android
+libraries or disabling services. Permissive SELinux audit messages alone do
+not establish access denial as the cause. No packages have been removed or
+disabled. The package inventory is evidence for dependency review only;
+retain core services, both editor workflows, and Home pending regression tests.
+Workflow artifacts retain complete serial/timing/JSON evidence for three days.
