@@ -108,6 +108,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         }
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
+        if index==1&&exit.reason()!=0x2001&&mmio_count<4 {eprintln!("AP_EXIT reason=0x{:x} rip=0x{:x} CSbase=0x{:x}",exit.reason(),u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[16..24].try_into().unwrap()));}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
         if exit.reason()!=1 {eprintln!("SMP_STOP cpu={index} reason=0x{:x} RIP=0x{:x}",exit.reason(),u64::from_le_bytes(exit.0[32..40].try_into().unwrap()));return Ok(exit.reason());}
@@ -193,6 +194,9 @@ fn smp_cycle()->Result<(),String> {
                         cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
                         let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
                         unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),2,values.as_ptr()),"Guest-requested SIPI entry")?;}
+                        let names=[0x13,0x10,0x1c];let mut state=[Register::scalar(0);3];
+                        unsafe {check(WHvGetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),3,state.as_mut_ptr()),"AP startup state readback")?;}
+                        eprintln!("AP_ENTRY CSbase=0x{:x} RIP=0x{:x} CR0=0x{:x}",u64::from_le_bytes(state[0].0[..8].try_into().unwrap()),u64::from_le_bytes(state[1].0[..8].try_into().unwrap()),u64::from_le_bytes(state[2].0[..8].try_into().unwrap()));
                         return run_index(handle,1,ram,bytes,None,ap_lapics);
                     }
                     StartupEvent::Sipi(_)=>return Err("SIPI received before INIT".into()),
