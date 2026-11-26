@@ -32,7 +32,7 @@ for index,(cpus,ram_mib) in enumerate(matrix):
         'exit_success':p.returncode==0,
         'native_apic_success':f'NATIVE_APIC_OS_PID1_OK cpus={cpus} ram_bytes={ram_mib*1024*1024} ' in p.stdout,
         'guest_migration':f'NEXUS_SMP_AFFINITY_OK cpus={cpus}' in text,
-        'two_online':f'Brought up 1 node, {cpus} CPUs' in text,
+        'two_online':(f'Brought up 1 node, {cpus} CPU'+('s' if cpus>1 else '')) in text,
         'selected_ram_map':f'-0x{ram_mib*1024*1024-1:016x}] usable' in text,
         'mp_enumerated':'Intel MultiProcessor Specification v1.4' in text,
         'ioapic_enumerated':'I/O APIC' in text or 'IOAPIC' in text,
