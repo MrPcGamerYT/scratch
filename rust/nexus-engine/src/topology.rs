@@ -9,7 +9,8 @@ pub fn result(leaf:u32,subleaf:u32,index:u32,count:u32,apic:bool,mut d:[u32;4])-
             d[1]=(d[1]&0xffff)|(count<<16)|(index<<24);
             d[2]&=!((1<<3)|(1<<5)|(1<<21)|(1<<24)); // no MONITOR/VMX/x2APIC/TSC-deadline contract
             d[3]&=!((1<<9)|(1<<28));
-            if apic {d[3]|=1<<9;}if count>1 {d[3]|=1<<28;}
+            if apic {d[3]|=1<<9;}
+            if count>1 {d[3]|=1<<28;}
         }
         4=>{
             if d[0]&31==0 {return Ok([0;4]);}
