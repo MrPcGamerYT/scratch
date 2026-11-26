@@ -1,9 +1,9 @@
 //! Native software presentation. UI reads owned snapshots, never live guest RAM.
-use std::sync::{atomic::{AtomicBool,AtomicU64,Ordering},Arc,Mutex};
+use std::sync::{atomic::{AtomicBool,AtomicU64,AtomicUsize,Ordering},Arc,Mutex};
 #[derive(Debug)]
-pub struct Session {pub stop:AtomicBool,frame:Mutex<Vec<u8>>,input:Mutex<std::collections::VecDeque<u8>>,pub presents:AtomicU64,pub presented_crc32:AtomicU64}
+pub struct Session {pub stop:AtomicBool,hwnd:AtomicUsize,frame:Mutex<Vec<u8>>,input:Mutex<std::collections::VecDeque<u8>>,pub presents:AtomicU64,pub presented_crc32:AtomicU64}
 impl Default for Session {
-    fn default()->Self {Self{stop:AtomicBool::new(false),input:Mutex::new(std::collections::VecDeque::new()),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0),presented_crc32:AtomicU64::new(0)}}
+    fn default()->Self {Self{stop:AtomicBool::new(false),hwnd:AtomicUsize::new(0),input:Mutex::new(std::collections::VecDeque::new()),frame:Mutex::new(vec![0;crate::framebuffer::PIXEL_BYTES]),presents:AtomicU64::new(0),presented_crc32:AtomicU64::new(0)}}
 }
 impl Session {
     pub fn publish(&self,pixels:&[u8])->Result<(),String> {
@@ -26,6 +26,7 @@ pub fn viewport(width:i32,height:i32)->(i32,i32,i32,i32) {
 }
 pub struct Window {pub session:Arc<Session>,thread:Option<std::thread::JoinHandle<Result<(),String>>>}
 impl Window {
+    pub fn request_close(&self)->Result<(),String> {native::close(&self.session)}
     pub fn open()->Result<Self,String> {
         let session=Arc::new(Session::default());let shared=session.clone();
         let (tx,rx)=std::sync::mpsc::sync_channel(1);
@@ -42,6 +43,7 @@ impl Drop for Window {
 #[cfg(not(windows))]
 mod native {
     use super::*;
+    pub fn close(s:&Session)->Result<(),String> {let _=s.hwnd.load(Ordering::Relaxed);Err("Native player requires Windows".into())}
     pub fn run(_:Arc<Session>,ready:std::sync::mpsc::SyncSender<Result<(),String>>)->Result<(),String> {let _=ready.send(Err("Native player requires Windows".into()));Err("Native player requires Windows".into())}
 }
 #[cfg(windows)]
@@ -61,6 +63,7 @@ mod native {
         fn DefWindowProcW(h:Handle,m:u32,w:usize,l:isize)->isize;
         fn DestroyWindow(h:Handle)->i32;
         fn PostQuitMessage(code:i32);
+        fn PostMessageW(h:Handle,m:u32,w:usize,l:isize)->i32;
         fn GetMessageW(msg:*mut Msg,h:Handle,min:u32,max:u32)->i32;
         fn TranslateMessage(msg:*const Msg)->i32;
         fn DispatchMessageW(msg:*const Msg)->isize;
@@ -80,6 +83,10 @@ mod native {
     unsafe extern "system" fn proc(h:Handle,m:u32,w:usize,l:isize)->isize {
         if m==2 {PostQuitMessage(0);return 0;}DefWindowProcW(h,m,w,l)
     }
+    pub fn close(s:&Session)->Result<(),String> {
+        let h=s.hwnd.load(Ordering::Acquire) as Handle;
+        if h.is_null()||unsafe {PostMessageW(h,0x10,0,0)}==0 {return Err("Player close request failed".into());}Ok(())
+    }
     pub fn run(shared:Arc<Session>,ready:std::sync::mpsc::SyncSender<Result<(),String>>)->Result<(),String> {
         let null=std::ptr::null_mut();let class:Vec<u16>="NexusNativeScanout\0".encode_utf16().collect();
         let title:Vec<u16>="Nexus — native software player (Android display not verified)\0".encode_utf16().collect();
@@ -90,6 +97,7 @@ mod native {
             let h=CreateWindowExW(0,class.as_ptr(),title.as_ptr(),0x10cf0000,i32::MIN,i32::MIN,840,660,null,null,instance,null);
             if h.is_null() {UnregisterClassW(class.as_ptr(),instance);return Err("CreateWindowExW failed".into());}
             if SetTimer(h,1,33,null)==0 {DestroyWindow(h);UnregisterClassW(class.as_ptr(),instance);return Err("Player timer failed".into());}
+            shared.hwnd.store(h as usize,Ordering::Release);
             let _=ready.send(Ok(()));
             let mut msg:Msg=std::mem::zeroed();let mut error=None;
             loop {
@@ -111,7 +119,7 @@ mod native {
                 }
                 TranslateMessage(&msg);DispatchMessageW(&msg);
             }
-            shared.stop.store(true,Ordering::Release);KillTimer(h,1);UnregisterClassW(class.as_ptr(),instance);
+            shared.hwnd.store(0,Ordering::Release);shared.stop.store(true,Ordering::Release);KillTimer(h,1);UnregisterClassW(class.as_ptr(),instance);
             error.map_or(Ok(()),Err)
         }
     }
