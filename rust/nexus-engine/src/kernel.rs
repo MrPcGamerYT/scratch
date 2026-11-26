@@ -34,7 +34,7 @@ pub struct Region {pub address:usize,pub bytes:Vec<u8>}
 #[derive(Debug)]
 pub struct KernelPlan {
     pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
-    pub runtime_end:usize,pub initrd_address:Option<usize>,
+    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,
 }
 impl KernelPlan {
     pub fn build(image:&[u8],initrd:Option<&[u8]>,command:&str,ram:usize)->Result<Self,String> {
@@ -88,7 +88,12 @@ impl KernelPlan {
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
             regions.push(Region{address:at,bytes:data.to_vec()});initrd_address=Some(at);
         }
-        let p=Self{regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address};p.validate_regions()?;Ok(p)
+        let p=Self{regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None};p.validate_regions()?;Ok(p)
+    }
+    pub fn with_framebuffer(mut self,path:&Path)->Result<Self,String> {
+        let params=self.regions.iter_mut().find(|r|r.address==BOOT_PARAMS).ok_or("Missing boot_params")?;
+        crate::framebuffer::configure(&mut params.bytes)?;
+        self.framebuffer_output=Some(path.to_path_buf());Ok(self)
     }
     pub fn validate_regions(&self)->Result<(),String> {
         for (i,r) in self.regions.iter().enumerate() {

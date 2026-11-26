@@ -42,17 +42,19 @@ mod windows {
     }
     #[repr(C,align(16))]
     struct ExitContext([u8;224]);
-    struct Mapping<'a> { partition:&'a Partition, address:*mut c_void, bytes:usize }
-    impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,0,self.bytes as u64); VirtualFree(self.address,0,0x8000); } } }
+    struct Mapping<'a> { partition:&'a Partition, address:*mut c_void, bytes:usize,guest:u64 }
+    impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,self.guest,self.bytes as u64); VirtualFree(self.address,0,0x8000); } } }
     struct Processor<'a>(&'a Partition);
     impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
-    fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {
+    fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {allocate_at(partition,bytes,0)}
+    fn allocate_at(partition:&Partition,bytes:usize,guest:u64)->Result<Mapping<'_>,String> {
+        if guest%4096!=0||guest.checked_add(bytes as u64).is_none() {return Err("Invalid guest mapping address".into());}
         if bytes==0 || bytes%4096!=0 || bytes>crate::kernel::MAX_RAM {return Err("Invalid guest RAM mapping size".into());}
         let address=unsafe { VirtualAlloc(std::ptr::null_mut(),bytes,0x3000,4) };
         if address.is_null() { return Err("VirtualAlloc failed".into()); }
-        let hr=unsafe { WHvMapGpaRange(partition.0,address,0,bytes as u64,7) };
+        let hr=unsafe { WHvMapGpaRange(partition.0,address,guest,bytes as u64,if guest==0 {7} else {3}) };
         if let Err(error)=check(hr,"WHvMapGpaRange") { unsafe { VirtualFree(address,0,0x8000); } return Err(error); }
-        Ok(Mapping{partition,address,bytes})
+        Ok(Mapping{partition,address,bytes,guest})
 
     }
     fn check(hr:i32, operation:&str)->Result<(),String> {
@@ -264,7 +266,15 @@ mod windows {
                 Register::scalar(0x11),Register::scalar(0),Register::scalar(0),Register::scalar(0),code,data,data,data,data,data,
                 Register::table(kernel::GDT as u64,31),Register::table(0,0),Register::scalar(plan.entry),Register::scalar(kernel::STACK),Register::scalar(2),
                 Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(kernel::BOOT_PARAMS as u64),Register::scalar(0)])?;
-            action(partition,memory)
+            let surface=if plan.framebuffer_output.is_some() {Some(allocate_at(partition,crate::framebuffer::MAPPED_BYTES,crate::framebuffer::GPA)?)} else {None};
+            let result=action(partition,memory);
+            if let (Some(path),Some(surface))=(&plan.framebuffer_output,&surface) {
+                // Run returned; no vCPU or worker is accessing the framebuffer during capture.
+                let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
+                let capture=crate::framebuffer::capture(path,pixels);
+                if result.is_ok() {capture?;}
+            }
+            result
         })
     }
     pub fn kernel_contract_smoke()->Result<(),String> {

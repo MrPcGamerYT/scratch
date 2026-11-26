@@ -10,6 +10,7 @@ pub mod virtio_mmio;
 #[cfg(test)]
 mod virtio_mmio_tests;
 pub mod kernel;
+pub mod framebuffer;
 pub mod uart;
 pub mod pit;
 pub mod pit0;

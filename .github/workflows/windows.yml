@@ -11,6 +11,7 @@ on:
       - 'tests/native_kernel_checkpoint.py'
       - 'tests/native_initramfs.py'
       - 'tests/native_initramfs_tests.py'
+      - 'tests/native_display_checkpoint.py'
       - 'docs/native-*.md'
       - 'docs/engine-progress-report.md'
       - 'docs/native-kernel-loader.md'
