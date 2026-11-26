@@ -397,12 +397,12 @@ mod windows {
     fn timer_pump<T>(partition:&Partition,action:impl FnOnce()->Result<T,String>)->Result<T,String> {
         use std::sync::mpsc;
         use std::time::Duration;
-        let handle=partition.0 as usize;
+        let handle=partition.0 as usize;let processors=partition.2;
         std::thread::scope(|scope| {
         let (tx,rx)=mpsc::channel();
         let worker=scope.spawn(move || {
             while matches!(rx.recv_timeout(Duration::from_millis(1)),Err(mpsc::RecvTimeoutError::Timeout)) {
-                unsafe {WHvCancelRunVirtualProcessor(handle as *mut c_void,0,0);}
+                for index in 0..processors {unsafe {WHvCancelRunVirtualProcessor(handle as *mut c_void,index,0);}}
             }
         });
         let result=action();let _=tx.send(());worker.join().map_err(|_|"Timer rendezvous thread panicked")?;result

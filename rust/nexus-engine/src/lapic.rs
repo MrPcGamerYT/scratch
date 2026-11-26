@@ -45,9 +45,32 @@ impl LocalApic {
         }
     }
 }
+/// Physical destination or ICR shorthand: 1=self, 2=all, 3=all excluding self.
+/// Validate the whole request before changing any destination IRR.
+pub fn send_fixed(cpus:&mut [LocalApic],source:usize,destination:u8,shorthand:u8,vector:u8)->Result<(),String> {
+    if cpus.is_empty()||cpus.len()>8||source>=cpus.len()||vector<16||shorthand>3 {return Err("Invalid fixed IPI request".into());}
+    let explicit=cpus.iter().position(|cpu|cpu.id==destination);
+    if shorthand==0&&explicit.is_none() {return Err("Fixed IPI targets nonexistent APIC ID".into());}
+    for (index,cpu) in cpus.iter_mut().enumerate() {
+        let selected=match shorthand {0=>Some(index)==explicit,1=>index==source,2=>true,3=>index!=source,_=>false};
+        if selected {cpu.request_edge(vector)?;}
+    }Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn physical_destination_and_shorthand_do_not_touch_other_cpus() {
+        let mut cpus=vec![LocalApic::new(0),LocalApic::new(1),LocalApic::new(2)];
+        for cpu in &mut cpus {cpu.write(0xf0,0x1ff).unwrap();}
+        send_fixed(&mut cpus,0,2,0,0x40).unwrap();
+        assert_eq!(cpus.iter().map(LocalApic::pending).collect::<Vec<_>>(),vec![None,None,Some(0x40)]);
+        assert!(send_fixed(&mut cpus,0,9,0,0x50).is_err());
+        assert!(send_fixed(&mut cpus,0,0,2,15).is_err());assert_eq!(cpus[0].pending(),None);
+        send_fixed(&mut cpus,1,0,1,0x60).unwrap();assert_eq!(cpus[1].pending(),Some(0x60));
+        send_fixed(&mut cpus,1,0,3,0x70).unwrap();
+        assert_eq!(cpus.iter().map(LocalApic::pending).collect::<Vec<_>>(),vec![Some(0x70),Some(0x60),Some(0x70)]);
+        send_fixed(&mut cpus,0,0,2,0x80).unwrap();assert!(cpus.iter().all(|c|c.pending()==Some(0x80)));
+    }
     #[test] fn disabled_masked_priority_and_deferred_acknowledgement() {
         let mut a=LocalApic::new(2);a.request_edge(0x40).unwrap();assert_eq!(a.pending(),None);
         a.write(0xf0,0x1ff).unwrap();assert_eq!(a.pending(),Some(0x40));
