@@ -19,3 +19,26 @@ impl EarlyPlatform {
         self.uart.access(io)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn io(port:u16,size:u8,write:bool,rax:u64)->IoExit {
+        IoExit{port,size,write,rax,rip:0x100000,instruction_len:1}
+    }
+    #[test] fn chipset_reads_preserve_upper_rax_and_do_not_touch_uart() {
+        let mut bus=EarlyPlatform::default();
+        assert_eq!(bus.access(io(0xa1,1,false,0x123400),0).unwrap(),Some(0x1234ff));
+        bus.access(io(0x70,1,true,0x0d),0).unwrap();
+        assert_eq!(bus.access(io(0x71,1,false,0xab00),0).unwrap(),Some(0xab80));
+        assert!(bus.uart.output.is_empty());assert_eq!(bus.pic.accesses,1);
+    }
+    #[test] fn chipset_rejects_wide_io_and_unknown_ports() {
+        let mut bus=EarlyPlatform::default();
+        for port in [0x20,0x21,0xa0,0xa1,0x70,0x71,0x42,0x43,0x61] {
+            for size in [2,4] {assert!(bus.access(io(port,size,true,0),0).is_err());}
+        }
+        assert_eq!(bus.pic.accesses,0);assert_eq!(bus.rtc.accesses,0);assert_eq!(bus.pit.accesses,0);
+        assert!(bus.access(io(0x123,1,false,0),0).is_err());
+    }
+}

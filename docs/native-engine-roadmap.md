@@ -171,7 +171,7 @@ hardware or game performance claim is supported by these tests.
 
 The version-checked direct Linux loader, boot parameters and memory map are now
 implemented and an actual early Linux serial log is verified. Next implement the
-PIT/channel-2/port-0x61 blocker, remaining interrupts/timers and device requirements,
+remaining timer IRQ delivery (PIT channel 0), CPU/MSR exposure and device requirements,
 then reach an explicit initramfs/userspace marker and stable repeated boots.
 Direct loading avoids requiring a BIOS here; **no faster boot has been measured**.
 Android image integration and GPU-driver/renderer certification remain pending.
@@ -187,3 +187,13 @@ map via COM1 before stopping at unsupported port 0x61. Its complete, SHA-verifie
 774-byte capture is committed under `deliverables/native-kernel/`. The checkpoint
 explicitly records full boot=false; no Android/GPU/Windows-10 performance claim.
 
+
+## Current platform checkpoint (supersedes earlier blockers)
+
+PIC initialization/masks/IRR/ISR register subset and a read-only UTC CMOS/RTC
+clock are implemented. Actual Linux run 45749694804, commit 2bfb95e, passed
+three entries beyond ports 0xA1 and 0x70; the next stop is PIT control **0x34**
+(channel 0 rate generator). PIC interrupt sources/acknowledge/injection and RTC
+alarm/periodic interrupts remain unimplemented; register support is not IRQ
+support. Foundation run 45749694948 passed Ubuntu and Windows. Android boot,
+ANR fixes on the affected guest, image slimming and GPU integration are pending.
