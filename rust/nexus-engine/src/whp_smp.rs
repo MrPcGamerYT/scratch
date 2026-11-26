@@ -5,7 +5,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
     if index>=partition.2||names.len()!=values.len() {return Err("Invalid indexed register access".into());}
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
-struct ApicState {injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+struct ApicState {injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
 impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
 impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
@@ -137,7 +137,8 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
             if scalar(0)&0x200!=0&&scalar(1)&1==0&&scalar(2)&1==0&&scalar(3)&1==0 {
                 let name=0x80000000;let value=Register::scalar(1|(u64::from(vector)<<16));
                 unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"LAPIC fixed interrupt injection")?;}
-                local.acknowledge(vector)?;halted=false;fabric.injections+=1;
+                let timer=local.read(0x320)? as u8==vector&&local.read(0x380)?!=0;
+                local.acknowledge(vector)?;halted=false;fabric.injections+=1;if timer {fabric.timer_injections+=1;}
             }
         }
         }
@@ -338,7 +339,7 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
     {let mut state=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         state.io.write(0,0)?;state.io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;}
     // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
@@ -409,7 +410,7 @@ fn smp_cycle()->Result<u64,String> {
 
 fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
     let mut io=crate::ioapic::IoApic::new();io.write(0,0)?;io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;
-    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0)],io}));
+    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0)],io}));
     let mut emitted=0;
     trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);trace.vcpu_run_requested_ms=trace.vm_ready_ms;
     let mut observe=|state:&mut ApicState|->Result<bool,String> {
@@ -422,8 +423,8 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     let state=fabric.lock().map_err(|_|"LAPIC lock poisoned")?;
     observe_serial_tail(&state.platform.uart.output,emitted,serial,trace,start)?;
     let ((reason,waits),expired)=result.map_err(|error|format!("{error}; APIC_DIAG injections={} pit_programs={} pit_edges={} cursor={} SVR={:x?} TPR={:x?} LDR={:x?} pending={:?}",state.injections,state.platform.pit0.programs,state.platform.pit0.edges,state.pit_edges,state[0].read(0xf0),state[0].read(0x80),state[0].read(0xd0),state[0].pending()))?;trace.halt_waits=waits;
-    if expired||reason!=0||state.io_accesses==0||state.injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
-    println!("NATIVE_APIC_OS_PID1_OK cpus=1 io_mmio={} injections={} pit_edges={}; not SMP or Android certification",state.io_accesses,state.injections,state.platform.pit0.edges);
+    if expired||reason!=0||state.io_accesses==0||state.injections==0||state.timer_injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
+    println!("NATIVE_APIC_OS_PID1_OK cpus=1 io_mmio={} injections={} lapic_timer_irqs={} pit_edges={}; not SMP or Android certification",state.io_accesses,state.injections,state.timer_injections,state.platform.pit0.edges);
     Ok(())
 }
 fn observe_serial_tail(output:&[u8],emitted:usize,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {

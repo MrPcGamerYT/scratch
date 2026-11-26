@@ -17,7 +17,7 @@ assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
 rd=Path('apic-diagnostic.cpio');rd.write_bytes(initramfs())
 cmd='earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nokaslr acpi=off pci=off maxcpus=1 nmi_watchdog=0 panic=-1 apic=verbose'
 samples=[]
-for index in range(3):
+for index in range(8):
     log=Path(f'apic-linux-{index+1}.log')
     p=subprocess.run([exe,'boot-kernel',str(kernel),str(log),cmd,str(rd),'--apic-probe'],capture_output=True,text=True,timeout=45)
     text=log.read_text(errors='replace') if log.exists() else ''
@@ -34,4 +34,7 @@ for index in range(3):
     assert 'NEXUS_USERSPACE_READY' in text
     assert text.count('NEXUS_USERSPACE_TICK')>=2
     assert 'Kernel panic' not in text
+    assert 'unchecked MSR access error' not in text
+    assert 'lapic_timer_irqs=0 ' not in p.stdout
+    assert 'lapic_timer_irqs=' in p.stdout
 Path('apic-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'one-CPU Linux APIC enumeration and PID1 clocks, not SMP/Android','samples':samples},indent=2))

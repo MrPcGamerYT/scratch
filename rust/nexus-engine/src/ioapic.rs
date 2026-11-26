@@ -85,6 +85,15 @@ mod tests {
         reg(&mut io,0x10,0x18041);io.set_line(0,true).unwrap();io.service(&mut c).unwrap();assert_eq!(c[1].pending(),None);
         reg(&mut io,0x10,0x8041);io.service(&mut c).unwrap();assert_eq!(c[1].pending(),Some(0x41));
     }
+    #[test] fn lowest_priority_selects_one_logical_destination_by_ppr() {
+        let mut io=IoApic::new();let mut c=cpus();
+        c[0].write(0xd0,1<<24).unwrap();c[1].write(0xd0,2<<24).unwrap();c[0].write(0x80,0x50).unwrap();
+        reg(&mut io,0x11,3<<24);reg(&mut io,0x10,0x8940);
+        io.set_line(0,true).unwrap();io.service(&mut c).unwrap();assert_eq!(c[0].pending(),None);assert_eq!(c[1].pending(),Some(0x40));
+        c[1].acknowledge(0x40).unwrap();io.set_line(0,false).unwrap();c[1].eoi();io.eoi(0x40);
+        c[0].write(0x80,0).unwrap();c[1].write(0x80,0x60).unwrap();io.set_line(0,true).unwrap();io.service(&mut c).unwrap();
+        assert_eq!(c[0].pending(),Some(0x40));assert_eq!(c[1].pending(),None);
+    }
     #[test] fn reprogramming_preserves_inflight_eoi_vector() {
         let mut io=IoApic::new();let mut c=cpus();reg(&mut io,0x10,0x8040);
         io.set_line(0,true).unwrap();io.service(&mut c).unwrap();

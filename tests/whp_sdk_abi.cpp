@@ -87,3 +87,12 @@ static_assert(WHvPartitionPropertyCodeCpuidExitList == 0x1003);
 static_assert(WHvRunVpExitReasonX64Cpuid == 0x1001);
 static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, CpuidAccess) == 48);
 static_assert(sizeof(WHV_X64_CPUID_ACCESS_CONTEXT) == 64);
+
+static_assert(WHvRunVpExitReasonX64MsrAccess == 0x1000);
+static_assert(WHvRegisterPendingEvent == 0x80000002);
+static_assert(sizeof(WHV_X64_MSR_ACCESS_CONTEXT) == 24);
+static_assert(offsetof(WHV_RUN_VP_EXIT_CONTEXT, MsrAccess) == 48);
+static_assert(offsetof(WHV_X64_MSR_ACCESS_CONTEXT, MsrNumber) == 4);
+static_assert(offsetof(WHV_X64_MSR_ACCESS_CONTEXT, Rax) == 8);
+static_assert(offsetof(WHV_X64_MSR_ACCESS_CONTEXT, Rdx) == 16);
+static_assert(sizeof(WHV_X64_PENDING_EXCEPTION_EVENT) == 16);
