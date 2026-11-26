@@ -61,12 +61,14 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             if let Some(path)=surface {plan=plan.with_framebuffer(path)?;}
             use std::io::Write;
             let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);
-            let mut log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
+            let log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
+            let mut log=std::io::BufWriter::with_capacity(65536,log);
             let mut timings=std::fs::OpenOptions::new().create_new(true).write(true).open(format!("{}.timing.json",args[3])).map_err(|e|e.to_string())?;
             eprintln!("Starting experimental Linux entry at 0x{:x}; polled serial log: {}. Full kernel/platform boot is NOT implemented.",plan.entry,args[3]);
             let result=if command=="boot-kernel" {whp::boot_kernel(&plan,&mut log,&mut trace,start)} else {
                 whp::boot_kernel_disk(&plan,&mut log,&mut trace,start,Path::new(&args[6]),Path::new(&args[7]),command.ends_with("create"))
             };
+            log.flush().map_err(|e|e.to_string())?;
             if let Some(window)=&window {
                 use std::sync::atomic::Ordering;
                 println!("NATIVE_PLAYER_JSON={{\"software_blits\":{},\"last_submitted_bgrx_crc32\":{},\"guest_input_verified\":false,\"gpu_accelerated\":false}}",window.session.presents.load(Ordering::Acquire),window.session.presented_crc32.load(Ordering::Acquire));
