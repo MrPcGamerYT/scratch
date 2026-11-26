@@ -21,6 +21,7 @@ def main():
     assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
     rd=Path('display-initramfs.cpio');rd.write_bytes(initramfs(display=True))
     reference=b'P6\n800 600\n255\n'+bytes(component for y in range(600) for x in range(800) for component in ((x*7)%256,(x*5+y)%256,(x*3)%256))
+    reference=reference[:-3]+bytes([0xbe,0xad,0xde])  # guest mmap sentinel, independent of write() rows
     samples=[]
     for index in range(3):
         log=Path(f'display-serial-{index+1}.log');capture=Path(f'display-{index+1}.ppm')
@@ -50,7 +51,7 @@ def main():
     result={'verified':True,'scope':'800x600 XRGB8888 software scanout only; no accelerated GPU or player window',
             'kernel_sha256':expected,'reference_sha256':hashlib.sha256(reference).hexdigest(),'samples':samples}
     Path('display-checkpoint.json').write_text(json.dumps(result,indent=2))
-    print('::notice::DISPLAY_ACCEPTANCE='+json.dumps({'guest_fbdev_write':True,'exact_host_pixels':True,'repetitions':3,'existing_capture_refused_before_vcpu':True,'accelerated_gpu':False,'android_ready':False}),flush=True)
+    print('::notice::DISPLAY_ACCEPTANCE='+json.dumps({'guest_fbdev_write':True,'guest_fbdev_mmap':True,'exact_host_pixels':True,'repetitions':3,'existing_capture_refused_before_vcpu':True,'accelerated_gpu':False,'android_ready':False}),flush=True)
 
 
 if __name__=='__main__':

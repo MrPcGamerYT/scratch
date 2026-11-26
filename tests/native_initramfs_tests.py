@@ -76,6 +76,7 @@ class FixtureTests(unittest.TestCase):
         self.assertIn(b'\x41\xbd\x58\x02\x00\x00',blob)  # 600 rows
         self.assertIn(b'\x3d\x80\x0c\x00\x00',blob)  # exact write length
         self.assertIn(b'NEXUS_FB0_PATTERN_WRITTEN\n',blob)
+        self.assertIn(b'\x49\x89\xc6\x41\xc7\x86'+struct.pack('<I',800*600*4-4)+b'\xde\xad\xbe\xef',blob)
         self.assertIn(bytes(component for x in range(800) for component in ((x*3)%256,(x*5)%256,(x*7)%256,255)),blob)
         self.assertEqual(struct.unpack_from('<I',blob,68)[0],7)
         self.assertEqual(unpack_archive(initramfs(display=True))['init'][1],blob)
