@@ -7,10 +7,17 @@ on:
       - 'rust/nexus-engine/src/kernel.rs'
       - 'rust/nexus-engine/src/uart.rs'
   workflow_dispatch:
+    inputs:
+      kernel_run:
+        description: 'Reuse native-test-linux-kernel artifact from this run (optional)'
+        required: false
+        type: string
 permissions:
   contents: read
+  actions: read
 jobs:
   kernel:
+    if: ${{ inputs.kernel_run == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -46,6 +53,7 @@ jobs:
           path: kernel-artifact/
   early-entry:
     needs: kernel
+    if: ${{ always() && (needs.kernel.result == 'success' || inputs.kernel_run != '') }}
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
@@ -54,6 +62,8 @@ jobs:
         with:
           name: native-test-linux-kernel
           path: kernel-artifact
+          run-id: ${{ inputs.kernel_run || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Build independent native engine
         shell: python

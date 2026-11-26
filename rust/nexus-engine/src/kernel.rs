@@ -44,11 +44,18 @@ impl KernelPlan {
         if reloc>1 {return Err("Invalid relocatable_kernel flag".into());}
         let alignment=u32_at(image,0x230) as usize;
         if !alignment.is_power_of_two()||alignment>32*1024*1024 {return Err("Unsupported kernel alignment".into());}
-        let address=if reloc==1 {alignment.max(0x100000)} else {
-            if u32_at(image,0x214)!=0x100000||u64_at(image,0x258)!=0x100000 {return Err("Nonrelocatable kernel must have runtime/load address 1 MiB".into());}0x100000
+        let (address,runtime_start)=if reloc==1 {
+            let address=alignment.max(0x100000);(address,address)
+        } else {
+            let address=u32_at(image,0x214) as usize;
+            let preferred=usize::try_from(u64_at(image,0x258)).map_err(|_|"Kernel runtime address overflow")?;
+            if address<0x100000||address%4096!=0||preferred<0x100000||preferred%4096!=0 {
+                return Err("Invalid nonrelocatable load/runtime address".into());
+            }(address,preferred)
         };
         let runtime=u32_at(image,0x260) as usize;
-        let runtime_end=address.checked_add(runtime).ok_or("Kernel runtime overflow")?;
+        let load_end=address.checked_add(payload.len()).ok_or("Kernel payload address overflow")?;
+        let runtime_end=runtime_start.checked_add(runtime).ok_or("Kernel runtime overflow")?.max(load_end);
         if runtime<payload.len()||runtime_end>ram {return Err("Kernel runtime/decompression region does not fit RAM".into());}
         let cap=(u32_at(image,0x238) as usize).min(4096);
         if command.as_bytes().contains(&0)||command.len()+1>cap {return Err("Command line contains NUL or exceeds kernel/prototype limit".into());}
@@ -66,7 +73,7 @@ impl KernelPlan {
         let mut initrd_address=None;
         if let Some(data)=initrd {
             if data.is_empty()||data.len()>MAX_INPUT {return Err("Initramfs size must be 1..64 MiB".into());}
-            let top=ram.min(u32_at(image,0x22c) as usize+1);
+            let top=(ram as u64).min(u64::from(u32_at(image,0x22c))+1) as usize;
             let at=top.checked_sub(data.len()).ok_or("Initramfs exceeds address limit")?&!4095;
             if at<runtime_end {return Err("Initramfs overlaps kernel runtime/decompression region".into());}
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
@@ -123,6 +130,12 @@ mod tests {
         bad=b.clone();put32(&mut bad,0x230,3);assert!(KernelPlan::build(&bad,None,"",DEFAULT_RAM).is_err());
         bad=b.clone();put32(&mut bad,0x22c,0x200000);assert!(KernelPlan::build(&bad,Some(b"INIT"),"",DEFAULT_RAM).is_err());
         assert!(KernelPlan::build(&b,Some(b""),"",DEFAULT_RAM).is_err());
+    }
+    #[test] fn nonrelocatable_runtime_is_separate_from_compressed_load() {
+        let mut image=contract_image();image[0x234]=0;put64(&mut image,0x258,0x1000000);
+        let plan=KernelPlan::build(&image,None,"",DEFAULT_RAM).unwrap();
+        assert_eq!(plan.entry,0x100000);assert_eq!(plan.runtime_end,0x1100000);
+        put64(&mut image,0x258,u64::MAX);assert!(KernelPlan::build(&image,None,"",DEFAULT_RAM).is_err());
     }
     #[test] fn overlap_validation() {
         let mut p=KernelPlan::build(&contract_image(),None,"",DEFAULT_RAM).unwrap();
