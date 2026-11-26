@@ -42,10 +42,16 @@ def main():
         assert pixels==reference,('Guest/host framebuffer pixel mismatch',len(pixels))
         assert metrics.get('linux_userspace_ready_ms') is not None
         assert metrics['total_boot_verified'] is False and metrics['android_home_ready_ms'] is None
+        refusal=Path(f'display-refusal-{index+1}.log')
+        blocked=subprocess.run([exe,'boot-kernel',str(kernel),str(refusal),cmd,str(rd),f'--framebuffer={capture}'],capture_output=True,text=True,timeout=15)
+        assert blocked.returncode!=0 and capture.read_bytes()==reference
+        refused_metrics=json.loads(Path(str(refusal)+'.timing.json').read_text())
+        assert refused_metrics['vcpu_run_requested_ms'] is None and refusal.read_bytes()==b''
+
     result={'verified':True,'scope':'800x600 XRGB8888 software scanout only; no accelerated GPU or player window',
             'kernel_sha256':expected,'reference_sha256':hashlib.sha256(reference).hexdigest(),'samples':samples}
     Path('display-checkpoint.json').write_text(json.dumps(result,indent=2))
-    print('::notice::DISPLAY_ACCEPTANCE='+json.dumps({'guest_fbdev_write':True,'exact_host_pixels':True,'repetitions':3,'accelerated_gpu':False,'android_ready':False}),flush=True)
+    print('::notice::DISPLAY_ACCEPTANCE='+json.dumps({'guest_fbdev_write':True,'exact_host_pixels':True,'repetitions':3,'existing_capture_refused_before_vcpu':True,'accelerated_gpu':False,'android_ready':False}),flush=True)
 
 
 if __name__=='__main__':
