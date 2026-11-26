@@ -293,7 +293,10 @@ mod windows {
     }
     fn queue_irq0(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<bool,String> {
         let Some(vector)=platform.pic.pending_vector() else {return Ok(false);};
-        // Never overwrite an event already queued in WHP. WHP observes IF and STI/MOV-SS shadow.
+        // Only inject in an open interrupt window. IF=0 or STI/MOV-SS shadow
+        // would make external injection invalid on some WHP versions.
+        if scalar_register(partition,0x11)?&0x200==0||scalar_register(partition,0x80000001)?&1!=0 {return Ok(false);}
+        // Never overwrite an event already queued in WHP.
         if scalar_register(partition,0x80000000)?&1!=0 {return Ok(false);}
         set_registers(partition,&[0x80000000],&[Register::scalar(1|(u64::from(vector)<<16))])?;
         platform.pic.acknowledge_irq0()?;Ok(true)
@@ -321,8 +324,9 @@ mod windows {
                             let flags=scalar_register(partition,0x11)?;
                             if flags&0x200==0 {return Err("Guest halted with interrupts disabled; no completed boot".into());}
                             let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
-                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
-                            set_registers(partition,&[0x10],&[Register::scalar(mode.next_rip(rip,context.0[10]&15)?)])?;
+                            // WHP reports HLT after execution (length=0, RIP already advanced).
+                            // Do not skip the instruction after HLT.
+                            if fixture&&rip!=(crate::cpu::ENTRY+3) as u64 {return Err(format!("Unexpected HLT RIP 0x{rip:x}, length={}",context.0[10]&15));}
                             trace.halt_waits+=1;halted=true;
                         }
                         2=>{
