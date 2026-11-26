@@ -81,6 +81,10 @@ checks. It explicitly reports `hardware_renderer_verified:false` and
 reported for the tested WARP path. Actual supported physical-GPU execution is
 not yet verified.
 
+Post-change Linux display/storage regression **45789261262** and original Android
+second-stage-init regression **45789266159** both passed at code `2b5a6b5`.
+Neither is a guest-acceleration test.
+
 ## Gates before declaring milestone 3 done
 
 1. Real GPU adapter render/readback and recovery on supported Windows 10 hosts,
