@@ -4,6 +4,18 @@ Work is restricted to core/platform corrections and regression tests. Do not
 interpret a successful individual test, Linux PID1, APK installation, or starting
 another diagnostic as completion of this step or of the emulator.
 
+## Latest verified scope: opt-in Linux APIC, one CPU
+
+Code **6096f2d** passed eight actual Linux APIC/PID1 boots in
+**45838588570**, native foundation **45838293945**, and legacy PIC Linux
+regression **45838866459**. The new `boot-kernel ... --apic-probe` profile is
+headless/initramfs-only and deliberately one CPU. Linux itself enumerates the
+MP table/controllers, validates its PIT-through-IOAPIC route, programs the
+LAPIC timer, and reaches diagnostic PID1 with functioning clocks. This is no
+longer only a synthetic guest enumeration result. It is still **not Linux SMP,
+disk/Android APIC acceptance, physical Windows 10 certification or completed
+Step 1**. The default disk/Android/legacy boot profile remains unchanged.
+
 ## New core findings and verified changes
 
 ### Guest-driven CPU bootstrap
@@ -394,3 +406,69 @@ existing Linux regression deliberately remains single-vCPU/PIC with APIC and
 ACPI disabled; it does **not** certify these tables under Linux. Reset/failure
 stress and physical Windows 10 acceptance also remain. Step 1 is incomplete;
 no graphics/Step 2 work was started.
+
+
+## Sequential blocker: actual Linux APIC boot acceptance (2026-11-24)
+
+Added an explicit `--apic-probe` option to `boot-kernel` only. It constructs a
+one-CPU APIC-capable partition, installs matching MP discovery data in the
+reserved BIOS hole, loads the real bzImage/initramfs, and executes the same
+controller/MMIO/device frontend used by the native two-CPU acceptance machine.
+It records real guest serial output and stops only after PID1's ready marker;
+controller accesses and actual interrupt injections are additionally mandatory.
+Disk, Android, bridge, player and framebuffer combinations are rejected before
+starting this profile, and the disk entrypoint also rejects an APIC plan before
+opening/creating its COW overlay. The existing PIC profile remains the default.
+
+New `.github/workflows/native-apic.yml` builds pinned Linux 6.6 with SMP,
+X86_MPPARSE, X86_LOCAL_APIC and X86_IO_APIC enabled. The kernel artifact from
+**45834154987** is reusable as `native-apic-linux-kernel`. Its successful kernel
+build must not be confused with that run's failed first OS invocation (the test
+initially needed its runpy import path fixed). `native_apic_checkpoint.py`
+performs eight independent VM/process boots with maxcpus=1, not eight CPU
+startups in one Linux instance. APIC is not disabled and Linux's timer-route
+validation is not bypassed. Acceptance requires MP/IOAPIC enumeration, PID1's
+ready marker and two sleep/tick markers, positive LAPIC timer injections, no
+panic and no unchecked MSR access error.
+
+Actual OS bring-up exposed and corrected these dependencies, sequentially:
+
+- Unsupported MSR accesses now inject architectural #GP(0) at the faulting RIP
+  rather than returning invented values or aborting safe guest probes. The
+  WHP pending-exception layout is SDK-asserted. Native guest RDMSR and WRMSR
+  tests require two #GP fixups, zero error code, preserved EAX/EDX and restored
+  stack. An existing pending exception also blocks external IRQ injection.
+- The virtual APIC base MSR reports the fixed xAPIC base/enable/BSP state;
+  relocation/disable requests remain explicitly unsupported. Unsupported AMD
+  OSVW capability is hidden; read-only virtual HWCR supplies the invariant-TSC
+  bit consistent with the virtual TSC contract. This is not host MSR passthrough.
+- Non-timer LVT configuration and ESR reset/read are retained for Linux setup;
+  absent local NMI/ExtINT/error/performance sources are not generated. Linux's
+  8259 auto-EOI setup is now supported and separately unit-tested, including
+  reinitialization back to normal EOI. The APIC runner does not inject PIC IRQs.
+- IOAPIC lowest-priority mode now actually selects one matching destination by
+  PPR (stable tie breaking), with tests switching the recipient as TPR changes.
+  Masked dormant route configurations are retained; unsupported active delivery
+  modes are not silently converted to fixed delivery.
+- A first Linux boot reached PID1 but a repeat failed its real PIT/IOAPIC timer
+  check. Requested 1ms rendezvous intervals could be rounded by Windows's
+  default scheduling resolution. A scoped WinMM timeBeginPeriod(1) request now
+  covers the VM timer worker, with timeEndPeriod on normal/error/panic teardown.
+  No extra guest ticks were fabricated and no Linux timer check was disabled.
+
+Verification progression: **45837226484** first passed three real OS boots;
+**45837933608** passed the stricter eight-boot gate; final **6096f2d** passed
+**45838588570** with eight boots and positive LAPIC timer counts. Visible sample
+summaries include 514 IOAPIC MMIO accesses, 144/151 interrupt injections and
+27 LAPIC timer injections (sample data, not a performance benchmark).
+Foundation **45838293945** passed both platforms and the 48 two-CPU native
+cycles including the new MSR-fault recovery tests. Legacy PIC Linux regression
+**45838866459** passed early-entry acceptance reusing **45814022595**, including
+its existing clock/storage/ext4/bridge/software-display checks.
+
+Still required: actual Linux AP startup/SMP scheduling and cross-CPU interrupt
+acceptance, APIC disk/bridge integration and OS device-interrupt acceptance,
+reset/failure stress and physical Windows 10 coverage. ACPI/UEFI interfaces and
+NMI/ExtINT delivery are not supplied by this profile. These results supersede
+older statements that Linux APIC enumeration/timers are entirely untested, but
+not the remaining Step 1 completion criteria. No Step 2 work was started.
