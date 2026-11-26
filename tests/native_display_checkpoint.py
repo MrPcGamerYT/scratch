@@ -20,8 +20,7 @@ def main():
     expected=Path('kernel-artifact/SHA256SUMS.txt').read_text().split()[0]
     assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
     rd=Path('display-initramfs.cpio');rd.write_bytes(initramfs(display=True))
-    row=bytes(component for x in range(800) for component in ((x*7)%256,(x*5)%256,(x*3)%256))
-    reference=b'P6\n800 600\n255\n'+row*600
+    reference=b'P6\n800 600\n255\n'+bytes(component for y in range(600) for x in range(800) for component in ((x*7)%256,(x*5+y)%256,(x*3)%256))
     samples=[]
     for index in range(3):
         log=Path(f'display-serial-{index+1}.log');capture=Path(f'display-{index+1}.ppm')

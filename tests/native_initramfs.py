@@ -137,6 +137,12 @@ def init_elf(disk_write=None, filesystem=False, clean_unmount=True, display=Fals
         address(b'\x48\xbe', 'fbrow')
         emit(b'\xba\x80\x0c\x00\x00\x0f\x05\x3d\x80\x0c\x00\x00')
         branch(b'\x0f\x85', 'fail')
+        # Tint each next row differently so host comparison catches stride/vertical flips.
+        address(b'\x48\xbb', 'fbrow')
+        emit(b'\x48\xff\xc3\xb9\x20\x03\x00\x00')
+        label('tintrow')
+        emit(b'\xfe\x03\x48\x83\xc3\x04\xff\xc9')
+        branch(b'\x0f\x85', 'tintrow')
         emit(b'\x41\xff\xcd')
         branch(b'\x0f\x85', 'drawrow')
         emit(b'\xb8\x03\x00\x00\x00\x44\x89\xe7\x0f\x05\x85\xc0')
