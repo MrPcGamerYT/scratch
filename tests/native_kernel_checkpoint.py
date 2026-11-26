@@ -23,7 +23,7 @@ def main():
     assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
     inspected=subprocess.run([exe,'inspect-kernel',str(kernel)],capture_output=True,text=True,timeout=20)
     assert inspected.returncode==0,inspected.stderr
-    cmd='earlyprintk=serial,ttyS0,115200,keep earlycon=uart8250,io,0x3f8,115200n8 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1'
+    cmd='earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1'
     rd=Path("diagnostic-initramfs.cpio")
     rd.write_bytes(initramfs())
     rd_sha=hashlib.sha256(rd.read_bytes()).hexdigest()
@@ -57,7 +57,7 @@ def main():
         assert metrics['total_boot_verified'] is False
         assert metrics['target_met'] is None and metrics['android_home_ready_ms'] is None
         assert metrics['android_home_target_ms']==60000
-        fields=['header_validated_ms','vm_ready_ms','vcpu_run_requested_ms','linux_banner_ms','stopped_ms']
+        fields=['header_validated_ms','vm_ready_ms','vcpu_run_requested_ms','linux_banner_ms','linux_userspace_ready_ms','stopped_ms']
         times=[metrics[field] for field in fields]
         assert all(isinstance(n,int) and n>=0 for n in times) and times==sorted(times),times
         assert metrics['serial_bytes']==len(raw)
@@ -65,6 +65,7 @@ def main():
         if index==0:
             notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-2048:]).decode())
             notice('NATIVE_TIMING='+json.dumps(metrics))
+        assert metrics.get('linux_userspace_ready_ms') is not None,('Diagnostic userspace not reached',p.stderr,serial[-2200:])
         if metrics.get('linux_userspace_ready_ms') is not None:
             assert p.returncode==0 and 'NEXUS_USERSPACE_PID1' in serial,serial[-1800:]
             assert serial.count('NEXUS_USERSPACE_TICK')==2,serial[-1800:]
@@ -75,11 +76,13 @@ def main():
         notice(f'Linux PIT checkpoint sample {index+1}: banner={metrics["linux_banner_ms"]} ms from engine main; PIT programs={metrics["pit_channel2_programs"]}; stopped={metrics["stopped_ms"]} ms; FULL BOOT=false; blocker: '+p.stderr[-1300:])
     summary={'schema':1,'target':'approximately 60 seconds from emulator launch to usable, verified Android Home',
         'target_ms':60000,'target_verified':False,'android_home_ready_ms':None,
-        'scope':'hosted Windows Server 2022, tiny Linux early boot only; NOT Windows 10/Android boot performance',
+        'scope':'hosted Windows Server 2022, tiny Linux diagnostic PID1 only; no general Linux distribution; NOT Windows 10/Android boot performance',
+        'linux_userspace_checkpoint_verified':True,
+        'linux_userspace_median_ms':statistics.median(s['metrics']['linux_userspace_ready_ms'] for s in samples),
         'linux_banner_median_ms':statistics.median(s['metrics']['linux_banner_ms'] for s in samples),
         'samples':samples}
     Path('boot-timing-summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
-    notice('Three actual Linux PIT/timing checkpoints passed. Android total-boot target remains UNVERIFIED; no full boot/GPU/FPS claim.')
+    notice('Three actual Linux PID1/timer/userspace checkpoints passed. Android total-boot target remains UNVERIFIED; no full boot/GPU/FPS claim.')
 
 
 if __name__=='__main__':

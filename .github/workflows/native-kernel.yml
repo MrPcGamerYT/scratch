@@ -78,7 +78,7 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
-      - name: Real Linux early-entry checkpoint — NOT complete kernel boot
+      - name: Real Linux PID1 checkpoint — NOT Android or a full Linux distribution
         shell: python
         run: |
           import runpy
