@@ -167,3 +167,51 @@ interrupt priorities/timers, IOAPIC routing or arbitrary AP restart.
 enumeration, full LAPIC/IOAPIC/timer routing with OS-level acceptance, reset and
 failure stress beyond the tested subset, and the physical Windows 10 matrix.
 No Step 2 work or completion declaration is implied by these results.
+
+## Sequential blocker: LAPIC fixed-interrupt routing
+
+This increment worked only on LAPIC routing; it did not start IOAPIC or timers.
+The production Linux/Android entry path is still PIC/one-vCPU. The new routing
+path is exercised by the explicit two-vCPU native acceptance machine, not yet
+an OS SMP boot profile.
+
+Implemented `src/lapic.rs` with edge-request IRR, ISR, TPR/PPR arbitration,
+software enable, EOI, physical destinations, flat logical LDR/DFR destinations
+and self/all/all-except-self shorthand. Invalid vectors/targets/modes are
+checked before changing destination IRRs. Priority classes block same/lower
+class nesting. Requests remain pending while TPR or the CPU interrupt window
+blocks delivery; ISR acknowledgement occurs only after WHP accepts injection.
+
+The native test now makes both guest vCPUs execute actual interrupt handlers:
+
+- BSP masks its priority class, queues a self-IPI and reads retained IRR/empty
+  ISR; unmasking invokes the handler, which increments guest RAM and EOIs.
+- A second self-IPI is queued under CLI, then delivered after STI without
+  requiring another guest device access. Scheduling cancellation only allows
+  the host to inspect interrupt windows; it does not fabricate a guest IRQ.
+- BSP targets AP1 physically, then through its guest-programmed logical mask.
+  AP1 must run its handler exactly twice, EOI and IRETD with its stack restored.
+- Both IRR delivery state and ISR must be clear after the guest EOIs; BSP's
+  stack is checked as well. Halted APs sleep until a deliverable interrupt;
+  cancellation alone does not wake them or skip the instruction after HLT.
+- The guest CLI/check/STI/HLT idle sequence is used on the AP. Each 16-cycle
+  batch must actually exercise at least one halt/wake, not merely busy-loop.
+
+The initial cross-CPU test exposed AP MMIO accesses through real-mode 64KiB
+segments. Rather than broadening segment limits to hide the fault, AP startup
+now executes LGDT, sets CR0.PE and far-jumps into flat protected32, installs its
+own IDT, then accesses LAPIC MMIO and enables interrupts.
+
+Verification: **45823248385** passed local IPI delivery; **45824852517** passed
+physical remote delivery after the AP bootstrap correction; **45825222251**
+passed physical/logical targeting and priority masking; **45825527510** passed
+IF deferral; final **45826050006**, code **8b639fa**, passed both-host strict
+unit/Clippy/release gates and **48 native two-vCPU cycles** with halt/wake checks.
+Existing Linux regression **45825760525** passed clock/boot/storage/ext4/bridge/
+software display gates after the interrupt-window rendezvous changes.
+
+Still not implemented/verified by this routing gate: IOAPIC, level-source EOI,
+LAPIC timers, NMI/ExtINT/cluster modes, production SMP scheduling/OS boot,
+firmware CPU enumeration, and physical Windows 10 certification. Unsupported
+operations fail explicitly. This supersedes only the earlier INIT/SIPI-only
+frontend limitation, not the remaining core-completion requirements.
