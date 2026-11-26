@@ -38,6 +38,9 @@ def main():
     samples=[]
     for index in range(3):
         log=Path('kernel-serial.log' if index==0 else f'kernel-serial-{index+1}.log')
+        if disk_enabled:
+            rd.write_bytes(initramfs(disk_write=index==0))
+            rd_sha=hashlib.sha256(rd.read_bytes()).hexdigest()
         start=time.perf_counter_ns()
         command=[exe,'boot-kernel',str(kernel),str(log),cmd,str(rd)]
         if disk_enabled:
@@ -61,9 +64,11 @@ def main():
             notice('VIRTIO_LINUX_STDERR='+p.stderr[-2500:])
             notice('VIRTIO_LINUX_SERIAL_TAIL='+serial[-3000:])
             assert 'virtio_blk virtio0: [vda]' in serial,('No Linux vda discovery',p.stderr,serial[-3000:])
+            expected_marker='NEXUS_VDA_WRITE_FLUSH_READ_MATCH' if index==0 else 'NEXUS_VDA_REBOOT_READ_MATCH'
+            assert expected_marker in serial,('No Linux block write/fsync/reboot read proof',p.stderr,serial[-3000:])
             assert metrics.get('irq5_injections',0)>0,('No real VirtIO IRQ delivery',metrics)
             assert hashlib.sha256(base.read_bytes()).hexdigest()==base_digest
-            notice('Linux virtio-blk vda discovery and external IRQ5 verified; not filesystem or Android readiness')
+            notice('Linux virtio-blk vda discovery, IRQ5, block write/fsync/read and separate-boot persistence verified; not filesystem or Android readiness')
         assert metrics,'No native monotonic timing report'
         assert metrics['pit_channel2_programs']>0 and metrics['pit_accesses']>0,metrics
         assert 'Unsupported kernel port 0x61' not in p.stderr,p.stderr
