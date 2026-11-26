@@ -1,7 +1,7 @@
 use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
-    let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"));
+    let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create"));
     let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut ram_set=false;
     if boot_command {
         while let Some(option)=args.last() {
@@ -41,12 +41,13 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let p=nexus_engine::kernel::KernelPlan::build(&image,None,"",nexus_engine::kernel::DEFAULT_RAM)?;
             println!("Linux boot plan: protocol=0x{:x}, entry=0x{:x}, runtime_end=0x{:x}, regions={}. Header/layout validation only.",p.protocol,p.entry,p.runtime_end,p.regions.len());Ok(())
         }
-        Some(command @ ("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open")) if (command=="boot-kernel"&&(args.len()==5||args.len()==6))||(command!="boot-kernel"&&args.len()==8) => {
+        Some(command @ ("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create")) if (command=="boot-kernel"&&(args.len()==5||args.len()==6))||(command!="boot-kernel"&&args.len()==8) => {
             use nexus_engine::kernel;
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let mut plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
-            plan.android_init_probe=command.starts_with("probe-android-init-");
+            plan.android_init_probe=command.starts_with("probe-android-");
+            plan.android_observe=command=="probe-android-observe-create";
             if let Some(path)=surface {plan=plan.with_framebuffer(path)?;}
             use std::io::Write;
             let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);

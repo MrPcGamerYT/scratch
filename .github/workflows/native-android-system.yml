@@ -9,6 +9,10 @@ on:
         description: 'Reuse native-android-system-disk from a previous run (optional)'
         required: false
         type: string
+      observe:
+        description: 'Continue after second-stage init to capture userspace blockers (deadline is a failure, not boot success)'
+        type: boolean
+        default: false
 permissions:
   contents: read
   actions: read
@@ -79,6 +83,8 @@ jobs:
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
       - name: Boot original Android initrd and system through native VirtIO block
+        env:
+          ANDROID_OBSERVE: ${{ inputs.observe && '1' || '0' }}
         shell: python
         run: |
           import runpy

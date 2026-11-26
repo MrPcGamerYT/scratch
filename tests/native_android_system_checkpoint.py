@@ -3,6 +3,7 @@ Success is Android's second-stage init marker, NOT framework, Home or ANR succes
 """
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -28,7 +29,8 @@ def main():
          'ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 '
          'root=/dev/ram0 ROOT=/dev/vda SRC=/android virtio_mmio.device=4K@0xd0000000:5 '
          'rdinit=/init')
-    p=subprocess.run([exe,'probe-android-init-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),
+    command='probe-android-observe-create' if os.environ.get('ANDROID_OBSERVE')=='1' else 'probe-android-init-create'
+    p=subprocess.run([exe,command,str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),
                       str(root/'android-system.zlag'),'android-system.cow','--ram-mib=2048',
                       '--framebuffer=android-system.ppm'],capture_output=True,text=True,timeout=150)
     serial=log.read_text(errors='replace') if log.exists() else ''

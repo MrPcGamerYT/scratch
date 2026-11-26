@@ -315,12 +315,12 @@ mod windows {
         platform.pic.acknowledge()?;Ok(Some(vector))
     }
     #[derive(Clone,Copy,PartialEq)]
-    enum RunGoal {Diagnostic,TimerFixture,AndroidInit}
+    enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve}
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
         goal:RunGoal,mut disk:Option<&mut LiveBlock>)->Result<(),String> {
         let fixture=goal==RunGoal::TimerFixture;
-        let limit=if goal==RunGoal::AndroidInit {120000} else {30000};
+        let limit=if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve) {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
@@ -401,7 +401,7 @@ mod windows {
             let mut platform=crate::platform::EarlyPlatform::default();
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut platform,serial,trace,start,if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},Some(&mut disk))
+            run_platform(partition,&mut platform,serial,trace,start,if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},Some(&mut disk))
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
