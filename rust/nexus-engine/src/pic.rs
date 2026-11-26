@@ -1,10 +1,10 @@
 //! Dual 8259 initialization/register subset for early PC bring-up.
 //! IRQ0/IRQ3/IRQ4 edge and dedicated IRQ5 edge/ELCR-level input. No slave IRQ sources,
-//! auto-EOI, rotation, poll or special-mask mode. Host ports never exposed.
+//! rotation, poll or special-mask mode. Supports 8086 auto-EOI initialization. Host ports never exposed.
 //! External CPU injection belongs to the WHP backend.
 #[derive(Default)]
 struct Controller {
-    mask:u8, vector:u8, cascade:u8, step:u8, read_isr:bool,irr:u8,isr:u8,initialized:bool,
+    mask:u8, vector:u8, cascade:u8, step:u8, read_isr:bool,irr:u8,isr:u8,initialized:bool,auto_eoi:bool,
 }
 impl Controller {
     fn access(&mut self,data:bool,write:bool,value:u8)->Result<Option<u8>,String> {
@@ -16,7 +16,7 @@ impl Controller {
             if value&0x10!=0 {
                 // Require cascaded, edge-triggered initialization with ICW4.
                 if value!=0x11 {return Err(format!("Unsupported PIC ICW1 0x{value:02x}"));}
-                self.step=2;self.mask=0;self.irr=0;self.isr=0;self.initialized=false;self.read_isr=false;return Ok(None);
+                self.step=2;self.mask=0;self.irr=0;self.isr=0;self.initialized=false;self.auto_eoi=false;self.read_isr=false;return Ok(None);
             }
             if self.step!=0 {return Err("PIC command during incomplete initialization".into());}
             match value {
@@ -32,8 +32,8 @@ impl Controller {
                 2=>{self.vector=value&0xf8;self.step=3;},
                 3=>{self.cascade=value;self.step=4;},
                 4=>{
-                    if value!=1 {return Err(format!("Unsupported PIC ICW4 0x{value:02x}; requires 8086 mode, no auto-EOI"));}
-                    self.step=0;self.initialized=true;
+                    if value!=1&&value!=3 {return Err(format!("Unsupported PIC ICW4 0x{value:02x}; requires 8086 mode"));}
+                    self.auto_eoi=value&2!=0;self.step=0;self.initialized=true;
                 }
                 _=>self.mask=value,
             }
@@ -72,7 +72,8 @@ impl PicPair {
     /// Acknowledge the selected request only after WHP accepted external injection.
     pub fn acknowledge(&mut self)->Result<(),String> {
         let irq=self.pending_irq().ok_or("PIC acknowledged without a deliverable request")?;
-        self.master.irr&=!(1<<irq);self.master.isr|=1<<irq;
+        self.master.irr&=!(1<<irq);if !self.master.auto_eoi {self.master.isr|=1<<irq;}
+        else if irq==5&&self.elcr&0x20!=0&&self.irq5_high {self.master.irr|=0x20;}
         Ok(())
     }
     pub fn acknowledge_irq0(&mut self)->Result<(),String> {
@@ -100,6 +101,14 @@ impl PicPair {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn auto_eoi_does_not_block_subsequent_edges_and_reinitialization_resets_it() {
+        let mut p=PicPair::default();
+        for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,3),(0x21,0)] {p.access(port,true,value).unwrap();}
+        p.raise_irq0();p.acknowledge_irq0().unwrap();p.access(0x20,true,0x0b).unwrap();assert_eq!(p.access(0x20,false,0).unwrap(),Some(0));
+        p.raise_irq0();assert_eq!(p.pending_vector(),Some(0x20));p.acknowledge_irq0().unwrap();
+        for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0)] {p.access(port,true,value).unwrap();}
+        p.raise_irq0();p.acknowledge_irq0().unwrap();p.raise_irq0();assert_eq!(p.pending_vector(),None);
+    }
     #[test] fn masked_pending_in_service_eoi_and_coalescing() {
         let mut p=PicPair::default();
         for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,255)] {p.access(port,true,value).unwrap();}
