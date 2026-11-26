@@ -1,6 +1,13 @@
 # VirtIO block milestone 1: bounded queue/request core
 
-## Implemented and verified
+## Newer register-model milestone
+
+Modern MMIO v2 registers, negotiation and bounded service are now modeled and
+tested; see [native-virtio-mmio.md](native-virtio-mmio.md). This supersedes the
+absence of a register model below, not the pending WHP MMIO adapter or real IRQ
+routing. No Linux VirtIO driver discovery has been verified.
+
+## Original request-core milestone: implemented and verified
 
 Tested revision `5ad788cb83b634552d06d097fbfdd628fde6b93b`:
 

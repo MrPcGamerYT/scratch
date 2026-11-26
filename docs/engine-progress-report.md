@@ -63,12 +63,30 @@ Foundation **45757147913** passed Windows/Ubuntu tests and existing WHP contract
 Linux regression **45757147928** passed the existing diagnostic PID1 boots.
 These are host-side VirtIO core tests, **not** Linux `/dev/vda` discovery.
 The memory API requires stopped vCPUs/workers; concurrent DMA memory ordering
-is not implemented. MMIO transport, negotiation, queue lifecycle and level IRQ
-routing are the next dependencies. No VirtIO disk is advertised to Linux yet.
+is not implemented. The MMIO register/negotiation/service model is now implemented (below); WHP
+memory trapping and actual level IRQ routing remain the next dependencies. No VirtIO disk is advertised to Linux yet.
 
 See [native-virtio-block.md](native-virtio-block.md) for the exact implemented
 subset and remaining acceptance gate. Android Home, app-freeze diagnosis,
 slimming, GPU/player integration and the 100-second target remain unfinished.
+
+### New: modern VirtIO-MMIO register and queue-service model
+
+At `028056d`, the modern MMIO v2 register model now connects feature negotiation,
+queue setup/disable/reset, notifications and bounded dispatch to the validated
+block core. Used-buffer interrupt status latches until acknowledged; fatal queue
+errors request a reset. Read-only and negotiated-FLUSH policies are enforced.
+
+Ten new tests passed, including register access rules, negotiation failure,
+service budgets, interrupt status/ack/reassertion, fatal queue errors and actual
+COW model-level write/flush/reset/reopen/read with the base unchanged.
+Foundation **45758465816** and Linux diagnostic regression **45758465572** passed.
+
+This is still a host-side register/service model: **no WHP guest has accessed
+these MMIO registers, no interrupt line is routed, and Linux does not see
+`/dev/vda` yet**. Next: WHP memory-access/instruction-emulation adapter and real
+level IRQ delivery, then Linux driver/block/filesystem validation.
+See [native-virtio-mmio.md](native-virtio-mmio.md) for precise scope and limits.
 
 ## Implemented and verified in this work
 

@@ -244,3 +244,13 @@ passed. These do not expose a VirtIO device to Linux or prove `/dev/vda` access.
 MMIO transport, negotiation, WHP adaptation and level IRQ routing remain next.
 See [native-virtio-block.md](native-virtio-block.md); Android/GPU/Home timing and
 app-stability claims remain unverified.
+
+
+## Modern VirtIO-MMIO register-model milestone
+
+At `028056d`, v2 register/config access, feature/status negotiation, queue lifecycle,
+bounded dispatch and latched interrupt status/acknowledgment passed ten new tests,
+including COW persistence through model reset/reopen. Foundation **45758465816**
+and diagnostic Linux regression **45758465572** passed. No guest WHP MMIO access,
+real VirtIO interrupt delivery or Linux `/dev/vda` discovery is claimed.
+See [native-virtio-mmio.md](native-virtio-mmio.md) for remaining integration gates.
