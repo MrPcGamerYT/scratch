@@ -258,7 +258,7 @@ fn smp_cycle()->Result<u64,String> {
     if marker!=0x5a {return Err("AP startup marker missing".into());}
     let word=|at:usize|unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(at).cast::<u32>())};
     if word(0xa030)!=5||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
-        return Err("Local fixed IPI handler/EOI/restored stack verification failed".into());
+        return Err("Local IPI/timer handler/EOI/restored stack verification failed".into());
     }
     if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
     let mut ap_stack=Register::scalar(0);let rsp=4;
@@ -266,8 +266,9 @@ fn smp_cycle()->Result<u64,String> {
     if u64::from_le_bytes(ap_stack.0[..8].try_into().unwrap())!=0x7000 {return Err("AP interrupt stack was not restored".into());}
     let fabric=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
     for local in fabric.iter() {
-        if local.pending().is_some()||(0x100..=0x170).step_by(16).any(|offset|local.read(offset)!=Ok(0)) {return Err("IPI remains pending/in-service after guest EOI".into());}
+        if local.pending().is_some()||(0x100..=0x170).chain(0x200..=0x270).filter(|offset|offset%16==0).any(|offset|local.read(offset)!=Ok(0)) {return Err("IPI remains pending/in-service after guest EOI".into());}
     }
+    if fabric[0].read(0x390)?!=0||fabric[0].read(0x320)?!=0x30040 {return Err("Guest periodic timer was not masked and stopped".into());}
     for (index,base) in [(0,0xa010),(1,0xa020)] {
         if word(base)>>24!=index||(word(base)>>16)&255!=2||word(base+4)!=index||word(base+8)!=2 {
             return Err(format!("Guest CPU{index} topology disagrees with allocated vCPUs"));

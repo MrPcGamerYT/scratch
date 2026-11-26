@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as folder:
         print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
         print('::notice::PASS: guest-driven real16 -> protected32 -> long64 transition with GDT, CR0/CR3/CR4/EFER and nonidentity paging store/load, three independent partitions',flush=True)
         print('::notice::PASS: guest unmapped-read and write-protected-page faults delivered to guest handler, CR2/error code, unchanged protected RAM, two IRETQ recoveries and restored stack; three repetitions',flush=True)
-        print('::notice::PASS: 48 two-vCPU cycles: guest INIT/SIPI and AP protected-mode entry, virtual CPUID topology, self/physical/flat-logical fixed IPIs, TPR masking and IF deferral, guest interrupt counters/EOIs/IRETD and both restored stacks; not production OS SMP, LAPIC timers or IOAPIC certification',flush=True)
+        print('::notice::PASS: 48 two-vCPU cycles: guest INIT/SIPI and AP protected-mode entry, virtual CPUID topology, self/physical/flat-logical fixed IPIs, TPR masking and IF deferral, one-shot/periodic timer IRQs waking HLT with guest masking/stop, guest interrupt counters/EOIs/IRETD and both restored stacks; not production OS SMP or IOAPIC certification',flush=True)
         ata_raw=root/'ata-fixture.raw';ata_image=root/'ata-fixture.zlag'
         ata_payload=bytes((n*17+n//512)%251 for n in range(2048))
         ata_raw.write_bytes(ata_payload);run('import-raw',ata_raw,ata_image)
