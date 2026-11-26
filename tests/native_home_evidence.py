@@ -4,6 +4,7 @@ import re
 
 def home_evidence(serial):
     selected=re.findall(r'^NEXUS_HOME_SELECTED ([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)\s*$',serial,re.M)
+    selected=[value for value in selected if value.split('/',1)[0] not in {'android','com.android.provision','com.android.settings'}]
     component=selected[-1] if selected else None
     def section(begin,end):
         if begin not in serial:return ''

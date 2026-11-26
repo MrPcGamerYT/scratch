@@ -43,3 +43,43 @@ The deliberately longer observation run `45782609955` continues beyond second-st
 `observe=true` selects `probe-android-observe-create`, which records the same second-stage timestamp but does not stop there. It retains failure evidence and never treats deadline/exit-budget exhaustion as success. No userspace/framework success marker has been implemented for this mode.
 
 Remaining work includes guest graphics/compositor integration and crash evidence, framework/Home readiness verification, native window/input/network/audio, acceleration and usable-Home performance. No claim that the complete emulator, Android apps, or approximately 100-second Home goal works follows from this checkpoint.
+
+## Android Home investigation after core-platform work
+
+This work does not certify Home or resolve ANRs. All experiments use new disposable
+COW overlays; no user disk or original base is changed.
+
+- Latest-engine original-image observation **45865579002** still fails its
+  userspace deadline/exit budget; it is not counted as Android success.
+- Derived diagnostic assets **45866271217** now query real PackageManager HOME
+  candidates, set a preferred component and explicitly launch it, capture resumed
+  activities/window state and the native crash buffer. The run **failed** and
+  exposed BlissLauncher RenderThread aborts in libhwui JankTracker with
+  `Impossible totalDuration 0`. A chooser is no longer mistaken for Home.
+- Adding `clocksource=tsc` alone passed **45868017865** and **45868933696**, including
+  a resumed BlissLauncher and APK round-trip. However **45869820219 failed** the
+  new fail-closed activity/crash check: the zero-duration abort recurred. These
+  intermittent passes are not a fix or a stability certification.
+- Clock evidence from 45869820219 shows Linux's watchdog comparing 512032000 ns
+  from refined-jiffies with 645413128 ns from TSC, marking TSC unstable and falling
+  back to refined-jiffies. Thus selecting TSC alone does not keep a high-resolution
+  guest clock. The engine's supplied WHP clock frequency was 2596098 kHz.
+- Diagnostic `tsc=reliable` experiment **45870621287** retained TSC, captured no
+  native/frame-duration abort in its bounded crash sample, but **still failed**:
+  PackageManager returned provisioning first, so the selector chose setup rather
+  than a real launcher. Watchdog bypass is an explicit diagnostic profile only,
+  not a general host-clock guarantee or a corrected emulated PIT implementation.
+- **3445427** excludes provisioning/settings/fallback activities and prefers
+  Launcher3 only if it is actually returned by PackageManager. Selection-order
+  and fail-closed evidence tests run locally. This latest selection correction
+  has **not yet been boot-verified in rebuilt guest assets**. Existing assets
+  45866271217 contain the old ordering-sensitive selector.
+
+The host gate keeps `android_home_verified`, rendered-Home and input-responsive
+flags false even when a launcher activity is resumed. Its checks now reject a
+chooser/setup/fallback, missing captures, and captured native/frame-duration
+aborts. Six local evidence/selection tests pass. The remaining next boot must
+combine the corrected selector with clock diagnostics, then verify actual rendered
+frames, input response, repeat stability and host-measured launch-to-Home time.
+The approximately 100-second target is not met or claimed here; neither are
+accelerated graphics, networking/audio or the user's ANR remediation.
