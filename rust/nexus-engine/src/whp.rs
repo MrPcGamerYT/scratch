@@ -78,10 +78,10 @@ mod windows {
         Ok(partition)
     }
     pub fn probe()->Result<(),String> { let _partition=create()?; Ok(()) }
-    fn with_guest<T>(code:&[u8], action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+    fn with_guest<T>(code:&[u8], action:impl FnOnce(&Partition,&Mapping<'_>,Option<&Mapping<'_>>)->Result<T,String>)->Result<T,String> {
         with_guest_at(code,0,4096,action)
     }
-    fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+    fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>,Option<&Mapping<'_>>)->Result<T,String>)->Result<T,String> {
         if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
         let partition=create()?;
         let memory=allocate(&partition,ram_bytes)?;
@@ -253,7 +253,7 @@ mod windows {
         mode_fixture(crate::cpu::CpuMode::Long64,false)?;
         mode_fixture(crate::cpu::CpuMode::Long64,true)
     }
-    fn load_kernel_plan<T>(plan:&crate::kernel::KernelPlan,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+    fn load_kernel_plan<T>(plan:&crate::kernel::KernelPlan,action:impl FnOnce(&Partition,&Mapping<'_>,Option<&Mapping<'_>>)->Result<T,String>)->Result<T,String> {
         use crate::kernel;
         plan.validate_regions()?;
         // Claim the capture exclusively before starting a VM or allowing disk writes.
@@ -269,7 +269,7 @@ mod windows {
                 Register::table(kernel::GDT as u64,31),Register::table(0,0),Register::scalar(plan.entry),Register::scalar(kernel::STACK),Register::scalar(2),
                 Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(kernel::BOOT_PARAMS as u64),Register::scalar(0)])?;
             let surface=if plan.framebuffer_output.is_some() {Some(allocate_at(partition,crate::framebuffer::MAPPED_BYTES,crate::framebuffer::GPA)?)} else {None};
-            let result=action(partition,memory);
+            let result=action(partition,memory,surface.as_ref());
             if let (Some(file),Some(surface))=(&mut output,&surface) {
                 // Run returned; no vCPU or worker is accessing the framebuffer during capture.
                 let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
@@ -282,7 +282,7 @@ mod windows {
     pub fn kernel_contract_smoke()->Result<(),String> {
         use crate::kernel;
         let plan=kernel::KernelPlan::build(&kernel::contract_image(),Some(b"INIT"),"nexus",kernel::DEFAULT_RAM)?;
-        load_kernel_plan(&plan,|partition,_| {
+        load_kernel_plan(&plan,|partition,_,_| {
             run_to_halt_mode(partition,&mut crate::io::TestBus::default(),crate::cpu::CpuMode::Protected32)?;
             for (name,value) in [(0,kernel::CMDLINE as u64),(3,u32::from_le_bytes(*b"nexu") as u64),
                 (1,plan.entry),(2,u32::from_le_bytes(*b"INIT") as u64),(7,plan.initrd_address.unwrap() as u64),(5,3),(6,kernel::BOOT_PARAMS as u64)] {
@@ -318,7 +318,8 @@ mod windows {
     enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve}
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
-        goal:RunGoal,mut disk:Option<&mut LiveBlock>)->Result<(),String> {
+        run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>)->Result<(),String> {
+        let (goal,display)=run;let mut last_frame=std::time::Instant::now();
         let fixture=goal==RunGoal::TimerFixture;
         let limit=if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve) {120000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
@@ -326,6 +327,14 @@ mod windows {
         timer_pump(partition,|| {
             let (result,timed_out)=bounded(partition,limit,|| {
                 loop {
+                    if let Some((surface,session))=display {
+                        if session.stopped() {return Err("Player window closed; guest stopped safely (not Android shutdown)".into());}
+                        if last_frame.elapsed()>=std::time::Duration::from_millis(33) {
+                            // vCPU is stopped here. No worker accesses guest RAM.
+                            let pixels=unsafe {std::slice::from_raw_parts(surface.address.cast::<u8>(),surface.bytes)};
+                            session.publish(pixels)?;last_frame=std::time::Instant::now();
+                        }
+                    }
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
@@ -387,21 +396,21 @@ mod windows {
         })
     }
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
-        load_kernel_plan(plan,|partition,_| {
+        load_kernel_plan(plan,|partition,_,surface| {
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,RunGoal::Diagnostic,None)
+            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,(RunGoal::Diagnostic,surface.zip(plan.player.as_deref())),None)
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
-        load_kernel_plan(plan,|partition,memory| {
+        load_kernel_plan(plan,|partition,memory,surface| {
             let capacity=backend.disk_bytes()/512;
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
             let mut platform=crate::platform::EarlyPlatform::default();
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut platform,serial,trace,start,if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},Some(&mut disk))
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk))
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
@@ -489,7 +498,7 @@ mod windows {
             platform.pit0.access(0x43,true,0x30,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
-            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,RunGoal::TimerFixture,None)?;
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None)?;
             let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
             if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
                 return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));

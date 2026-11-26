@@ -2,9 +2,10 @@ use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create"));
-    let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut ram_set=false;
+    let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut ram_set=false;
     if boot_command {
         while let Some(option)=args.last() {
+            if option=="--window" {if live {return Err("Duplicate --window".into());}live=true;args=&args[..args.len()-1];continue;}
             if let Some(value)=option.strip_prefix("--ram-mib=") {
                 if ram_set {return Err("Duplicate RAM option".into());}
                 ram=nexus_engine::kernel::parse_ram_mib(value)?;ram_set=true;
@@ -48,6 +49,9 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let mut plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
             plan.android_init_probe=command.starts_with("probe-android-");
             plan.android_observe=command=="probe-android-observe-create";
+            if live&&surface.is_none() {return Err("--window currently requires an exclusive --framebuffer=NEW-file.ppm capture path".into());}
+            let window=if live {Some(nexus_engine::player::Window::open()?)} else {None};
+            plan.player=window.as_ref().map(|w|w.session.clone());
             if let Some(path)=surface {plan=plan.with_framebuffer(path)?;}
             use std::io::Write;
             let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);
@@ -67,6 +71,18 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let console=whp::boot_test_sector(Path::new(&args[2]))?;
             println!("ZLAG test sector executed at 0000:7c00 and halted. Debug: {}",console.escape_ascii());
             println!("No BIOS, UEFI or disk-device services. This is NOT an Android boot."); Ok(())
+        }
+        Some("player-window-smoke") if args.len()==2 => {
+            use std::sync::atomic::Ordering;
+            let window=nexus_engine::player::Window::open()?;
+            let mut frame=vec![0;nexus_engine::framebuffer::MAPPED_BYTES];
+            for pixel in frame[..nexus_engine::framebuffer::PIXEL_BYTES].chunks_exact_mut(4) {pixel.copy_from_slice(&[0x70,0x35,0x15,0]);}
+            window.session.publish(&frame)?;
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let presents=window.session.presents.load(Ordering::Relaxed);
+            drop(window);
+            if presents==0 {return Err("Native window did not present any software frames".into());}
+            println!("Native window software presentation/close PASS: {presents} blits; not guest FPS, Android display or GPU acceleration");Ok(())
         }
         Some("capabilities") if args.len()==2 => {
             println!("Independent Rust foundation; QEMU dependency: none\nZLAG raw-disk import / validation / sector reads: implemented\nVerified ZLAG-backed ATA LBA28 PIO with optional persistent COW overlay: implemented and diagnostic-tested; no IRQ14, DMA or Android integration\nDirect Windows WHP partition lifecycle: implemented, host-dependent\nBounded real-mode WHP CPU/RAM smoke: implemented, host-dependent\nPrivate scalar port-I/O test bus / bounded cancellation: implemented, host-dependent\nZLAG first-sector test loader at 0000:7c00: implemented, no BIOS services\nSeeded protected/long-mode test startup with paging and guest software interrupt: implemented, host-dependent\nLinux bzImage loader, polled COM1, PIT0/IRQ0 and diagnostic PID1 checkpoint: implemented; no general Linux distribution or Android boot\nOpt-in VirtIO-MMIO block with dedicated IRQ5 and Linux vda/COW separate-boot raw-block persistence: diagnostic-tested including ext4 clean remount/journal replay; no Android integration\nOpt-in 800x600 software scanout -> Linux fbdev writes -> exact PPM capture: diagnostic-tested; not guest GPU acceleration or an interactive player\nFirmware / full platform devices / Android boot: NOT IMPLEMENTED\nGuest DirectX / OpenGL / Vulkan acceleration: NOT IMPLEMENTED\nNo performance or game-compatibility certification"); Ok(())

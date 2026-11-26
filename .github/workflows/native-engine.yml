@@ -42,6 +42,18 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Native Windows software window lifecycle smoke
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import subprocess
+          for repetition in range(3):
+              p=subprocess.run(['rust/nexus-engine/target/release/nexus-engine.exe','player-window-smoke'],capture_output=True,text=True,timeout=20)
+              print(p.stdout,flush=True)
+              if p.returncode:
+                  print('::error::'+p.stderr[-3000:].replace('\n','%0A'),flush=True)
+                  raise SystemExit(p.returncode)
+          print('::notice::NATIVE_WINDOW: three create/software-present/close cycles PASS; no Android, input or GPU success claimed')
       - name: Android manifest and read-only boot-contract host tests
         run: python tests/native_android_tools_tests.py
       - name: Independent CLI / disk-format reference checks
