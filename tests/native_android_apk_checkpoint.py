@@ -35,8 +35,9 @@ def main():
             'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],
             'base_unchanged':digest(root/'android-system.zlag')==manifest['android-system.zlag']['sha256']}
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
+    diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
     critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
-    for label,text in [('HOST',p.stdout+'\n'+p.stderr),('BOOT_DIAGNOSTICS',critical[-60000:]),('SERIAL_TAIL',serial[-12000:])]:
+    for label,text in [('HOST',p.stdout+'\n'+p.stderr),('ANR_HOME_INVENTORY',diagnostic[:30000]),('BOOT_DIAGNOSTICS',critical[-60000:]),('SERIAL_TAIL',serial[-12000:])]:
         for at in range(0,len(text),2800):
             message=f'REAL_APK_{label}_{at}='+text[at:at+2800]
             print('::notice::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
