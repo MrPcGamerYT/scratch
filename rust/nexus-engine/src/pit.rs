@@ -52,7 +52,7 @@ impl Pit2 {
                     self.latch=if high {None} else {Some((count,true))};return Ok(Some(byte));
                 }
                 let count=self.count(now);let byte=if self.read_high {(count>>8) as u8} else {count as u8};
-                self.read_high=!self.read_high;Ok(Some(byte))
+                self.read_high = !self.read_high;Ok(Some(byte))
             }
             _=>Err(format!("Unsupported PIT access port=0x{port:x}, write={write}")),
         }
