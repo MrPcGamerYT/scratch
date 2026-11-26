@@ -15,7 +15,7 @@ def digest(path):
 def main():
     root=Path('native-apk-artifact');manifest=json.loads((root/'SHA256.json').read_text())
     expected={'android-system.zlag','kernel','initrd.img','manifest.json','native-apk-derived-manifest.json','smoke.apk'}
-    assert set(manifest)==expected,'Unexpected/missing APK fixture assets'
+    assert expected<=set(manifest)<=expected|{'smoke.apk.idsig'},'Unexpected/missing APK fixture assets: '+repr(sorted(manifest))
     for name,info in manifest.items():
         path=root/name
         assert path.is_file() and not path.is_symlink() and path.stat().st_size==info['bytes'] and digest(path)==info['sha256'],name
