@@ -78,10 +78,10 @@ mod windows {
         Ok(partition)
     }
     pub fn probe()->Result<(),String> { let _partition=create()?; Ok(()) }
-    fn with_guest<T>(code:&[u8], action:impl FnOnce(&Partition,&Mapping<'_>,Option<&Mapping<'_>>)->Result<T,String>)->Result<T,String> {
+    fn with_guest<T>(code:&[u8], action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         with_guest_at(code,0,4096,action)
     }
-    fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>,Option<&Mapping<'_>>)->Result<T,String>)->Result<T,String> {
+    fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
         let partition=create()?;
         let memory=allocate(&partition,ram_bytes)?;
