@@ -7,7 +7,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
 }
 struct ApicDisk {device:crate::virtio_mmio::BlockMmio,backend:crate::overlay::Overlay,accesses:u64,completions:u64}
 type RamGate=std::sync::Arc<std::sync::RwLock<()>>;
-struct ApicState {running_aps:Vec<bool>,ram_gate:RamGate,dma_rendezvous:u64,disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+struct ApicState {started_aps:Vec<bool>,ram_gate:RamGate,dma_rendezvous:u64,disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
 impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
 impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
@@ -115,7 +115,7 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                     if shorthand!=0||c.icr_high>>24!=1 {return Err("Fixture startup target must be AP1".into());}
                     tx.send(event).map_err(|_|"AP startup worker disconnected")?;
                 } else {
-                    let state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
+                    let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
                     let targets:Vec<usize>=match shorthand {
                         0=>vec![(c.icr_high>>24) as usize],
                         3=>(0..state.len()).filter(|id|*id!=c.index as usize).collect(),
@@ -125,11 +125,12 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                     // startup is supported; runtime INIT/hotplug reset is not yet.
                     for &target in &targets {
                         state.startup_routes.get(target).and_then(Option::as_ref).ok_or("Startup targets absent/BSP CPU")?;
-                        if kind==5&&state.running_aps.get(target)==Some(&true) {return Err("Runtime AP INIT reset is not implemented; refusing silent ignored reset".into());}
+                        if kind==5&&state.started_aps.get(target)==Some(&true) {return Err("Runtime AP INIT reset is not implemented; refusing silent ignored reset".into());}
                     }
                     for target in targets {
-                        if kind==6&&state.running_aps.get(target)==Some(&true) {continue;} // duplicate SIPI is ignored architecturally
+                        if kind==6&&state.started_aps.get(target)==Some(&true) {continue;} // duplicate SIPI is ignored architecturally
                         state.startup_routes[target].as_ref().ok_or("Missing startup route")?.send(event).map_err(|_|"OS AP startup worker disconnected")?;
+                        if kind==6 {state.started_aps[target]=true;}
                     }
                 }
             } else {
@@ -407,7 +408,7 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{running_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
     {let mut state=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         state.io.write(0,0)?;state.io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;}
     // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
@@ -480,7 +481,7 @@ fn smp_cycle()->Result<u64,String> {
 fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,devices:(Option<crate::overlay::Overlay>,bool))->Result<(),String> {
     let (backend,bridge_probe)=devices;
     let mut io=crate::ioapic::IoApic::new();io.write(0,0)?;io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;
-    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{running_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
+    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
     if let Some(backend)=backend {
         let device=crate::virtio_mmio::BlockMmio::new(backend.disk_bytes()/512,false)?;
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.disk=Some(ApicDisk{device,backend,accesses:0,completions:0});
@@ -513,7 +514,6 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
                         match rx.recv_timeout(std::time::Duration::from_millis(10)) {
                             Ok(StartupEvent::Init)=>initialized=true,
                             Ok(StartupEvent::Sipi(vector)) if initialized=>{
-                                state.lock().map_err(|_|"LAPIC lock poisoned")?.running_aps[index as usize]=true;
                                 let mut cs=Register::segment(0x9b);
                                 cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
                                 cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
@@ -533,7 +533,7 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
             }));
         }
         {let mut state=fabric.lock().map_err(|_|"LAPIC lock poisoned")?;
-            state.startup_routes=routes;state.running_aps=vec![false;partition.2 as usize];}
+            state.startup_routes=routes;state.started_aps=vec![false;partition.2 as usize];}
         let bsp=run_index(handle,0,ram,bytes,None,fabric.clone(),Some(&mut observe));
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.stop=true;
         for worker in workers {worker.join().map_err(|_|"Linux AP worker panicked")??;}
