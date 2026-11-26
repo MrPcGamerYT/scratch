@@ -87,6 +87,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+    let mut timer_clock=std::time::Instant::now();
     let mut halted=false;let mut halt_waits=0;
     for _ in 0..50000 {
         if std::time::Instant::now()>=deadline {
@@ -97,6 +98,8 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         {
         let mut fabric=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         let local=&mut fabric[index as usize];
+        let now=std::time::Instant::now();
+        local.advance_ns(now.duration_since(timer_clock).as_nanos().min(u128::from(u64::MAX)) as u64)?;timer_clock=now;
         if let Some(vector)=local.pending() {
             let names=[0x11,0x80000001,0x80000000];let mut values=[Register::scalar(0);3];
             unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),3,values.as_mut_ptr()),"LAPIC interrupt window")?;}
@@ -171,7 +174,11 @@ fn smp_cycle()->Result<u64,String> {
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x41,0,0,0,
         0x66,0x83,0x3d,0x40,0xa0,0,0,1,0x75,0xf6,
         0xc7,0x05,0x00,0x03,0xe0,0xfe,0x41,8,0,0,
-        0x66,0x83,0x3d,0x40,0xa0,0,0,2,0x75,0xf6,0xfa,0xf4]);
+        0x66,0x83,0x3d,0x40,0xa0,0,0,2,0x75,0xf6,
+        0xc7,0x05,0x20,3,0xe0,0xfe,0x40,0,0,0,
+        0xc7,0x05,0xe0,3,0xe0,0xfe,0xb,0,0,0,
+        0xc7,0x05,0x80,3,0xe0,0xfe,0xa0,0x86,1,0,
+        0xfa,0x83,0x3d,0x30,0xa0,0,0,3,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4]);
     f.idt_limit=0x207;
     f.ram[cpu::IDT+0x200..cpu::IDT+0x208].copy_from_slice(&[0,0x94,8,0,0,0x8e,0,0]);
     let handler=[0xff,0x05,0x30,0xa0,0,0,
@@ -242,7 +249,7 @@ fn smp_cycle()->Result<u64,String> {
     let marker=unsafe {*memory.address.cast::<u8>().add(0xa000)};
     if marker!=0x5a {return Err("AP startup marker missing".into());}
     let word=|at:usize|unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(at).cast::<u32>())};
-    if word(0xa030)!=2||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
+    if word(0xa030)!=3||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
         return Err("Local fixed IPI handler/EOI/restored stack verification failed".into());
     }
     if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
