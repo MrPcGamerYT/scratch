@@ -454,13 +454,19 @@ fn smp_cycle()->Result<u64,String> {
         0xfa,0x83,0x3d,0x40,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4];
     // After segment/stack/IDT setup, before enabling the reset LAPIC, check
     // defaults and aggregate any stale TPR/SVR bits over every restart.
-    let probe=[0xa1,0x80,0,0xe0,0xfe,0x09,0x05,0xc8,0xa0,0,0,
+    let probe=[0xa1,0x30,2,0xe0,0xfe,0x09,0x05,0xc8,0xa0,0,0,
+        0xa1,0x30,1,0xe0,0xfe,0x09,0x05,0xc8,0xa0,0,0,
+        0xa1,0x80,0,0xe0,0xfe,0x09,0x05,0xc8,0xa0,0,0,
         0xa1,0xf0,0,0xe0,0xfe,0x35,0xff,0,0,0,0x09,0x05,0xc8,0xa0,0,0,
         0xff,0x05,0xc0,0xa0,0,0];
     ap_protected.splice(20..20,probe);
     // Dirty the LAPIC before each final halt; INIT must discard this TPR.
     ap_protected.truncate(ap_protected.len()-2);
-    ap_protected.extend_from_slice(&[0xc7,0x05,0x80,0,0xe0,0xfe,0xf0,0,0,0,0xff,0x05,0xc4,0xa0,0,0,0xfa,0xf4]);
+    ap_protected.extend_from_slice(&[0xc7,0x05,0x80,0,0xe0,0xfe,0xf0,0,0,0,
+        0xc7,0x05,0,3,0xe0,0xfe,0x60,0,4,0, // pending masked self-IPI must not survive INIT
+        0xff,0x05,0xc4,0xa0,0,0,
+        0x83,0x3d,0xc0,0xa0,0,0,4,0x74,2,0xeb,0xfe, // active IF=0 spin until guest INIT; final generation halts
+        0xfa,0xf4]);
     f.ram[0x9600..0x9600+ap_protected.len()].copy_from_slice(&ap_protected);
     f.ram[0xb208..0xb210].copy_from_slice(&[0,0x98,8,0,0,0x8e,0,0]);
     let ap_handler=[0xff,0x05,0x40,0xa0,0,0,
@@ -504,7 +510,7 @@ fn smp_cycle()->Result<u64,String> {
         return Err("Local IPI/timer handler/EOI/restored stack verification failed".into());
     }
     if word(0xa0c0)!=4||word(0xa0c4)!=4||word(0xa0c8)!=0 {return Err(format!("Runtime AP reset defaults/restart mismatch starts={} stops={} stale={:x}",word(0xa0c0),word(0xa0c4),word(0xa0c8)));}
-    println!("NATIVE_AP_RESET_OK restarts=3 starts=4 stops=4 stale_lapic=0 duplicate_sipi_ignored=true");
+    println!("NATIVE_AP_RESET_OK restarts=3 starts=4 stops=4 stale_lapic=0 duplicate_sipi_ignored=true active_reset=true");
     if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
     let mut ap_stack=Register::scalar(0);let rsp=4;
     unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,1,&rsp,1,&mut ap_stack),"AP restored stack")?;}
