@@ -420,7 +420,7 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
     let result=timer_pump(partition,||bounded(partition,30000,||run_index(partition.0 as usize,0,memory.address as usize,memory.bytes,None,fabric.clone(),Some(&mut observe))));
     let state=fabric.lock().map_err(|_|"LAPIC lock poisoned")?;
     observe_serial_tail(&state.platform.uart.output,emitted,serial,trace,start)?;
-    let ((reason,waits),expired)=result?;trace.halt_waits=waits;
+    let ((reason,waits),expired)=result.map_err(|error|format!("{error}; APIC_DIAG injections={} pit_programs={} pit_edges={} cursor={} SVR={:x?} TPR={:x?} LDR={:x?} pending={:?}",state.injections,state.platform.pit0.programs,state.platform.pit0.edges,state.pit_edges,state[0].read(0xf0),state[0].read(0x80),state[0].read(0xd0),state[0].pending()))?;trace.halt_waits=waits;
     if expired||reason!=0||state.io_accesses==0||state.injections==0 {return Err(format!("APIC OS checkpoint incomplete reason=0x{reason:x} expired={expired} io_mmio={} injections={}",state.io_accesses,state.injections));}
     println!("NATIVE_APIC_OS_PID1_OK cpus=1 io_mmio={} injections={} pit_edges={}; not SMP or Android certification",state.io_accesses,state.injections,state.platform.pit0.edges);
     Ok(())
