@@ -33,3 +33,4 @@ mod virtio_block_tests;
 pub mod player;
 pub mod graphics;
 pub mod bridge;
+pub mod sha256;

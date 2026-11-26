@@ -1,0 +1,108 @@
+name: Native engine real Android APK acceptance
+on:
+  push:
+    paths:
+      - '.github/workflows/native-apk.yml'
+  workflow_dispatch:
+    inputs:
+      assets_run:
+        description: 'Reuse native-android-apk-disk from a previous run (optional)'
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  assets:
+    if: ${{ inputs.assets_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Build disposable derived image and signed code-free APK; no QEMU or guestfs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full squashfs-tools e2fsprogs musl-tools aapt apksigner android-framework-res
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
+          7z x android11.iso kernel initrd.img system.sfs -oapk-source
+          rm android11.iso
+          python3 tests/native_android_assets.py apk-source
+          compression=$(unsquashfs -s apk-source/system.sfs | awk '/^Compression/{print $2}')
+          case "$compression" in gzip|lz4|xz|zstd|lzo) ;; *) echo 'Unsupported source compression'; exit 1;; esac
+          unsquashfs -d apk-system apk-source/system.sfs
+          rm apk-source/system.sfs
+          musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror -DNEXUS_BRIDGE_COM2 guest-tools/nexus-guest/agent.c -o nexus-native-agent
+          python3 tests/native_android_apk_prepare.py
+          e2fsck -fn apk-system/system.img
+          mkdir -p apk-tree/android/data native-apk-artifact
+          mksquashfs apk-system apk-tree/android/system.sfs -noappend -comp "$compression" -processors 2
+          rm -rf apk-system
+          truncate -s 4G native-apk.raw
+          mkfs.ext4 -F -b 4096 -L NEXUS_APK_CI -O ^64bit,^metadata_csum_seed,^orphan_file -d apk-tree native-apk.raw
+          cargo build --release --locked --manifest-path rust/nexus-engine/Cargo.toml
+          rust/nexus-engine/target/release/nexus-engine import-raw native-apk.raw native-apk-artifact/android-system.zlag
+          rm native-apk.raw
+          cat > AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.nexus.smoke" android:versionCode="1" android:versionName="1"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="30"/><application android:hasCode="false" android:label="Nexus native APK acceptance"/></manifest>
+          EOF
+          aapt package -f -M AndroidManifest.xml -I /usr/share/android-framework-res/framework-res.apk -F unsigned.apk
+          keytool -genkeypair -keystore ci-apk.keystore -storepass android -keypass android -alias ci -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Nexus disposable CI test'
+          apksigner sign --ks ci-apk.keystore --ks-pass pass:android --key-pass pass:android --out native-apk-artifact/smoke.apk unsigned.apk
+          apksigner verify --verbose native-apk-artifact/smoke.apk
+          rm ci-apk.keystore
+          cp apk-source/kernel apk-source/initrd.img apk-source/manifest.json native-apk-derived-manifest.json native-apk-artifact/
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('native-apk-artifact')
+          def digest(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for b in iter(lambda:f.read(4194304),b''): h.update(b)
+              return h.hexdigest()
+          (root/'SHA256.json').write_text(json.dumps({p.name:{'bytes':p.stat().st_size,'sha256':digest(p)} for p in root.iterdir() if p.is_file()},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android-apk-disk
+          path: native-apk-artifact/
+          retention-days: 3
+  apk:
+    needs: assets
+    if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-android-apk-disk
+          path: native-apk-artifact
+          run-id: ${{ inputs.assets_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build independent Rust engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Require real Android install, package presence and uninstall over native COM2
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_android_apk_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-android-real-apk-evidence
+          path: |
+            native-apk-serial.log
+            native-apk-serial.log.timing.json
+            native-apk-checkpoint.json
+            native-apk-artifact/*manifest.json
+            native-apk-artifact/SHA256.json
+            native-engine-*.log

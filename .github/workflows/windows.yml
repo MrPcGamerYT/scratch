@@ -13,6 +13,7 @@ on:
       - 'tests/native_graphics*.py'
       - 'tests/native_device_checkpoint.py'
       - '.github/workflows/native-graphics.yml'
+      - '.github/workflows/native-apk.yml'
       - '.github/workflows/native-kernel.yml'
       - 'tests/native_kernel_checkpoint.py'
       - 'tests/native_initramfs.py'

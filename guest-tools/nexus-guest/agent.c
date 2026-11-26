@@ -38,6 +38,9 @@ static int command(const char *line, const char **name, const char **key) {
         {"NEXUS 1 VOLUME_DOWN", "VOLUME_DOWN", "25"}, {"NEXUS 1 MUTE", "MUTE", "164"},
         {"NEXUS 1 PROVISION_HOME", "PROVISION_HOME", "PROVISION_HOME"},
         {"NEXUS 1 QUERY_APP", "QUERY_APP", "QUERY_APP"},
+#ifdef NEXUS_BRIDGE_COM2
+        {"NEXUS 1 VERIFY_TEST_APK", "VERIFY_TEST_APK", "VERIFY_TEST_APK"},
+#endif
         {"NEXUS 1 CHECK_HOME", "CHECK_HOME", "CHECK_HOME"},
         {"NEXUS 1 SHUTDOWN", "SHUTDOWN", NULL}
     };
@@ -58,6 +61,9 @@ static int execute(const char *key) {
         if (nullfd >= 0) { dup2(nullfd,0); dup2(nullfd,1); dup2(nullfd,2); if (nullfd > 2) close(nullfd); }
         if (key && !strcmp(key,"PROVISION_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-provision-home.sh",R_OK)==0 ? "/nexus-provision-home.sh" : "/system/bin/nexus-provision-home.sh", (char *)NULL);
         else if (key && !strcmp(key,"CHECK_HOME")) execl(NEXUS_SYSTEM_BIN "sh", "sh", access("/nexus-home-check.sh",R_OK)==0 ? "/nexus-home-check.sh" : "/system/bin/nexus-home-check.sh", (char *)NULL);
+#ifdef NEXUS_BRIDGE_COM2
+        else if (key && !strcmp(key,"VERIFY_TEST_APK")) execl(NEXUS_SYSTEM_BIN "sh", "sh", NEXUS_SYSTEM_BIN "nexus-apk-check.sh", (char *)NULL);
+#endif
         else if (key && !strcmp(key,"APK_INSTALL")) {
             // Feed the normal package installer through stdin. Do not ask
             // system_server to reopen a private root-owned staging pathname.

@@ -2,9 +2,13 @@ use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create"));
-    let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut ram_set=false;
+    let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;
     if boot_command {
         while let Some(option)=args.last() {
+            if let Some(path)=option.strip_prefix("--bridge-apk=") {
+                if bridge_apk.is_some()||path.is_empty() {return Err("Invalid/duplicate bridge APK path".into());}
+                bridge_apk=Some(std::path::PathBuf::from(path));args=&args[..args.len()-1];continue;
+            }
             if option=="--bridge-probe" {if bridge_probe {return Err("Duplicate --bridge-probe".into());}bridge_probe=true;args=&args[..args.len()-1];continue;}
             if option=="--window" {if live {return Err("Duplicate --window".into());}live=true;args=&args[..args.len()-1];continue;}
             if let Some(value)=option.strip_prefix("--ram-mib=") {
@@ -48,7 +52,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let image=kernel::read_input(Path::new(&args[2]))?;
             let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let mut plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],ram)?;
-            plan.bridge_probe=bridge_probe;
+            plan.bridge_probe=bridge_probe||bridge_apk.is_some();plan.bridge_apk=bridge_apk;
             plan.android_init_probe=command.starts_with("probe-android-");
             plan.android_observe=command=="probe-android-observe-create";
             if live&&surface.is_none() {return Err("--window currently requires an exclusive --framebuffer=NEW-file.ppm capture path".into());}
@@ -68,7 +72,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
                 println!("NATIVE_PLAYER_JSON={{\"software_blits\":{},\"last_submitted_bgrx_crc32\":{},\"guest_input_verified\":false,\"gpu_accelerated\":false}}",window.session.presents.load(Ordering::Acquire),window.session.presented_crc32.load(Ordering::Acquire));
             }
             trace.stopped_ms=Some(start.elapsed().as_millis() as u64);
-            trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||if plan.bridge_probe {"Native bridge query round trip completed; not APK/network/audio/Home verification".into()} else if plan.android_init_probe {"Android second-stage init checkpoint reached; framework/Home not verified".into()} else {"Linux diagnostic userspace checkpoint reached; Android boot not implemented".into()});
+            trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||if plan.bridge_apk.is_some() {"Native APK install/check/uninstall reported successful by Android bridge; Home/network/audio not verified".into()} else if plan.bridge_probe {"Native bridge query round trip completed; not APK/network/audio/Home verification".into()} else if plan.android_init_probe {"Android second-stage init checkpoint reached; framework/Home not verified".into()} else {"Linux diagnostic userspace checkpoint reached; Android boot not implemented".into()});
             timings.write_all(trace.json().as_bytes()).map_err(|e|e.to_string())?;
             timings.flush().map_err(|e|e.to_string())?;
             result

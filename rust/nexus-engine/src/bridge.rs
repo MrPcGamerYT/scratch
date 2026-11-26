@@ -1,12 +1,25 @@
 //! Private COM2 bridge bring-up, distinct from COM1 boot logs; no host sockets/ADB.
 //! Only QUERY_APP is sent by this probe. No arbitrary shell/file/installation API.
 use std::collections::VecDeque;
+use std::io::{Read,Seek,SeekFrom};
+struct Apk {file:std::fs::File,total:u64,sent:u64,digest:String,phase:u8}
+impl Apk {
+    fn open(path:&std::path::Path)->Result<Self,String> {
+        let mut file=std::fs::File::open(path).map_err(|e|e.to_string())?;
+        if !file.metadata().map_err(|e|e.to_string())?.is_file() {return Err("APK must be a regular file".into());}
+        let (digest,total)=crate::sha256::digest(&mut file,512*1024*1024)?;
+        if total==0 {return Err("Empty APK".into());}file.seek(SeekFrom::Start(0)).map_err(|e|e.to_string())?;
+        Ok(Self{file,total,sent:0,digest,phase:0})
+    }
+}
 use crate::{io::IoExit,uart::EarlyUart};
 pub const GREETING:&[u8]=b"NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK";
 #[derive(Default)]
-pub struct Bridge {line:Vec<u8>,pending:VecDeque<u8>,greeted:bool,app:Option<String>,result:bool,pub received:usize}
+pub struct Bridge {apk:Option<Apk>,line:Vec<u8>,pending:VecDeque<u8>,greeted:bool,app:Option<String>,result:bool,pub received:usize}
 impl Bridge {
-    pub fn complete(&self)->bool {self.greeted&&self.app.is_some()&&self.result}
+    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{apk:Some(Apk::open(path)?),..Default::default()})}
+    pub fn installing(&self)->bool {self.apk.is_some()}
+    pub fn complete(&self)->bool {if self.apk.is_some() {self.result} else {self.greeted&&self.app.is_some()&&self.result}}
     pub fn app(&self)->Option<&str> {self.app.as_deref()}
     pub fn next_byte(&mut self)->Option<u8> {self.pending.pop_front()}
     pub fn receive(&mut self,bytes:&[u8])->Result<(),String> {
@@ -22,7 +35,24 @@ impl Bridge {
     fn frame(&mut self,line:&[u8])->Result<(),String> {
         if !self.greeted {
             if line!=GREETING {return Err("Native bridge version/capability greeting mismatch".into());}
-            self.greeted=true;self.pending.extend(b"NEXUS 1 QUERY_APP\n");return Ok(());
+            self.greeted=true;println!("NATIVE_BRIDGE_EVENT HELLO");if self.apk.is_none() {self.pending.extend(b"NEXUS 1 QUERY_APP\n");}return Ok(());
+        }
+        if let Some(apk)=&mut self.apk {
+            println!("NATIVE_BRIDGE_EVENT {}",String::from_utf8_lossy(line));
+            if line==b"NEXUS 1 READY 0" {return Ok(());}
+            if line==b"NEXUS 1 READY 1" {
+                if apk.phase==0 {self.pending.extend(format!("NEXUS 1 APK BEGIN {} {}\n",apk.total,apk.digest).bytes());apk.phase=1;}return Ok(());
+            }
+            if line==b"NEXUS 1 APK NEXT"&&apk.phase==1&&self.pending.is_empty() {
+                if apk.sent==apk.total {self.pending.extend(b"NEXUS 1 APK COMMIT\n");apk.phase=2;}
+                else {
+                    let size=(apk.total-apk.sent).min(65536) as usize;let mut chunk=vec![0;size];apk.file.read_exact(&mut chunk).map_err(|e|e.to_string())?;
+                    self.pending.extend(format!("NEXUS 1 APK DATA {size}\n").bytes());self.pending.extend(chunk);apk.sent+=size;
+                }return Ok(());
+            }
+            if line==b"NEXUS 1 RESULT APK_INSTALL OK"&&apk.phase==2&&self.pending.is_empty() {self.pending.extend(b"NEXUS 1 VERIFY_TEST_APK\n");apk.phase=3;return Ok(());}
+            if line==b"NEXUS 1 RESULT VERIFY_TEST_APK OK"&&apk.phase==3&&self.pending.is_empty() {apk.phase=4;self.result=true;return Ok(());}
+            return Err("APK bridge installation/verification failed or response out of order".into());
         }
         if line==b"NEXUS 1 READY 0"||line==b"NEXUS 1 READY 1" {return Ok(());}
         if let Some(name)=line.strip_prefix(b"NEXUS 1 APP ") {
@@ -38,6 +68,7 @@ impl Bridge {
 #[derive(Default)]
 pub struct Device {pub uart:EarlyUart,pub client:Bridge}
 impl Device {
+    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?})}
     pub fn tick(&mut self)->Result<(),String> {
         if self.uart.can_receive() {if let Some(byte)=self.client.next_byte() {self.uart.receive(byte)?;}}Ok(())
     }
@@ -63,6 +94,16 @@ impl Device {
         for line in [b"NEXUS 1 APP com.a;id\n".as_slice(),b"NEXUS 1 APP .bad\n",b"NEXUS 1 RESULT QUERY_APP OK\n",b"NEXUS 1 RESULT QUERY_APP FAILED\n"] {
             let mut b=Bridge::default();b.receive(GREETING).unwrap();b.receive(b"\n").unwrap();assert!(b.receive(line).is_err());
         }
+    }
+    #[test] fn apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification() {
+        let path=std::env::temp_dir().join(format!("nexus-apk-client-{}",std::process::id()));
+        std::fs::write(&path,[0,10,255,17]).unwrap();let mut b=Bridge::with_apk(&path).unwrap();
+        b.receive(GREETING).unwrap();b.receive(b"\nNEXUS 1 READY 0\n").unwrap();assert!(b.pending.is_empty());
+        b.receive(b"NEXUS 1 READY 1\n").unwrap();let begin=b.pending.drain(..).collect::<Vec<_>>();assert!(begin.starts_with(b"NEXUS 1 APK BEGIN 4 "));
+        b.receive(b"NEXUS 1 APK NEXT\n").unwrap();assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),[b"NEXUS 1 APK DATA 4\n".as_slice(),&[0,10,255,17]].concat());
+        b.receive(b"NEXUS 1 APK NEXT\n").unwrap();assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 APK COMMIT\n");assert!(!b.complete());
+        b.receive(b"NEXUS 1 RESULT APK_INSTALL OK\n").unwrap();assert!(!b.complete());assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 VERIFY_TEST_APK\n");
+        b.receive(b"NEXUS 1 RESULT VERIFY_TEST_APK OK\n").unwrap();assert!(b.complete());drop(b);std::fs::remove_file(path).unwrap();
     }
     #[test] fn backpressure_does_not_overwrite_receiver() {
         let mut d=Device::default();d.client.pending.extend(b"abc");d.tick().unwrap();d.tick().unwrap();assert_eq!(d.client.pending.len(),2);

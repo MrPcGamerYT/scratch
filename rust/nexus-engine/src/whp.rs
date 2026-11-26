@@ -349,7 +349,8 @@ mod windows {
                     if let Some(bridge)=&mut platform.bridge {
                         bridge.tick()?;
                         if goal==RunGoal::NativeBridge&&bridge.client.complete() {
-                            println!("NATIVE_BRIDGE_QUERY_OK app={} transport=private-COM2; Android actions/install/network/audio not verified",bridge.client.app().unwrap_or("-"));
+                            if bridge.client.installing() {println!("NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK");}
+                            else {println!("NATIVE_BRIDGE_QUERY_OK app={} transport=private-COM2; Android actions/install/network/audio not verified",bridge.client.app().unwrap_or("-"));}
                             return Ok(Ok(()));
                         }
                     }
@@ -417,7 +418,7 @@ mod windows {
         load_kernel_plan(plan,|partition,_,surface| {
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
-            if plan.bridge_probe {platform.bridge=Some(crate::bridge::Device::default());}
+            if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
             run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None)
         })
     }
@@ -428,7 +429,7 @@ mod windows {
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
             let mut platform=crate::platform::EarlyPlatform::default();
-            if plan.bridge_probe {platform.bridge=Some(crate::bridge::Device::default());}
+            if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk))
