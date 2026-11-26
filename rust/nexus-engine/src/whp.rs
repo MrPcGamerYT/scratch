@@ -44,9 +44,12 @@ mod windows {
     #[repr(C,align(16))]
     struct ExitContext([u8;224]);
     struct Mapping<'a> { partition:&'a Partition, address:*mut c_void, bytes:usize,guest:u64 }
-    impl Drop for Mapping<'_> { fn drop(&mut self) { unsafe { WHvUnmapGpaRange(self.partition.0,self.guest,self.bytes as u64); VirtualFree(self.address,0,0x8000); } } }
+    impl Drop for Mapping<'_> {fn drop(&mut self) {unsafe {
+        if WHvUnmapGpaRange(self.partition.0,self.guest,self.bytes as u64)<0 {eprintln!("NATIVE_TEARDOWN_ERROR GPA unmap");}
+        if VirtualFree(self.address,0,0x8000)==0 {eprintln!("NATIVE_TEARDOWN_ERROR RAM free");}
+    }}}
     struct Processor<'a>(&'a Partition,u32);
-    impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,self.1); } } }
+    impl Drop for Processor<'_> {fn drop(&mut self) {if unsafe {WHvDeleteVirtualProcessor(self.0.0,self.1)}<0 {eprintln!("NATIVE_TEARDOWN_ERROR vCPU delete {}",self.1);}}}
     fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {allocate_at(partition,bytes,0)}
     fn allocate_at(partition:&Partition,bytes:usize,guest:u64)->Result<Mapping<'_>,String> {
         if guest%4096!=0||guest.checked_add(bytes as u64).is_none() {return Err("Invalid guest mapping address".into());}
@@ -62,7 +65,7 @@ mod windows {
         if hr < 0 { Err(format!("{operation}: HRESULT 0x{:08x}",hr as u32)) } else { Ok(()) }
     }
     struct Partition(*mut c_void,u64,u32,bool);
-    impl Drop for Partition { fn drop(&mut self) { unsafe { WHvDeletePartition(self.0); } } }
+    impl Drop for Partition {fn drop(&mut self) {if unsafe {WHvDeletePartition(self.0)}<0 {eprintln!("NATIVE_TEARDOWN_ERROR partition delete");}}}
     fn create()->Result<Partition,String> {create_machine(1,false)}
     fn create_machine(processors:u32,apic:bool)->Result<Partition,String> {
         if !(1..=8).contains(&processors)||(!apic&&processors!=1) {return Err("Invalid CPU/APIC configuration".into());}
@@ -100,10 +103,14 @@ mod windows {
         with_guest_at(code,0,4096,action)
     }
     fn with_guest_at<T>(code:&[u8],entry:usize,ram_bytes:usize,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
-        with_guest_profile(code,entry,ram_bytes,(1,false),action)
+        with_guest_profile(code,entry,ram_bytes,(1,false,false),action)
     }
-    fn with_guest_profile<T>(code:&[u8],entry:usize,ram_bytes:usize,profile:(u32,bool),action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+    fn with_guest_profile<T>(code:&[u8],entry:usize,ram_bytes:usize,profile:(u32,bool,bool),action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
         if entry>0xffff || entry.checked_add(code.len()).filter(|&n|n<=ram_bytes).is_none() {return Err("Test code exceeds real-mode/RAM bounds".into());}
+        // Declared before VM resources: the evidence drops after all of them.
+        struct TeardownEvidence(bool);
+        impl Drop for TeardownEvidence {fn drop(&mut self) {if self.0 {eprintln!("NATIVE_VM_RESOURCES_DROPPED");}}}
+        let _evidence=TeardownEvidence(profile.2);
         let partition=create_machine(profile.0,profile.1)?;
         let memory=allocate(&partition,ram_bytes)?;
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(),memory.address.cast::<u8>().add(entry),code.len()); }
@@ -351,7 +358,7 @@ mod windows {
         plan.validate_regions()?;
         // Claim the capture exclusively before starting a VM or allowing disk writes.
         let mut output=plan.framebuffer_output.as_ref().map(|path|std::fs::OpenOptions::new().create_new(true).write(true).open(path).map_err(|e|e.to_string())).transpose()?;
-        with_guest_profile(&[],0,plan.ram_bytes,(plan.cpu_count,plan.apic_probe),|partition,memory| {
+        with_guest_profile(&[],0,plan.ram_bytes,(plan.cpu_count,plan.apic_probe,plan.dma_failure.is_some()),|partition,memory| {
             for region in &plan.regions {
                 unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
             }
@@ -530,7 +537,7 @@ mod windows {
     }
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,memory,surface| {
-            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(None,plan.bridge_probe));}
+            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(None,plan.bridge_probe,plan.dma_failure));}
 
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
@@ -539,10 +546,11 @@ mod windows {
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
+        if plan.dma_failure.is_some()&&(!create||!plan.apic_probe||plan.cpu_count<2) {return Err("DMA failure test requires a NEW disposable APIC SMP overlay".into());}
         if plan.apic_probe&&(plan.android_init_probe||plan.bridge_apk.is_some()||plan.player.is_some()||plan.framebuffer_output.is_some()) {return Err("APIC disk requires headless Linux, no Android/APK/player".into());}
         let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
         load_kernel_plan(plan,|partition,memory,surface| {
-            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(Some(backend),plan.bridge_probe));}
+            if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(Some(backend),plan.bridge_probe,plan.dma_failure));}
             let capacity=backend.disk_bytes()/512;
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};

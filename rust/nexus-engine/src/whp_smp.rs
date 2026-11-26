@@ -7,7 +7,7 @@ fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])-
 }
 struct ApicDisk {device:crate::virtio_mmio::BlockMmio,backend:crate::overlay::Overlay,accesses:u64,completions:u64}
 type RamGate=std::sync::Arc<std::sync::RwLock<()>>;
-struct ApicState {started_aps:Vec<bool>,ram_gate:RamGate,dma_rendezvous:u64,disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
+struct ApicState {dma_failure:Option<crate::kernel::DmaFailure>,started_aps:Vec<bool>,ram_gate:RamGate,dma_rendezvous:u64,disk:Option<ApicDisk>,os:bool,stop:bool,startup_routes:Vec<Option<std::sync::mpsc::Sender<StartupEvent>>>,injections:u64,timer_injections:u64,io_accesses:u64,platform:crate::platform::EarlyPlatform,pit_edges:u64,epoch:std::time::Instant,cpus:Vec<crate::lapic::LocalApic>,io:crate::ioapic::IoApic}
 impl std::ops::Deref for ApicState {type Target=[crate::lapic::LocalApic];fn deref(&self)->&Self::Target {&self.cpus}}
 impl std::ops::DerefMut for ApicState {fn deref_mut(&mut self)->&mut Self::Target {&mut self.cpus}}
 type ApicFabric=std::sync::Arc<std::sync::Mutex<ApicState>>;
@@ -170,17 +170,26 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         {
             if fabric.stop {return Ok((0,halt_waits));}
             if let Some(observer)=observe.as_mut() {if observer(&mut fabric)? {fabric.stop=true;return Ok((0,halt_waits));}}
-            if let Some(disk)=fabric.disk.as_mut() {if disk.device.work_pending() {
+            if fabric.disk.as_ref().is_some_and(|disk|disk.device.work_pending()) {
                 // Every vCPU holds a shared gate ONLY while inside WHP Run.
                 // Scheduling cancellation releases those guards; this exclusive
                 // guard prevents reentry and waits for all CPUs to be stopped.
                 // Callbacks never hold a gate while acquiring the fabric lock.
                 let _exclusive=ctx.ram_gate.write().map_err(|_|"RAM rendezvous poisoned")?;
+                if let Some(failure)=fabric.dma_failure.take() {
+                    let started=fabric.started_aps.iter().filter(|started|**started).count();
+                    eprintln!("NATIVE_DMA_FAILURE_INJECTED kind={failure:?} cpu={index} cpus={count} started_aps={started} exclusive=true before_service=true");
+                    match failure {
+                        crate::kernel::DmaFailure::Error=>return Err("INJECTED_DMA_ERROR_BEFORE_SERVICE".into()),
+                        crate::kernel::DmaFailure::Panic=>panic!("INJECTED_DMA_PANIC_BEFORE_SERVICE"),
+                    }
+                }
+                let disk=fabric.disk.as_mut().ok_or("Missing pending block device")?;
                 let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
                 let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
                 disk.completions+=disk.device.service(&mut memory,&mut disk.backend,256)?.len() as u64;
                 fabric.dma_rendezvous+=1;
-            }}
+            }
             let ApicState{cpus,io,platform,pit_edges,epoch,disk,..}=&mut *fabric;
             platform.tick(epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64);
             platform.route_ioapic(io,pit_edges,disk.as_ref().is_some_and(|d|d.device.irq_asserted()))?;io.service(cpus)?;
@@ -408,7 +417,7 @@ fn smp_cycle()->Result<u64,String> {
         Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
-    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
+    let lapics=std::sync::Arc::new(std::sync::Mutex::new(ApicState{dma_failure:None,started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)],io:crate::ioapic::IoApic::new()}));
     {let mut state=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
         state.io.write(0,0)?;state.io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;}
     // Test-only device source: hold IOAPIC input 0 high before guest unmasks it.
@@ -478,10 +487,20 @@ fn smp_cycle()->Result<u64,String> {
     Ok(ap_halts)
 }
 
-fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,devices:(Option<crate::overlay::Overlay>,bool))->Result<(),String> {
-    let (backend,bridge_probe)=devices;
+fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,devices:(Option<crate::overlay::Overlay>,bool,Option<crate::kernel::DmaFailure>))->Result<(),String> {
+    let (backend,bridge_probe,dma_failure)=devices;
     let mut io=crate::ioapic::IoApic::new();io.write(0,0)?;io.write(0x10,u32::from(crate::firmware::IOAPIC_ID)<<24)?;
-    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
+    let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{dma_failure:None,started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:true,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:(0..partition.2).map(|id|crate::lapic::LocalApic::new(id as u8)).collect(),io}));
+    fabric.lock().map_err(|_|"LAPIC lock poisoned")?.dma_failure=dma_failure;
+    let live=std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    struct WorkerCount(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+    impl Drop for WorkerCount {fn drop(&mut self) {self.0.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);}}
+    struct CleanupEvidence {enabled:bool,live:std::sync::Arc<std::sync::atomic::AtomicUsize>,gate:RamGate}
+    impl Drop for CleanupEvidence {fn drop(&mut self) {if self.enabled {
+        let released=!matches!(self.gate.try_write(),Err(std::sync::TryLockError::WouldBlock));
+        eprintln!("NATIVE_APIC_CLEANUP ap_workers={} ram_gate_released={released}",self.live.load(std::sync::atomic::Ordering::SeqCst));
+    }}}
+    let _cleanup=CleanupEvidence{enabled:dma_failure.is_some(),live:live.clone(),gate:fabric.lock().map_err(|_|"LAPIC lock poisoned")?.ram_gate.clone()};
     if let Some(backend)=backend {
         let device=crate::virtio_mmio::BlockMmio::new(backend.disk_bytes()/512,false)?;
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.disk=Some(ApicDisk{device,backend,accesses:0,completions:0});
@@ -506,7 +525,9 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
                 Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
                 Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
             let (tx,rx)=std::sync::mpsc::channel();routes.push(Some(tx));let state=fabric.clone();
+            let live=live.clone();
             workers.push(scope.spawn(move || {
+                live.fetch_add(1,std::sync::atomic::Ordering::SeqCst);let _count=WorkerCount(live);
                 let result=(|| {
                     let mut initialized=false;
                     loop {

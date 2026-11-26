@@ -31,9 +31,11 @@ pub fn read_input(path:&Path)->Result<Vec<u8>,String> {
 }
 #[derive(Debug)]
 pub struct Region {pub address:usize,pub bytes:Vec<u8>}
+#[derive(Clone,Copy,Debug)]
+pub enum DmaFailure {Error,Panic}
 #[derive(Debug)]
 pub struct KernelPlan {
-    pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
+    pub dma_failure:Option<DmaFailure>,pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
     pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub player:Option<std::sync::Arc<crate::player::Session>>,
 }
 impl KernelPlan {
@@ -88,7 +90,7 @@ impl KernelPlan {
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
             regions.push(Region{address:at,bytes:data.to_vec()});initrd_address=Some(at);
         }
-        let p=Self{cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None};p.validate_regions()?;Ok(p)
+        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None};p.validate_regions()?;Ok(p)
     }
     /// Linux early TSC calibration handoff for vendors which don't consume CPUID15.
     /// Kernel versions lacking this parameter still need a verified clocksource gate.
