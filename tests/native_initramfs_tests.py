@@ -34,6 +34,24 @@ def unpack_archive(blob):
 
 
 class FixtureTests(unittest.TestCase):
+    def test_concurrent_direct_io_fixture_alignment_and_readonly_recovery(self):
+        for count in (4,8):
+            for readonly in (False,True):
+                options=dict(disk_write=False,expected_cpus=count,stress_cpus=count,stress_readonly=readonly)
+                elf=init_elf(**options)
+                self.assertEqual(elf,init_elf(**options))
+                self.assertEqual(unpack_archive(initramfs(**options))['init'][1],elf)
+                self.assertIn(f'NEXUS_SMP_DIRECT_IO_STRESS_OK cpus={count} mode={"read" if readonly else "write"}'.encode(),elf)
+                self.assertEqual(elf.count(b'\xb8\x39\x00\x00\x00\x0f\x05'),count)
+                self.assertEqual(elf.count(b'\xb8\x12\x00\x00\x00'),0 if readonly else count)
+                for cpu in range(count):
+                    pattern=bytes((n*37+cpu*17+11)%256 for n in range(512))
+                    offset=elf.find(pattern)
+                    self.assertGreater(offset,120)
+                    self.assertEqual((0x400000+offset)%4096,0)
+        for options in (dict(stress_cpus=4),dict(disk_write=False,expected_cpus=1,stress_cpus=1),dict(disk_write=False,expected_cpus=4,stress_cpus=8)):
+            with self.assertRaises(ValueError):init_elf(**options)
+
     def test_selected_cpu_affinity_fixture_is_deterministic_and_writable(self):
         import struct
         for count in range(1,9):
