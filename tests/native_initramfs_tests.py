@@ -1,0 +1,85 @@
+"""Structural/oracle tests for diagnostic ELF/newc generation; not guest execution."""
+import struct
+import unittest
+from native_initramfs import init_elf, initramfs
+
+
+def unpack_archive(blob):
+    files = {}
+    at = 0
+    while at < len(blob):
+        header = blob[at:at+110]
+        if len(header) != 110 or header[:6] != b'070701':
+            raise ValueError('Invalid newc header')
+        fields = [int(header[6+n*8:14+n*8], 16) for n in range(13)]
+        name_size = fields[11]
+        name_at = at+110
+        name = blob[name_at:name_at+name_size]
+        if not name or name[-1] != 0:
+            raise ValueError('Missing name terminator')
+        body_at = (name_at+name_size+3) & ~3
+        body_end = body_at+fields[6]
+        if body_end > len(blob):
+            raise ValueError('Truncated newc body')
+        key = name[:-1].decode()
+        if key in files:
+            raise ValueError('Duplicate archive name')
+        files[key] = (fields, blob[body_at:body_end])
+        at = (body_end+3) & ~3
+        if key == 'TRAILER!!!':
+            if at != len(blob):
+                raise ValueError('Unexpected archive tail')
+            return files
+    raise ValueError('Missing trailer')
+
+
+class FixtureTests(unittest.TestCase):
+    def test_elf_layout_and_archive_modes(self):
+        for write, fs, clean in [(None, False, True), (True, False, True),
+                                  (False, False, True), (True, True, True),
+                                  (False, True, True), (True, True, False)]:
+            with self.subTest(write=write, filesystem=fs, clean=clean):
+                blob = initramfs(write, fs, clean)
+                self.assertEqual(blob, initramfs(write, fs, clean))
+                files = unpack_archive(blob)
+                fields, elf = files['init']
+                self.assertEqual(fields[1], 0o100755)
+                self.assertEqual(elf, init_elf(write, fs, clean))
+                self.assertEqual(elf[:7], b'\x7fELF\x02\x01\x01')
+                self.assertEqual(struct.unpack_from('<Q', elf, 24)[0], 0x400078)
+                segment = struct.unpack_from('<IIQQQQQQ', elf, 64)
+                self.assertEqual(segment, (1, 5 if write is None else 7, 0,
+                                          0x400000, 0x400000, len(elf), len(elf), 4096))
+                self.assertEqual('mnt' in files, fs)
+                self.assertEqual(files['dev/kmsg'][0][9:11], [1, 11])
+                self.assertIn(b'NEXUS_USERSPACE_READY\n', elf)
+                self.assertIn(b'\x0f\x0b', elf)  # failure branch cannot emit success
+
+    def test_read_boots_never_rewrite_expected_data(self):
+        for fs in (False, True):
+            with self.subTest(filesystem=fs):
+                writer = init_elf(True, fs)
+                reader = init_elf(False, fs)
+                self.assertIn(b'\xb8\x12\x00\x00\x00\x44\x89\xe7', writer)
+                self.assertNotIn(b'\xb8\x12\x00\x00\x00\x44\x89\xe7', reader)
+                self.assertIn(b'\xb8\x11\x00\x00\x00\x44\x89\xe7', reader)
+                self.assertIn(bytes((n*37+9) % 256 for n in range(512)), reader)
+                self.assertIn(b'\xfc\xf3\xa6', reader)  # actual 512-byte comparison
+                if fs:
+                    self.assertIn(b'/mnt/probe.bin\0', reader)
+                    self.assertIn(b'\x41\xba\x01\x00\x00\x00', reader)  # MS_RDONLY
+
+    def test_unclean_stop_does_not_unmount_but_still_fsyncs(self):
+        clean = init_elf(True, True, True)
+        unclean = init_elf(True, True, False)
+        self.assertIn(b'\xb8\xa6\x00\x00\x00', clean)
+        self.assertNotIn(b'\xb8\xa6\x00\x00\x00', unclean)
+        self.assertGreaterEqual(unclean.count(b'\xb8\x4a\x00\x00\x00'), 2)
+        self.assertIn(b'NEXUS_EXT4_FSYNC_UNCLEAN_STOP_READY\n', unclean)
+        self.assertNotIn(b'NEXUS_EXT4_FILE_FSYNC_UNMOUNT_MATCH\n', unclean)
+        with self.assertRaises(ValueError):
+            init_elf(filesystem=True)
+
+
+if __name__ == '__main__':
+    unittest.main()

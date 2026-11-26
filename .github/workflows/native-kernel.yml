@@ -5,6 +5,7 @@ on:
       - '.github/workflows/native-kernel.yml'
       - 'tests/native_kernel_checkpoint.py'
       - 'tests/native_initramfs.py'
+      - 'tests/native_initramfs_tests.py'
       - 'rust/nexus-engine/src/kernel.rs'
       - 'rust/nexus-engine/src/uart.rs'
       - 'rust/nexus-engine/src/ata.rs'
@@ -86,6 +87,13 @@ jobs:
           run-id: ${{ inputs.kernel_run || github.run_id }}
           github-token: ${{ github.token }}
       - uses: ilammy/msvc-dev-cmd@v1
+      - name: Check diagnostic fixture structure and read-only persistence oracle
+        shell: python
+        run: |
+          import runpy
+          import sys
+          sys.path.insert(0,'tests')
+          runpy.run_path('tests/native_initramfs_tests.py',run_name='__main__')
       - name: Build independent native engine
         shell: python
         run: |
