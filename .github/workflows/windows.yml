@@ -1,6 +1,14 @@
 name: Emulator CI
 on:
   push:
+    paths-ignore:
+      - 'rust/nexus-engine/**'
+      - 'tests/native_engine_cli_test.py'
+      - 'tests/build_native_engine.py'
+      - 'tests/whp_sdk_abi.cpp'
+      - '.github/workflows/native-engine.yml'
+      - 'docs/native-engine-roadmap.md'
+      - 'docs/zlag-image-format.md'
   pull_request:
   workflow_dispatch:
     inputs:
