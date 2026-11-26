@@ -3,6 +3,9 @@
 pub mod image;
 pub mod ata;
 pub mod overlay;
+pub mod guest_memory;
+pub mod virtqueue;
+pub mod virtio_block;
 pub mod kernel;
 pub mod uart;
 pub mod pit;
@@ -18,3 +21,6 @@ pub mod whp;
 
 #[cfg(all(windows,not(target_arch="x86_64")))]
 compile_error!("The direct WHP engine currently supports Windows x64 only");
+
+#[cfg(test)]
+mod virtio_block_tests;
