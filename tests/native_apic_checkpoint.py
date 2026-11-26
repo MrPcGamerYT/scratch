@@ -111,7 +111,7 @@ fault_base_sha=hashlib.sha256(fault_base.read_bytes()).hexdigest()
 fault_rd=Path('apic-fault.cpio');fault_rd.write_bytes(initramfs(disk_write=False))
 fault_samples=[]
 for cpus in (2,4,8):
-    for mode in ('error','panic'):
+    for mode in ('error','panic','error-after','panic-after'):
         prefix=f'apic-fault-{cpus}-{mode}';cow=Path(prefix+'.cow').resolve();log=Path(prefix+'.log')
         started=time.monotonic()
         p=subprocess.run([exe,'boot-kernel-disk-create',str(kernel),str(log),cmd+f' maxcpus={cpus} virtio_mmio.device=4K@0xd0000000:5',
@@ -119,13 +119,15 @@ for cpus in (2,4,8):
                          capture_output=True,text=True,timeout=45)
         elapsed=time.monotonic()-started
         checks={'failed_as_requested':p.returncode!=0,
-                'injected_exclusively':f'NATIVE_DMA_FAILURE_INJECTED kind={mode.capitalize()}' in p.stderr and 'exclusive=true before_service=true' in p.stderr,
+                'injected_exclusively':f'NATIVE_DMA_FAILURE_INJECTED kind={mode.title().replace("-","")}' in p.stderr and f'exclusive=true before_service={str(not mode.endswith("-after")).lower()}' in p.stderr,
+                'targeted_worker':f'cpu={cpus-1 if mode.endswith("-after") else 0} cpus={cpus}' in p.stderr,
                 'all_aps_started':f'cpus={cpus} started_aps={cpus-1} ' in p.stderr,
                 'workers_joined_and_gate_released':'NATIVE_APIC_CLEANUP ap_workers=0 ram_gate_released=true' in p.stderr,
                 'vm_dropped':'NATIVE_VM_RESOURCES_DROPPED' in p.stderr,
                 'no_teardown_api_error':'NATIVE_TEARDOWN_ERROR' not in p.stderr,
                 'no_false_boot_success':'NATIVE_APIC_OS_PID1_OK' not in p.stdout,
                 'base_unchanged':hashlib.sha256(fault_base.read_bytes()).hexdigest()==fault_base_sha}
+        if mode.endswith('-after'):checks['completed_real_work']='completed=0' not in p.stderr and 'completed=' in p.stderr
         result={'cpus':cpus,'mode':mode,'seconds':elapsed,'checks':checks,'stderr':p.stderr,'returncode':p.returncode}
         fault_samples.append(result)
         Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':False,'samples':fault_samples},indent=2))
@@ -149,5 +151,5 @@ for cpus in (2,4,8):
         if not all(recovery.values()):
             print('::error::APIC_FAILURE_RECOVERY='+json.dumps({'checks':recovery,'stderr':p.stderr,'serial_tail':text[-6000:]}).replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
         assert all(recovery.values()),recovery
-Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'six pre-service DMA error/panic teardowns and same-overlay SMP recoveries; not mid-write, reset or host-power-loss certification','samples':fault_samples},indent=2))
-print('::notice::APIC_FAILURE_ACCEPTANCE six injected errors/panics, joined workers, released RAM gate, WHP cleanup and same-overlay SMP reboots PASS',flush=True)
+Path('apic-failure-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'12 BSP-before/AP-after-service DMA error/panic teardowns and same-overlay SMP recoveries; not mid-write, reset or host-power-loss certification','samples':fault_samples},indent=2))
+print('::notice::APIC_FAILURE_ACCEPTANCE 12 injected errors/panics, joined workers, released RAM gate, WHP cleanup and same-overlay SMP reboots PASS',flush=True)

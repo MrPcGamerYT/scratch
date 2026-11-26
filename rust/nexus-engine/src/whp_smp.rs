@@ -146,6 +146,15 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
         }Ok(())
     })
 }
+fn dma_fault_after(failure:crate::kernel::DmaFailure)->bool {matches!(failure,crate::kernel::DmaFailure::ErrorAfter|crate::kernel::DmaFailure::PanicAfter)}
+fn inject_dma_fault(failure:crate::kernel::DmaFailure,index:u32,count:u32,started:usize,completed:usize)->Result<(),String> {
+    let before=!dma_fault_after(failure);
+    eprintln!("NATIVE_DMA_FAILURE_INJECTED kind={failure:?} cpu={index} cpus={count} started_aps={started} exclusive=true before_service={before} completed={completed}");
+    match failure {
+        crate::kernel::DmaFailure::Error|crate::kernel::DmaFailure::ErrorAfter=>Err("INJECTED_DMA_ERROR".into()),
+        crate::kernel::DmaFailure::Panic|crate::kernel::DmaFailure::PanicAfter=>panic!("INJECTED_DMA_PANIC"),
+    }
+}
 type ApicObserver<'a>=Option<&'a mut dyn FnMut(&mut ApicState)->Result<bool,String>>;
 fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sync::mpsc::Sender<StartupEvent>>,lapics:ApicFabric,mut observe:ApicObserver<'_>)->Result<(u32,u64),String> {
     let callbacks=Box::new(EmulatorCallbacks{size:std::mem::size_of::<EmulatorCallbacks>() as u32,reserved:0,io:apic_io,memory:apic_memory,get:apic_get,set:apic_set,translate:apic_translate});
@@ -170,24 +179,27 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         {
             if fabric.stop {return Ok((0,halt_waits));}
             if let Some(observer)=observe.as_mut() {if observer(&mut fabric)? {fabric.stop=true;return Ok((0,halt_waits));}}
-            if fabric.disk.as_ref().is_some_and(|disk|disk.device.work_pending()) {
+            // Fault-only scheduling: exercise BSP failure before service and AP
+            // failure after service. Other CPUs leave pending work for that VP.
+            let fault_turn=fabric.dma_failure.is_none_or(|failure|index==if dma_fault_after(failure) {count-1} else {0});
+            if fault_turn&&fabric.disk.as_ref().is_some_and(|disk|disk.device.work_pending()) {
                 // Every vCPU holds a shared gate ONLY while inside WHP Run.
                 // Scheduling cancellation releases those guards; this exclusive
                 // guard prevents reentry and waits for all CPUs to be stopped.
                 // Callbacks never hold a gate while acquiring the fabric lock.
                 let _exclusive=ctx.ram_gate.write().map_err(|_|"RAM rendezvous poisoned")?;
-                if let Some(failure)=fabric.dma_failure.take() {
-                    let started=fabric.started_aps.iter().filter(|started|**started).count();
-                    eprintln!("NATIVE_DMA_FAILURE_INJECTED kind={failure:?} cpu={index} cpus={count} started_aps={started} exclusive=true before_service=true");
-                    match failure {
-                        crate::kernel::DmaFailure::Error=>return Err("INJECTED_DMA_ERROR_BEFORE_SERVICE".into()),
-                        crate::kernel::DmaFailure::Panic=>panic!("INJECTED_DMA_PANIC_BEFORE_SERVICE"),
-                    }
-                }
+                let fault=fabric.dma_failure.take();
+                let started=fabric.started_aps.iter().filter(|started|**started).count();
+                if let Some(failure)=fault.filter(|failure|!dma_fault_after(*failure)) {inject_dma_fault(failure,index,count,started,0)?;}
                 let disk=fabric.disk.as_mut().ok_or("Missing pending block device")?;
                 let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
                 let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
-                disk.completions+=disk.device.service(&mut memory,&mut disk.backend,256)?.len() as u64;
+                let completed=disk.device.service(&mut memory,&mut disk.backend,256)?.len();
+                disk.completions+=completed as u64;
+                if let Some(failure)=fault {
+                    if completed!=0 {inject_dma_fault(failure,index,count,started,completed)?;}
+                    fabric.dma_failure=Some(failure); // wait for a nonempty queue service
+                }
                 fabric.dma_rendezvous+=1;
             }
             let ApicState{cpus,io,platform,pit_edges,epoch,disk,..}=&mut *fabric;

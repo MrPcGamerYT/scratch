@@ -32,7 +32,7 @@ pub fn read_input(path:&Path)->Result<Vec<u8>,String> {
 #[derive(Debug)]
 pub struct Region {pub address:usize,pub bytes:Vec<u8>}
 #[derive(Clone,Copy,Debug)]
-pub enum DmaFailure {Error,Panic}
+pub enum DmaFailure {Error,Panic,ErrorAfter,PanicAfter}
 #[derive(Debug)]
 pub struct KernelPlan {
     pub dma_failure:Option<DmaFailure>,pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,

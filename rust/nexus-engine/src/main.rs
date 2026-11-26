@@ -11,7 +11,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             }
             if let Some(value)=option.strip_prefix("--test-dma-failure=") {
                 if dma_failure.is_some() {return Err("Duplicate DMA failure option".into());}
-                dma_failure=Some(match value {"error"=>nexus_engine::kernel::DmaFailure::Error,"panic"=>nexus_engine::kernel::DmaFailure::Panic,_=>return Err("DMA failure must be error or panic".into())});
+                dma_failure=Some(match value {"error"=>nexus_engine::kernel::DmaFailure::Error,"panic"=>nexus_engine::kernel::DmaFailure::Panic,"error-after"=>nexus_engine::kernel::DmaFailure::ErrorAfter,"panic-after"=>nexus_engine::kernel::DmaFailure::PanicAfter,_=>return Err("DMA failure must be error or panic (optionally -after)".into())});
                 args=&args[..args.len()-1];continue;
             }
             if let Some(value)=option.strip_prefix("--cpus=") {
