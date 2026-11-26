@@ -73,6 +73,14 @@ mod windows {
         // WHvPartitionPropertyCodeProcessorCount = 0x1fff (Windows SDK).
         unsafe {
             check(WHvSetPartitionProperty(partition.0,0x1fff,(&processors as *const u32).cast(),4),"WHvSetPartitionProperty")?;
+            // Native PIT calibration can be too slow/noisy across virtual exits.
+            // Publish the actual WHP TSC frequency, never nominal host CPU MHz.
+            let mut hz=0u64;let mut clock_written=0u32;
+            check(WHvGetCapability(0x1004,(&mut hz as *mut u64).cast(),8,&mut clock_written),"WHP processor clock frequency")?;
+            if clock_written!=8 {return Err("WHP processor clock capability size mismatch".into());}
+            if std::arch::x86_64::__cpuid(0).eax<0x15 {return Err("Host CPUID range lacks leaf15; reliable guest TSC contract unavailable".into());}
+            let clock=crate::tsc::frequency_leaf(hz)?;
+            check(WHvSetPartitionProperty(partition.0,0x1004,(&clock as *const crate::tsc::CpuidResult).cast(),32),"WHP TSC CPUID frequency contract")?;
             check(WHvSetupPartition(partition.0),"WHvSetupPartition")?;
         }
         Ok(partition)

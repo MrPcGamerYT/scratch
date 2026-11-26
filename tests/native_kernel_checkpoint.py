@@ -132,6 +132,10 @@ def main():
         assert all(isinstance(n,int) and n>=0 for n in times) and times==sorted(times),times
         assert metrics['serial_bytes']==len(raw)
         assert hashlib.sha256(kernel.read_bytes()).hexdigest()==expected
+        clock_lines='\n'.join(line for line in serial.splitlines() if any(term in line.lower() for term in ['clocksource:','tsc:']))
+        notice('CORE_GUEST_CLOCK='+clock_lines)
+        assert 'clocksource: Switched to clocksource tsc' in serial,('Guest did not select high-resolution TSC',clock_lines)
+        assert 'Marking TSC unstable' not in serial,('Guest TSC remains unstable',clock_lines)
         if index==0:
             notice('KERNEL_SERIAL_TAIL_BASE64='+base64.b64encode(raw[-2048:]).decode())
             notice('NATIVE_TIMING='+json.dumps(metrics))

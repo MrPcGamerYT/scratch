@@ -73,3 +73,11 @@ static_assert(D3D11_BIND_RENDER_TARGET == 0x20 && D3D11_CPU_ACCESS_READ == 0x200
 
 static_assert(sizeof(DXGI_ADAPTER_DESC1) == 312);
 static_assert(offsetof(DXGI_ADAPTER_DESC1, Flags) == 304);
+
+static_assert(WHvCapabilityCodeProcessorClockFrequency == 0x1004);
+static_assert(WHvPartitionPropertyCodeCpuidResultList == 0x1004);
+static_assert(sizeof(WHV_X64_CPUID_RESULT) == 32);
+static_assert(offsetof(WHV_X64_CPUID_RESULT, Eax) == 16);
+static_assert(offsetof(WHV_X64_CPUID_RESULT, Ebx) == 20);
+static_assert(offsetof(WHV_X64_CPUID_RESULT, Ecx) == 24);
+static_assert(offsetof(WHV_X64_CPUID_RESULT, Edx) == 28);
