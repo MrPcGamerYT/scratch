@@ -14,7 +14,7 @@ struct Disk {data:[u8;2048],ops:u32,flushes:u32,fail:bool}
 impl Default for Disk {fn default()->Self {Self{data:[7;2048],ops:0,flushes:0,fail:false}}}
 impl BlockBackend for Disk {
     fn capacity_sectors(&self)->u64 {4}
-    pub(super) fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}d.copy_from_slice(&self.data[s as usize*512..s as usize*512+d.len()]);Ok(())}
+    fn read(&mut self,s:u64,d:&mut [u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}d.copy_from_slice(&self.data[s as usize*512..s as usize*512+d.len()]);Ok(())}
     fn write(&mut self,s:u64,d:&[u8])->Result<(),String> {self.ops+=1;if self.fail {return Err("injected disk failure".into());}self.data[s as usize*512..s as usize*512+d.len()].copy_from_slice(d);Ok(())}
     fn flush(&mut self)->Result<(),String> {self.flushes+=1;if self.fail {Err("injected flush failure".into())} else {Ok(())}}
 }
