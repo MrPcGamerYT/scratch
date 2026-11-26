@@ -2,6 +2,7 @@
 //! Android boot and accelerated guest graphics are not implemented yet.
 pub mod image;
 pub mod ata;
+pub mod overlay;
 pub mod kernel;
 pub mod uart;
 pub mod pit;

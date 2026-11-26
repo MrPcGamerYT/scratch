@@ -368,9 +368,16 @@ mod windows {
             run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false)
         })
     }
-    pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {
+    pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
+    pub fn ata_cow_smoke(path:&std::path::Path,overlay:&std::path::Path)->Result<(),String> {
+        ata_fixture(path,Some(overlay))?;
+        // vCPU and device are gone: prove persistence by a separate reopen.
+        let mut disk=crate::overlay::Overlay::open(path,overlay)?;let mut data=[0;512];disk.read_sectors(1,&mut data)?;
+        if data.as_slice()!=[0x17,0x5a].repeat(256) {return Err("Reopened overlay lost guest-written data".into());}Ok(())
+    }
+    fn ata_fixture(path:&std::path::Path,cow:Option<&std::path::Path>)->Result<(),String> {
         use crate::{cpu,ata::AtaPio,image::Image};
-        let ata=AtaPio::open(path)?;
+        let ata=if let Some(overlay)=cow {AtaPio::with_overlay(path,overlay,true)?} else {AtaPio::open(path)?};
         let mut image=Image::open(path).map_err(|e|e.to_string())?;
         if image.disk_bytes<1024 {return Err("ATA smoke needs at least two disk sectors".into());}
         let capacity=(image.disk_bytes/512) as u32;
@@ -386,9 +393,14 @@ mod windows {
         };
         output(&mut code,0x3f6,2);output(&mut code,0x1f6,0xe0);output(&mut code,0x1f7,0xec);
         words(&mut code,0x1a000);
+        if cow.is_some() {
+            for (port,value) in [(0x1f2,1),(0x1f3,1),(0x1f4,0),(0x1f5,0),(0x1f7,0x30)] {output(&mut code,port,value);}
+            code.extend_from_slice(&[0xba,0xf0,1,0,0,0xb9,0,1,0,0,0x66,0xb8,0x17,0x5a,0x66,0xef,0xe2,0xfc]);
+            output(&mut code,0x1f7,0xe7);expected.copy_from_slice(&[0x17,0x5a].repeat(256));
+        }
         for (port,value) in [(0x1f2,1),(0x1f3,1),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {output(&mut code,port,value);}
         words(&mut code,0x1b000);
-        output(&mut code,0x1f7,0x30); // Must ABRT, never write the image.
+        output(&mut code,0x1f7,if cow.is_some() {0xca} else {0x30}); // Unsupported DMA or read-only write must ABRT.
         code.extend_from_slice(&[0xec,0xa2,0,0xc0,1,0,0xf4]); // Save status then HLT.
         f.ram[cpu::ENTRY..cpu::ENTRY+code.len()].copy_from_slice(&code);
         with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
@@ -417,7 +429,7 @@ mod windows {
             let observed_capacity=u32::from_le_bytes(ram[0x1a078..0x1a07c].try_into().unwrap());
             let device=platform.ata.as_ref().ok_or("Missing ATA fixture device")?;
             if ram[0x1b000..0x1b200]!=expected||observed_capacity!=capacity||ram[0x1c000]&1==0
-                ||device.sectors_read!=1||device.commands!=3||scalar_register(partition,4)?!=cpu::STACK {
+                ||device.sectors_read!=1||device.commands!=if cow.is_some() {5} else {3}||device.sectors_written!=u64::from(cow.is_some())||scalar_register(partition,4)?!=cpu::STACK {
                 return Err("ATA guest IDENTIFY/read/write-refusal/stack result mismatch".into());
             }
             Ok(())
@@ -506,3 +518,8 @@ pub fn timer_irq_smoke()->Result<(),String> {Err("Timer IRQ execution requires W
 pub use windows::ata_pio_smoke;
 #[cfg(not(windows))]
 pub fn ata_pio_smoke(_path:&std::path::Path)->Result<(),String> {Err("ATA guest execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::ata_cow_smoke;
+#[cfg(not(windows))]
+pub fn ata_cow_smoke(_base:&std::path::Path,_overlay:&std::path::Path)->Result<(),String> {Err("ATA COW execution requires Windows x64 WHP".into())}

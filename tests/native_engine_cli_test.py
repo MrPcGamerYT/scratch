@@ -49,6 +49,12 @@ with tempfile.TemporaryDirectory() as folder:
         for _ in range(3):run('ata-pio-smoke',ata_image)
         assert hashlib.sha256(ata_image.read_bytes()).hexdigest()==ata_sha
         assert ata_raw.read_bytes()==ata_payload
+        for index in range(3):
+            cow=root/f'ata-{index}.cow';run('ata-cow-smoke',ata_image,cow)
+            assert cow.exists() and cow.stat().st_size==64+536
+            run('ata-cow-smoke',ata_image,cow,ok=False)
+        assert hashlib.sha256(ata_image.read_bytes()).hexdigest()==ata_sha
+        print('::notice::PASS: real guest ATA write -> sync/flush -> exact guest readback -> device teardown -> separate persistent overlay reopen, three repetitions; base SHA unchanged, existing overlay never overwritten; not Android boot',flush=True)
         bad_ata=root/'corrupt-ata.zlag';bad_bytes=bytearray(ata_image.read_bytes());bad_bytes[-1]^=1;bad_ata.write_bytes(bad_bytes)
         failure=run('ata-pio-smoke',bad_ata,ok=False)
         assert 'checksum mismatch' in failure.stderr,failure.stderr
