@@ -27,14 +27,22 @@ for index in range(8):
         if name!='sample':
             escaped=str(value).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
             print(f'::notice::APIC_{name.upper()}={escaped}',flush=True)
-    assert p.returncode==0,(p.stderr,text[-8000:])
-    assert 'NATIVE_APIC_OS_PID1_OK cpus=1' in p.stdout
-    assert 'Intel MultiProcessor Specification v1.4' in text
-    assert 'I/O APIC' in text or 'IOAPIC' in text
-    assert 'NEXUS_USERSPACE_READY' in text
-    assert text.count('NEXUS_USERSPACE_TICK')>=2
-    assert 'Kernel panic' not in text
-    assert 'unchecked MSR access error' not in text
-    assert 'lapic_timer_irqs=0 ' not in p.stdout
-    assert 'lapic_timer_irqs=' in p.stdout
+    checks={
+        'exit_success':p.returncode==0,
+        'native_apic_success':'NATIVE_APIC_OS_PID1_OK cpus=1' in p.stdout,
+        'mp_enumerated':'Intel MultiProcessor Specification v1.4' in text,
+        'ioapic_enumerated':'I/O APIC' in text or 'IOAPIC' in text,
+        'pid1_ready':'NEXUS_USERSPACE_READY' in text,
+        'two_pid1_ticks':text.count('NEXUS_USERSPACE_TICK')>=2,
+        'no_panic':'Kernel panic' not in text,
+        'no_unchecked_msr':'unchecked MSR access error' not in text,
+        'lapic_timer_irqs':'lapic_timer_irqs=' in p.stdout and 'lapic_timer_irqs=0 ' not in p.stdout,
+    }
+    print('::notice::APIC_CHECKS='+json.dumps(checks),flush=True)
+    if not all(checks.values()):
+        print('::error::APIC_FAILED_CHECKS='+json.dumps([key for key,value in checks.items() if not value]),flush=True)
+        for line in text.splitlines():
+            if 'MSR' in line or 'NEXUS_USERSPACE' in line:
+                print('::notice::APIC_MARKER='+line,flush=True)
+    assert all(checks.values()),checks
 Path('apic-checkpoint.json').write_text(json.dumps({'verified':True,'scope':'one-CPU Linux APIC enumeration and PID1 clocks, not SMP/Android','samples':samples},indent=2))
