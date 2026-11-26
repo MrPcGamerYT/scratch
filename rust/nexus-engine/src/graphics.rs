@@ -63,9 +63,9 @@ mod windows {
             let mut adapter1=Com(null);
             check(query_adapter(adapter.0,&Guid{a:0x29038f61,b:0x3839,c:0x4626,d:[0x91,0xfd,0x08,0x68,0x79,0x01,0x1a,0x05]},&mut adapter1.0),"adapter1 query")?;
             let describe:unsafe extern "system" fn(Ptr,*mut AdapterDesc)->i32=std::mem::transmute(adapter1.method(10));
-            let mut desc:AdapterDesc=std::mem::zeroed();check(describe(adapter1.0,&mut desc),"adapter description")?;
-            let software_adapter=desc.flags&2!=0;
-            let adapter_name=String::from_utf16_lossy(&desc.description[..desc.description.iter().position(|x|*x==0).unwrap_or(128)]);
+            let mut adapter_desc:AdapterDesc=std::mem::zeroed();check(adapter_describe(adapter1.0,&mut adapter_desc),"adapter adapter_description")?;
+            let software_adapter=adapter_desc.flags&2!=0;
+            let adapter_name=String::from_utf16_lossy(&adapter_desc.adapter_description[..adapter_desc.adapter_description.iter().position(|x|*x==0).unwrap_or(128)]);
             if backend==Backend::Hardware&&software_adapter {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend=Hardware HRESULT=0x887a0004 software DXGI adapter: {adapter_name}"));}
             let vertex=shader(b"float4 main(uint id:SV_VertexID):SV_Position { float2 p[3]={float2(-1,-1),float2(-1,3),float2(3,-1)}; return float4(p[id],0,1); }",c"vs_4_0".to_bytes_with_nul())?;
             let pixel=shader(b"float4 main(float4 pos:SV_Position):SV_Target { uint2 p=uint2(pos.xy); return float4(float(p.x%4)/3,float(p.y%4)/3,float((p.x+p.y)%4)/3,1); }",c"ps_4_0".to_bytes_with_nul())?;
@@ -103,7 +103,7 @@ mod windows {
             unmap(context.0,staging.0,0);
             let removed:unsafe extern "system" fn(Ptr)->i32=std::mem::transmute(device.method(39));check(removed(device.0),"device status")?;
             if pixels!=reference() {return Err("D3D11 shader/readback pixel mismatch".into());}
-            Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:desc.vendor,device_id:desc.device,software_adapter})
+            Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:adapter_desc.vendor,device_id:adapter_desc.device,software_adapter})
         }
     }
     #[cfg(test)] mod tests {
