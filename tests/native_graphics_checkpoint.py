@@ -30,6 +30,8 @@ def main():
                     sample['exact_pixels']=True
                     decoded=json.loads(next(line.split('=',1)[1] for line in p.stdout.splitlines() if line.startswith('GRAPHICS_HOST_RENDER=')))
                     assert decoded['backend']==backend.capitalize()
+                    sample['adapter']=decoded
+                    if backend=='hardware': assert decoded['software_adapter'] is False
                     assert decoded['guest_acceleration_verified'] is False and decoded['android_graphics_verified'] is False
                     original=actual
                     blocked=subprocess.run([exe,f'graphics-smoke-{backend}',str(path)],capture_output=True,text=True,timeout=30)

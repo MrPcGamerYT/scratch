@@ -81,9 +81,9 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             use nexus_engine::graphics::{self,Backend};
             let mut output=std::fs::OpenOptions::new().write(true).create_new(true).open(&args[2]).map_err(|e|e.to_string())?;
             let backend=if command=="graphics-smoke-hardware" {Backend::Hardware} else {Backend::Warp};
-            let (pixels,level)=graphics::render(backend)?;
-            output.write_all(&pixels).map_err(|e|e.to_string())?;output.flush().map_err(|e|e.to_string())?;
-            println!("GRAPHICS_HOST_RENDER={{\"backend\":\"{backend:?}\",\"feature_level\":{level},\"shader_pixels_verified\":true,\"guest_acceleration_verified\":false,\"android_graphics_verified\":false}}");Ok(())
+            let rendered=graphics::render(backend)?;let level=rendered.feature_level;
+            output.write_all(&rendered.pixels).map_err(|e|e.to_string())?;output.flush().map_err(|e|e.to_string())?;
+            println!("GRAPHICS_HOST_RENDER={{\"backend\":\"{backend:?}\",\"feature_level\":{level},\"adapter\":{:?},\"vendor_id\":{},\"device_id\":{},\"software_adapter\":{},\"shader_pixels_verified\":true,\"guest_acceleration_verified\":false,\"android_graphics_verified\":false}}",rendered.adapter,rendered.vendor_id,rendered.device_id,rendered.software_adapter);Ok(())
         }
         Some("player-window-smoke") if args.len()==2 => {
             use std::sync::atomic::Ordering;

@@ -70,3 +70,6 @@ static_assert(sizeof(D3D11_VIEWPORT) == 24);
 static_assert(D3D_DRIVER_TYPE_HARDWARE == 1 && D3D_DRIVER_TYPE_WARP == 5);
 static_assert(D3D11_SDK_VERSION == 7 && DXGI_FORMAT_R8G8B8A8_UNORM == 28);
 static_assert(D3D11_BIND_RENDER_TARGET == 0x20 && D3D11_CPU_ACCESS_READ == 0x20000);
+
+static_assert(sizeof(DXGI_ADAPTER_DESC1) == 312);
+static_assert(offsetof(DXGI_ADAPTER_DESC1, Flags) == 304);

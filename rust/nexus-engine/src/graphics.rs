@@ -2,13 +2,14 @@
 //! Hardware and WARP are explicit, separate choices; never silently substitute WARP.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Backend {Hardware,Warp}
+pub struct Rendered {pub pixels:Vec<u8>,pub feature_level:u32,pub adapter:String,pub vendor_id:u32,pub device_id:u32,pub software_adapter:bool}
 pub const WIDTH:usize=64;
 pub const HEIGHT:usize=64;
 pub fn reference()->Vec<u8> {
     (0..HEIGHT).flat_map(|y|(0..WIDTH).flat_map(move |x|[(x%4*85) as u8,(y%4*85) as u8,((x+y)%4*85) as u8,255])).collect()
 }
 #[cfg(not(windows))]
-pub fn render(_:Backend)->Result<(Vec<u8>,u32),String> {Err("Direct3D host renderer requires Windows".into())}
+pub fn render(_:Backend)->Result<Rendered,String> {Err("Direct3D host renderer requires Windows".into())}
 #[cfg(windows)]
 pub use windows::render;
 #[cfg(windows)]
@@ -16,6 +17,8 @@ mod windows {
     use super::*;
     use std::ffi::c_void;
     type Ptr=*mut c_void;
+    #[repr(C)] struct Guid {a:u32,b:u16,c:u16,d:[u8;8]}
+    #[repr(C)] struct AdapterDesc {description:[u16;128],vendor:u32,device:u32,subsystem:u32,revision:u32,video:usize,system:usize,shared:usize,luid:[u32;2],flags:u32}
     #[repr(C)] struct TextureDesc {width:u32,height:u32,mips:u32,array:u32,format:u32,samples:u32,quality:u32,usage:u32,bind:u32,cpu:u32,misc:u32}
     #[repr(C)] struct Mapped {data:Ptr,row_pitch:u32,depth_pitch:u32}
     #[repr(C)] struct Viewport {x:f32,y:f32,width:f32,height:f32,min:f32,max:f32}
@@ -44,13 +47,26 @@ mod windows {
         if hr<0 {return Err(format!("D3DCompile HRESULT=0x{:08x}: {}",hr as u32,if errors.0.is_null() {String::new()} else {String::from_utf8_lossy(errors.bytes()).into_owned()}));}
         Ok(code)
     }
-    pub fn render(backend:Backend)->Result<(Vec<u8>,u32),String> {
+    pub fn render(backend:Backend)->Result<Rendered,String> {
         let null=std::ptr::null_mut();
         unsafe {
             let mut device=Com(null);let mut context=Com(null);let mut level=0;
             let levels=[0xb000,0xa100,0xa000];
             let hr=D3D11CreateDevice(null,if backend==Backend::Hardware {1} else {5},null,0x20,levels.as_ptr(),levels.len() as u32,7,&mut device.0,&mut level,&mut context.0);
             if hr<0 {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend={backend:?} HRESULT=0x{:08x}",hr as u32));}
+            let query:unsafe extern "system" fn(Ptr,*const Guid,*mut Ptr)->i32=std::mem::transmute(device.method(0));
+            let mut dxgi=Com(null);
+            check(query(device.0,&Guid{a:0x54ec77fa,b:0x1377,c:0x44e6,d:[0x8c,0x32,0x88,0xfd,0x5f,0x44,0xc8,0x4c]},&mut dxgi.0),"DXGI device query")?;
+            let get_adapter:unsafe extern "system" fn(Ptr,*mut Ptr)->i32=std::mem::transmute(dxgi.method(7));
+            let mut adapter=Com(null);check(get_adapter(dxgi.0,&mut adapter.0),"adapter query")?;
+            let query_adapter:unsafe extern "system" fn(Ptr,*const Guid,*mut Ptr)->i32=std::mem::transmute(adapter.method(0));
+            let mut adapter1=Com(null);
+            check(query_adapter(adapter.0,&Guid{a:0x29038f61,b:0x3839,c:0x4626,d:[0x91,0xfd,0x08,0x68,0x79,0x01,0x1a,0x05]},&mut adapter1.0),"adapter1 query")?;
+            let describe:unsafe extern "system" fn(Ptr,*mut AdapterDesc)->i32=std::mem::transmute(adapter1.method(10));
+            let mut desc:AdapterDesc=std::mem::zeroed();check(describe(adapter1.0,&mut desc),"adapter description")?;
+            let software_adapter=desc.flags&2!=0;
+            let adapter_name=String::from_utf16_lossy(&desc.description[..desc.description.iter().position(|x|*x==0).unwrap_or(128)]);
+            if backend==Backend::Hardware&&software_adapter {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend=Hardware HRESULT=0x887a0004 software DXGI adapter: {adapter_name}"));}
             let vertex=shader(b"float4 main(uint id:SV_VertexID):SV_Position { float2 p[3]={float2(-1,-1),float2(-1,3),float2(3,-1)}; return float4(p[id],0,1); }",c"vs_4_0".to_bytes_with_nul())?;
             let pixel=shader(b"float4 main(float4 pos:SV_Position):SV_Target { uint2 p=uint2(pos.xy); return float4(float(p.x%4)/3,float(p.y%4)/3,float((p.x+p.y)%4)/3,1); }",c"ps_4_0".to_bytes_with_nul())?;
             let mut vs=Com(null);let mut ps=Com(null);
@@ -87,12 +103,12 @@ mod windows {
             unmap(context.0,staging.0,0);
             let removed:unsafe extern "system" fn(Ptr)->i32=std::mem::transmute(device.method(39));check(removed(device.0),"device status")?;
             if pixels!=reference() {return Err("D3D11 shader/readback pixel mismatch".into());}
-            Ok((pixels,level))
+            Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:desc.vendor,device_id:desc.device,software_adapter})
         }
     }
     #[cfg(test)] mod tests {
         use super::*;
-        #[test] fn ffi_layout() {assert_eq!(std::mem::size_of::<TextureDesc>(),44);assert_eq!(std::mem::size_of::<Mapped>(),16);assert_eq!(std::mem::size_of::<Viewport>(),24);}
+        #[test] fn ffi_layout() {assert_eq!(std::mem::size_of::<AdapterDesc>(),312);assert_eq!(std::mem::offset_of!(AdapterDesc,flags),304);assert_eq!(std::mem::size_of::<TextureDesc>(),44);assert_eq!(std::mem::size_of::<Mapped>(),16);assert_eq!(std::mem::size_of::<Viewport>(),24);}
     }
 }
 #[cfg(test)] mod tests {
