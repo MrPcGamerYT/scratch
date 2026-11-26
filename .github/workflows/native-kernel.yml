@@ -8,6 +8,7 @@ on:
       - 'rust/nexus-engine/src/uart.rs'
       - 'rust/nexus-engine/src/pit.rs'
       - 'rust/nexus-engine/src/pic.rs'
+      - 'rust/nexus-engine/src/rtc.rs'
       - 'rust/nexus-engine/src/platform.rs'
       - 'rust/nexus-engine/src/timing.rs'
   workflow_dispatch:

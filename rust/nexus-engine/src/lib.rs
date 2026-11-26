@@ -5,6 +5,7 @@ pub mod kernel;
 pub mod uart;
 pub mod pit;
 pub mod pic;
+pub mod rtc;
 pub mod platform;
 pub mod timing;
 pub mod cpu;
