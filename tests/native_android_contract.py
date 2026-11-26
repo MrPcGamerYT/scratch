@@ -14,7 +14,7 @@ def archive(data):
             data=source.read(LIMIT+1)
     if len(data)>LIMIT:
         raise ValueError('Ramdisk expands beyond inspection budget')
-    at=0;result={}
+    at=0;result={};duplicates=[]
     while at+110<=len(data):
         header=data[at:at+110]
         if header[:6]!=b'070701':
@@ -30,10 +30,10 @@ def archive(data):
         if end>len(data):
             raise ValueError('Truncated newc member')
         if name=='TRAILER!!!':
-            return result
+            return result,duplicates
         key=name.removeprefix('./')
         if key in result:
-            raise ValueError('Duplicate newc name')
+            duplicates.append(key)
         result[key]=(fields[1],data[body_at:end]);at=(end+3)&~3
     raise ValueError('No newc trailer')
 
@@ -52,10 +52,10 @@ def inspect(root):
         if not path.exists():
             continue
         try:
-            items=archive(path.read_bytes())
+            items,duplicates=archive(path.read_bytes())
             scripts={key:body[:24000].decode(errors='replace') for key,(mode,body) in items.items()
                      if key in ['init','init.rc','fstab.android_x86','fstab.android_x86_64'] and stat.S_ISREG(mode)}
-            result['ramdisks'][name]={'entries':list(items)[:200],'boot_scripts':scripts}
+            result['ramdisks'][name]={'entries':list(items)[:200],'duplicate_names':duplicates[:100],'inspection_policy':'last record reported; no extraction or mutation','boot_scripts':scripts}
         except ValueError as error:
             result['ramdisks'][name]={'inspection_unavailable':str(error)}
     return result
