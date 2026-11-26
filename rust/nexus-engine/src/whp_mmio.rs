@@ -105,6 +105,20 @@ impl Emulator {
 }
 impl Drop for Emulator {fn drop(&mut self) {unsafe {WHvEmulatorDestroyEmulator(self.handle);}}}
 
+struct LiveBlock {context:MmioContext,emulator:Emulator,backend:crate::overlay::Overlay}
+impl LiveBlock {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
+        if self.context.device.work_pending() {
+            // Sole vCPU stopped, synchronous emulator callbacks have all returned.
+            let ram=unsafe {std::slice::from_raw_parts_mut(self.context.ram,self.context.bytes)};
+            let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+            self.context.device.service(&mut memory,&mut self.backend,256)?;
+        }
+        Ok(())
+    }
+}
+
 pub fn mmio_smoke()->Result<(),String> {
     use crate::cpu;
     for long in [false,true] {
@@ -182,7 +196,7 @@ pub fn mmio_smoke()->Result<(),String> {
                 for _ in 0..128 {
                     if !long {
                         platform.pic.set_irq5(ctx.device.irq_asserted());
-                        if queue_interrupt(partition,&mut platform)? {injections+=1;}
+                        if queue_interrupt(partition,&mut platform)?.is_some() {injections+=1;}
                     }
                     let exit=run_once(partition)?;
                     match exit.reason() {8=>return Ok(Ok(())),1=>{

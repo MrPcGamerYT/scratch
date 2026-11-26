@@ -27,11 +27,22 @@ def main():
     rd=Path("diagnostic-initramfs.cpio")
     rd.write_bytes(initramfs())
     rd_sha=hashlib.sha256(rd.read_bytes()).hexdigest()
+    config=Path('kernel-artifact/kernel.config').read_text()
+    disk_enabled='CONFIG_VIRTIO_BLK=y' in config
+    if disk_enabled:
+        cmd+=' virtio_mmio.device=4K@0xd0000000:5'
+        base=Path('kernel-disk.zlag').resolve();raw_disk=Path('kernel-disk.raw').resolve();cow=Path('kernel-disk.cow').resolve()
+        raw_disk.write_bytes(bytes(2*1024*1024))
+        subprocess.run([exe,'import-raw',str(raw_disk),str(base)],check=True,capture_output=True)
+        base_digest=hashlib.sha256(base.read_bytes()).hexdigest()
     samples=[]
     for index in range(3):
         log=Path('kernel-serial.log' if index==0 else f'kernel-serial-{index+1}.log')
         start=time.perf_counter_ns()
-        p=subprocess.run([exe,'boot-kernel',str(kernel),str(log),cmd,str(rd)],capture_output=True,text=True,timeout=45)
+        command=[exe,'boot-kernel',str(kernel),str(log),cmd,str(rd)]
+        if disk_enabled:
+            command=[exe,'boot-kernel-disk-create' if index==0 else 'boot-kernel-disk-open',str(kernel),str(log),cmd,str(rd),str(base),str(cow)]
+        p=subprocess.run(command,capture_output=True,text=True,timeout=45)
         launch_to_exit_ms=(time.perf_counter_ns()-start)/1_000_000
         raw=log.read_bytes() if log.exists() else b''
         serial=raw.decode(errors='replace')
@@ -46,6 +57,13 @@ def main():
         Path('kernel-checkpoint.txt').write_text(json.dumps(samples,indent=2),encoding='utf-8')
         print(json.dumps(sample,indent=2),flush=True)
         assert 'Linux version 6.6.0' in serial,('Linux banner not reached',p.stderr,serial[-1800:])
+        if disk_enabled:
+            notice('VIRTIO_LINUX_STDERR='+p.stderr[-2500:])
+            notice('VIRTIO_LINUX_SERIAL_TAIL='+serial[-3000:])
+            assert 'virtio_blk virtio0: [vda]' in serial,('No Linux vda discovery',p.stderr,serial[-3000:])
+            assert metrics.get('irq5_injections',0)>0,('No real VirtIO IRQ delivery',metrics)
+            assert hashlib.sha256(base.read_bytes()).hexdigest()==base_digest
+            notice('Linux virtio-blk vda discovery and external IRQ5 verified; not filesystem or Android readiness')
         assert metrics,'No native monotonic timing report'
         assert metrics['pit_channel2_programs']>0 and metrics['pit_accesses']>0,metrics
         assert 'Unsupported kernel port 0x61' not in p.stderr,p.stderr

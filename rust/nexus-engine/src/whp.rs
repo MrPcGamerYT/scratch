@@ -292,19 +292,19 @@ mod windows {
         });
         let result=action();let _=tx.send(());worker.join().map_err(|_|"Timer rendezvous thread panicked")?;result
     }
-    fn queue_interrupt(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<bool,String> {
-        let Some(vector)=platform.pic.pending_vector() else {return Ok(false);};
+    fn queue_interrupt(partition:&Partition,platform:&mut crate::platform::EarlyPlatform)->Result<Option<u8>,String> {
+        let Some(vector)=platform.pic.pending_vector() else {return Ok(None);};
         // Only inject in an open interrupt window. IF=0 or STI/MOV-SS shadow
         // would make external injection invalid on some WHP versions.
-        if scalar_register(partition,0x11)?&0x200==0||scalar_register(partition,0x80000001)?&1!=0 {return Ok(false);}
+        if scalar_register(partition,0x11)?&0x200==0||scalar_register(partition,0x80000001)?&1!=0 {return Ok(None);}
         // Never overwrite an event already queued in WHP.
-        if scalar_register(partition,0x80000000)?&1!=0 {return Ok(false);}
+        if scalar_register(partition,0x80000000)?&1!=0 {return Ok(None);}
         set_registers(partition,&[0x80000000],&[Register::scalar(1|(u64::from(vector)<<16))])?;
-        platform.pic.acknowledge()?;Ok(true)
+        platform.pic.acknowledge()?;Ok(Some(vector))
     }
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
-        fixture:bool)->Result<(),String> {
+        fixture:bool,mut disk:Option<&mut LiveBlock>)->Result<(),String> {
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;
         timer_pump(partition,|| {
@@ -313,12 +313,17 @@ mod windows {
                     if elapsed_ms()>=30000 {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
-                    if queue_interrupt(partition,platform)? {trace.irq0_injections+=1;halted=false;}
+                    if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
+                    if let Some(vector)=queue_interrupt(partition,platform)? {if vector&7==0 {trace.irq0_injections+=1;} else {trace.irq5_injections+=1;}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
                     let context=run_once(partition)?;trace.exits+=1;
                     match context.reason() {
+                        1=>{
+                            let disk=disk.as_mut().ok_or("Unmapped memory exit without a configured VirtIO device")?;
+                            disk.access(&context)?;
+                        }
                         0x2001=>continue, // Scheduling rendezvous; wall deadline remains global.
                         8=>{
                             if fixture&&trace.irq0_injections>0 {return Ok(Ok(()));}
@@ -366,7 +371,19 @@ mod windows {
     pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant)->Result<(),String> {
         load_kernel_plan(plan,|partition,_| {
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false)
+            run_platform(partition,&mut crate::platform::EarlyPlatform::default(),serial,trace,start,false,None)
+        })
+    }
+    pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
+        let backend=if create {crate::overlay::Overlay::create(base,cow)?} else {crate::overlay::Overlay::open(base,cow)?};
+        load_kernel_plan(plan,|partition,memory| {
+            let capacity=backend.disk_bytes()/512;
+            let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
+                device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
+            let mut platform=crate::platform::EarlyPlatform::default();
+            platform.pic.access(0x4d0,true,0x20)?;
+            trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
+            run_platform(partition,&mut platform,serial,trace,start,false,Some(&mut disk))
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
@@ -454,7 +471,7 @@ mod windows {
             platform.pit0.access(0x43,true,0x30,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
-            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,true)?;
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,true,None)?;
             let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
             if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
                 return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));
@@ -529,3 +546,8 @@ pub fn ata_cow_smoke(_base:&std::path::Path,_overlay:&std::path::Path)->Result<(
 pub use windows::mmio_smoke;
 #[cfg(not(windows))]
 pub fn mmio_smoke()->Result<(),String> {Err("WHP MMIO execution requires Windows x64".into())}
+
+#[cfg(windows)]
+pub use windows::boot_kernel_disk;
+#[cfg(not(windows))]
+pub fn boot_kernel_disk(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant,_base:&std::path::Path,_cow:&std::path::Path,_create:bool)->Result<(),String> {Err("WHP VirtIO Linux boot requires Windows x64".into())}

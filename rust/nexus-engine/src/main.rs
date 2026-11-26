@@ -17,7 +17,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
         Some("cancel-smoke") if args.len()==2 => { whp::cancel_smoke()?; println!("Direct WHP infinite-loop cancellation and same-vCPU restart passed."); Ok(()) }
         Some("ata-cow-smoke") if args.len()==4 => {whp::ata_cow_smoke(Path::new(&args[2]),Path::new(&args[3]))?; println!("Guest ATA write/flush/read and persistent overlay reopen passed; base untouched. Polled diagnostic only, not Android boot.");Ok(())}
         Some("ata-pio-smoke") if args.len()==3 => {whp::ata_pio_smoke(Path::new(&args[2]))?; println!("Verified ZLAG -> ATA IDENTIFY/PIO sector read -> guest RAM and write refusal passed. Read-only, polled subset; not Android storage certification.");Ok(())}
-        Some("mmio-smoke") if args.len()==2 => {whp::mmio_smoke()?;println!("Real WHP protected/long-mode MMIO register access and paged instruction fetch passed; no Linux disk or IRQ certification.");Ok(())}
+        Some("mmio-smoke") if args.len()==2 => {whp::mmio_smoke()?;println!("Real WHP protected/long-mode MMIO queue write/flush/read/COW persistence and protected-mode external IRQ5 passed; not Android certification.");Ok(())}
         Some("timer-irq-smoke") if args.len()==2 => {whp::timer_irq_smoke()?; println!("PIT0 one-shot -> PIC IRQ0 -> external WHP interrupt -> HLT wake -> EOI/IRETD passed; not Android boot.");Ok(())}
         Some("protected-smoke") if args.len()==2 => { whp::protected_smoke()?; println!("Direct WHP seeded protected-mode 32-bit execution, flat memory and scalar I/O passed. Not a kernel boot."); Ok(()) }
         Some("long-smoke") if args.len()==2 => { whp::long_smoke()?; println!("Direct WHP seeded 64-bit execution, nonidentity paging alias, guest INT/IRETQ and missing-PTE refusal passed. Not a kernel boot."); Ok(()) }
@@ -27,17 +27,19 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let p=nexus_engine::kernel::KernelPlan::build(&image,None,"",nexus_engine::kernel::DEFAULT_RAM)?;
             println!("Linux boot plan: protocol=0x{:x}, entry=0x{:x}, runtime_end=0x{:x}, regions={}. Header/layout validation only.",p.protocol,p.entry,p.runtime_end,p.regions.len());Ok(())
         }
-        Some("boot-kernel") if args.len()==5 || args.len()==6 => {
+        Some(command @ ("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open")) if (command=="boot-kernel"&&(args.len()==5||args.len()==6))||(command!="boot-kernel"&&args.len()==8) => {
             use nexus_engine::kernel;
             let image=kernel::read_input(Path::new(&args[2]))?;
-            let initrd=if args.len()==6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
+            let initrd=if args.len()>=6 {Some(kernel::read_input(Path::new(&args[5]))?)} else {None};
             let plan=kernel::KernelPlan::build(&image,initrd.as_deref(),&args[4],kernel::DEFAULT_RAM)?;
             use std::io::Write;
             let mut trace=nexus_engine::timing::BootTrace::after_header(start.elapsed().as_millis() as u64);
             let mut log=std::fs::OpenOptions::new().create_new(true).write(true).open(&args[3]).map_err(|e|e.to_string())?;
             let mut timings=std::fs::OpenOptions::new().create_new(true).write(true).open(format!("{}.timing.json",args[3])).map_err(|e|e.to_string())?;
             eprintln!("Starting experimental Linux entry at 0x{:x}; polled serial log: {}. Full kernel/platform boot is NOT implemented.",plan.entry,args[3]);
-            let result=whp::boot_kernel(&plan,&mut log,&mut trace,start);
+            let result=if command=="boot-kernel" {whp::boot_kernel(&plan,&mut log,&mut trace,start)} else {
+                whp::boot_kernel_disk(&plan,&mut log,&mut trace,start,Path::new(&args[6]),Path::new(&args[7]),command=="boot-kernel-disk-create")
+            };
             trace.stopped_ms=Some(start.elapsed().as_millis() as u64);
             trace.stop_reason=result.as_ref().err().cloned().unwrap_or_else(||"Linux diagnostic userspace checkpoint reached; Android boot not implemented".into());
             timings.write_all(trace.json().as_bytes()).map_err(|e|e.to_string())?;
