@@ -79,7 +79,7 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
         }Ok(())
     })
 }
-fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sync::mpsc::Sender<StartupEvent>>,lapics:ApicFabric)->Result<u32,String> {
+fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sync::mpsc::Sender<StartupEvent>>,lapics:ApicFabric)->Result<(u32,u64),String> {
     let callbacks=Box::new(EmulatorCallbacks{size:std::mem::size_of::<EmulatorCallbacks>() as u32,reserved:0,io:apic_io,memory:apic_memory,get:apic_get,set:apic_set,translate:apic_translate});
     let mut emulator=std::ptr::null_mut();
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
@@ -87,6 +87,7 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+    let mut halted=false;let mut halt_waits=0;
     for _ in 0..50000 {
         if std::time::Instant::now()>=deadline {
             let names=[0x10,0x11];let mut state=[Register::scalar(0);2];
@@ -103,15 +104,27 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
             if scalar(0)&0x200!=0&&scalar(1)&1==0&&scalar(2)&1==0 {
                 let name=0x80000000;let value=Register::scalar(1|(u64::from(vector)<<16));
                 unsafe {check(WHvSetVirtualProcessorRegisters(ctx.partition,index,&name,1,&value),"LAPIC fixed interrupt injection")?;}
-                local.acknowledge(vector)?;
+                local.acknowledge(vector)?;halted=false;
             }
         }
         }
+        if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()==0x2001 {continue;}
-        if exit.reason()!=1 {return Ok(exit.reason());}
+        if exit.reason()==8 {
+            let names=[0x11,0x80000000];let mut state=[Register::scalar(0);2];
+            unsafe {check(WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),2,state.as_mut_ptr()),"LAPIC HLT state")?;}
+            let flags=u64::from_le_bytes(state[0].0[..8].try_into().unwrap());
+            let pending=u64::from_le_bytes(state[1].0[..8].try_into().unwrap());
+            if flags&0x200==0 {return Ok((8,halt_waits));}
+            // HLT already advanced RIP. A scheduling cancel is not a wake IRQ.
+            // If WHP already has a queued event, resume it instead of sleeping.
+            if pending&1==0 {halted=true;halt_waits+=1;}
+            continue;
+        }
+        if exit.reason()!=1 {return Ok((exit.reason(),halt_waits));}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
         let hr=unsafe {WHvEmulatorTryMmioEmulation(emulator.handle,(&mut ctx as *mut ApicContext).cast(),exit.0[8..].as_ptr(),access.0.as_ptr(),&mut status)};
         if let Some(e)=ctx.error.take() {return Err(format!("{e}; RIP=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap())));}check(hr,"APIC emulate")?;
@@ -119,9 +132,10 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
     }Err("APIC exit budget exceeded".into())
 }
 pub fn smp_smoke()->Result<(),String> {
-    for _ in 0..16 {smp_cycle()?;}Ok(())
+    let mut halt_waits=0;for _ in 0..16 {halt_waits+=smp_cycle()?;}
+    if halt_waits==0 {return Err("No actual LAPIC halt/wake exercised in startup batch".into());}Ok(())
 }
-fn smp_cycle()->Result<(),String> {
+fn smp_cycle()->Result<u64,String> {
     use crate::cpu;
     let partition=create_machine(2,true)?;
     let memory=allocate(&partition,cpu::RAM_BYTES)?;
@@ -183,7 +197,7 @@ fn smp_cycle()->Result<(),String> {
         0xc7,0x05,0xf0,0,0xe0,0xfe,0xff,1,0,0,
         0xc7,0x05,0xd0,0,0xe0,0xfe,0,0,0,1,0xfb,0x90,
         0xc6,0x05,0,0xa0,0,0,0x5a,
-        0x83,0x3d,0x40,0xa0,0,0,2,0x75,0xf7,0xfa,0xf4];
+        0xfa,0x83,0x3d,0x40,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4];
     f.ram[0x9600..0x9600+ap_protected.len()].copy_from_slice(&ap_protected);
     f.ram[0xb208..0xb210].copy_from_slice(&[0,0x98,8,0,0,0x8e,0,0]);
     let ap_handler=[0xff,0x05,0x40,0xa0,0,0,
@@ -197,7 +211,7 @@ fn smp_cycle()->Result<(),String> {
         Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)])?;
     let handle=partition.0 as usize;let ram=memory.address as usize;let bytes=memory.bytes;
     let lapics=std::sync::Arc::new(std::sync::Mutex::new(vec![crate::lapic::LocalApic::new(0),crate::lapic::LocalApic::new(1)]));
-    let ((bsp,ap),expired)=timer_pump(&partition,||bounded(&partition,5000,||std::thread::scope(|scope| {
+    let ((bsp,ap,ap_halts),expired)=timer_pump(&partition,||bounded(&partition,5000,||std::thread::scope(|scope| {
         let (tx,rx)=std::sync::mpsc::channel();
         let ap_lapics=lapics.clone();
         let ap=scope.spawn(move || {
@@ -219,9 +233,9 @@ fn smp_cycle()->Result<(),String> {
         });
         let bsp=run_index(handle,0,ram,bytes,Some(tx),lapics.clone());
         let ap=ap.join().map_err(|_|"AP run thread panicked")?;
-        let ap=ap?;
+        let (ap,ap_halts)=ap?;
         if ap!=8 {return Err(format!("AP stopped at unexpected exit 0x{ap:x}"));}
-        Ok((bsp?,ap))
+        Ok((bsp?.0,ap,ap_halts))
     })))?;
     if expired||bsp!=8||ap!=8 {return Err(format!("SMP INIT/SIPI failed: BSP exit={bsp:x} AP exit={ap:x} timeout={expired}"));}
     // Both vCPUs have stopped and workers joined before accessing shared RAM.
@@ -244,5 +258,5 @@ fn smp_cycle()->Result<(),String> {
             return Err(format!("Guest CPU{index} topology disagrees with allocated vCPUs"));
         }
     }
-    Ok(())
+    Ok(ap_halts)
 }
