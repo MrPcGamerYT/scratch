@@ -26,7 +26,7 @@ jobs:
         if: runner.os == 'Windows'
       - name: Check Rust hypervisor ABI against Windows SDK
         if: runner.os == 'Windows'
-        run: cl.exe /nologo /EHsc /std:c++17 /c tests/whp_sdk_abi.cpp /Fo:whp-sdk-abi.obj
+        run: cl.exe /nologo /EHsc /std:c++17 /c tests/whp_sdk_abi.cpp /Fowhp-sdk-abi.obj
       - name: Test library and build independent engine (zero QEMU dependencies)
         run: |
           set -o pipefail
