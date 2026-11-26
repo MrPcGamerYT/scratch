@@ -79,8 +79,28 @@ The adapter owns its SDK callback table for the emulator lifetime and contains
 callback errors/panics. RAM callbacks support up to eight bytes; register callbacks
 are limited explicitly to one, two or four bytes.
 
-This does **not** exercise queue DMA, disk requests, VirtIO interrupt delivery or
-Linux device discovery. The separate model tests still provide queue/COW evidence.
+### Guest-notified queue service and COW checkpoint
+
+Code `44fe10c` passed foundation **45760536459** (Windows/Ubuntu, strict Clippy,
+release, SDK ABI and repeated live fixtures) and Linux diagnostic regression
+**45760536464** (three boots). The `mmio-smoke` fixture now additionally performs:
+
+- Guest CPU negotiates features, configures/starts queue and writes QueueNotify.
+- After synchronous SDK emulation returns, with the only vCPU stopped, a bounded
+  GuestMemory borrow feeds queue service. No DMA occurs inside an SDK callback.
+- Three fixture-seeded request chains write sector 1, FLUSH and read sector 1 into
+  another buffer. All three status bytes and used.idx=3 are checked, together with
+  exact patterned data, and exactly three successful completions are required.
+- Guest reads latched InterruptStatus=1, acknowledges it, then reads zero.
+- Device teardown and separate COW reopen recover the written bytes; the verified
+  base image remains byte-for-byte unchanged. Temporary fixture files are removed
+  on success, never using a user disk.
+
+Both protected32 and long64 execute this path, three repetitions each in the CLI
+suite. Queue rings are supplied by the host fixture, not constructed by Linux.
+Interrupt status/ACK is tested, **not external interrupt delivery**. No `/dev/vda`,
+filesystem, guest reboot, host crash or Android readiness claim follows from this.
+The normal Linux boot loop still does not expose this device.
 
 Hardening commit `64296d8` additionally rejects oversized register accesses before
 scalar conversion. Foundation **45759258169** and Linux regression **45759258205**
@@ -90,10 +110,10 @@ boots, not Android Home or VirtIO disk discovery.
 ## Remaining integration gates
 
 1. Connect the verified WHP instruction-emulator adapter to the real Linux run
-   loop and queue service; the current live fixture only tests registers.
-2. A safe adapter from host-mapped guest RAM to the checked memory API. All vCPUs
-   and workers must be stopped for current service; concurrent DMA/Acquire-Release
-   atomics and SMP support are not implemented by adding ordinary Rust slices.
+   loop; the current live fixture verifies registers and synchronous queue service.
+2. Generalize the fixture's stopped-vCPU RAM borrowing into the Linux device lifecycle.
+   All vCPUs and workers must be stopped; concurrent DMA/Acquire-Release atomics
+   and SMP support are not implemented by adding ordinary Rust slices.
 3. Real level-triggered interrupt-controller routing beyond the existing IRQ0
    path, including assertion/deassertion and completion/configuration acknowledgment.
 4. Guest-visible queue/transfer-limit negotiation, broader valid descriptor

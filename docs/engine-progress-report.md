@@ -6,6 +6,17 @@
 It is **not yet a usable Android emulator**. No new Android guest image or
 ready-to-use Windows emulator release is being published with this milestone.
 
+## Guest-notified VirtIO disk queue checkpoint
+
+Code `44fe10c` passed foundation **45760536459** and three-boot Linux diagnostic
+regression **45760536464**. Actual protected32/long64 guest CPUs now start and
+notify a fixture-seeded split queue. Stopped-vCPU service executes write, flush
+and read against a real COW backend. Tests check exact data, three status bytes,
+used index, guest-observed interrupt latch/ACK, reopened persistence and unchanged
+base image. CI repeats the fixture three times. This adds live queue/DMA coverage;
+it is not Linux device discovery, external VirtIO interrupt delivery, filesystem
+persistence across guest reboot, or Android readiness. See `native-virtio-mmio.md`.
+
 ## WHP MMIO register bridge checkpoint
 
 Code `64296d8` passed Windows/Ubuntu foundation **45759258169** and the three-boot
