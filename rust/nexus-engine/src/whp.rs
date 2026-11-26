@@ -46,7 +46,7 @@ mod windows {
     struct Processor<'a>(&'a Partition);
     impl Drop for Processor<'_> { fn drop(&mut self) { unsafe { WHvDeleteVirtualProcessor(self.0.0,0); } } }
     fn allocate(partition:&Partition,bytes:usize)->Result<Mapping<'_>,String> {
-        if bytes==0 || bytes%4096!=0 || bytes>crate::cpu::RAM_BYTES {return Err("Invalid test RAM mapping size".into());}
+        if bytes==0 || bytes%4096!=0 || bytes>512*1024*1024 {return Err("Invalid guest RAM mapping size".into());}
         let address=unsafe { VirtualAlloc(std::ptr::null_mut(),bytes,0x3000,4) };
         if address.is_null() { return Err("VirtualAlloc failed".into()); }
         let hr=unsafe { WHvMapGpaRange(partition.0,address,0,bytes as u64,7) };
@@ -250,6 +250,64 @@ mod windows {
         mode_fixture(crate::cpu::CpuMode::Long64,false)?;
         mode_fixture(crate::cpu::CpuMode::Long64,true)
     }
+    fn load_kernel_plan<T>(plan:&crate::kernel::KernelPlan,action:impl FnOnce(&Partition,&Mapping<'_>)->Result<T,String>)->Result<T,String> {
+        use crate::kernel;
+        plan.validate_regions()?;
+        with_guest_at(&[],0,plan.ram_bytes,|partition,memory| {
+            for region in &plan.regions {
+                unsafe {std::ptr::copy_nonoverlapping(region.bytes.as_ptr(),memory.address.cast::<u8>().add(region.address),region.bytes.len());}
+            }
+            let code=Register::flat_segment(0x10,u32::MAX,0xc09b);
+            let data=Register::flat_segment(0x18,u32::MAX,0xc093);
+            set_registers(partition,&[0x1c,0x1e,0x1f,0x2001,0x13,0x15,0x12,0x14,0x16,0x17,0x1b,0x1a,0x10,4,0x11,0,1,2,3,5,6,7],&[
+                Register::scalar(0x11),Register::scalar(0),Register::scalar(0),Register::scalar(0),code,data,data,data,data,data,
+                Register::table(kernel::GDT as u64,31),Register::table(0,0),Register::scalar(plan.entry),Register::scalar(kernel::STACK),Register::scalar(2),
+                Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(kernel::BOOT_PARAMS as u64),Register::scalar(0)])?;
+            action(partition,memory)
+        })
+    }
+    pub fn kernel_contract_smoke()->Result<(),String> {
+        use crate::kernel;
+        let plan=kernel::KernelPlan::build(&kernel::contract_image(),Some(b"INIT"),"nexus",kernel::DEFAULT_RAM)?;
+        load_kernel_plan(&plan,|partition,_| {
+            run_to_halt_mode(partition,&mut crate::io::TestBus::default(),crate::cpu::CpuMode::Protected32)?;
+            for (name,value) in [(0,kernel::CMDLINE as u64),(3,u32::from_le_bytes(*b"nexu") as u64),
+                (1,plan.entry),(2,u32::from_le_bytes(*b"INIT") as u64),(7,plan.initrd_address.unwrap() as u64),(5,3),(6,kernel::BOOT_PARAMS as u64)] {
+                if scalar_register(partition,name)?!=value {return Err(format!("Kernel handshake register {name:x} mismatch"));}
+            }
+            Ok(())
+        })
+    }
+    pub fn boot_kernel(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write)->Result<(),String> {
+        load_kernel_plan(plan,|partition,_| {
+            let mut uart=crate::uart::EarlyUart::default();
+            let (result,timed_out)=bounded(partition,30000,|| {
+                for _ in 0..250000 {
+                    let context=run_once(partition)?;
+                    match context.reason() {
+                        2=>{
+                            let io=crate::io::IoExit::decode(&context.0)?;
+                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+                            let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
+                            let before=uart.output.len();let input=uart.access(io)?;
+                            serial.write_all(&uart.output[before..]).map_err(|e|e.to_string())?;
+                            if uart.output.last()==Some(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
+                            if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
+                            else {set_registers(partition,&[0x10],&[rip])?;}
+                        }
+                        reason=>{
+                            let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
+                            return Ok(Err(format!("Kernel stopped at unsupported exit 0x{reason:x}, RIP=0x{rip:x}; full platform boot is not implemented")));
+                        }
+                    }
+                }
+                Ok(Err("Kernel exit budget exceeded".to_string()))
+            })?;
+            serial.flush().map_err(|e|e.to_string())?;
+            if timed_out {return Err("Kernel wall deadline exceeded; no completed-boot claim".into());}
+            result
+        })
+    }
     pub fn boot_test_sector(path:&std::path::Path)->Result<Vec<u8>,String> {
         let sector=crate::boot::read_test_sector(path)?;
         with_guest_at(&sector,0x7c00,1024*1024,|partition,_| {
@@ -272,7 +330,7 @@ mod windows {
 
 }
 #[cfg(windows)]
-pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke,boot_test_sector,protected_smoke,long_smoke};
+pub use windows::{probe,cpu_smoke,io_smoke,cancel_smoke,boot_test_sector,protected_smoke,long_smoke,kernel_contract_smoke,boot_kernel};
 #[cfg(not(windows))]
 pub fn probe()->Result<(),String> { Err("Direct WHP backend requires Windows 10 x64".into()) }
 
@@ -291,3 +349,8 @@ pub fn boot_test_sector(_path:&std::path::Path)->Result<Vec<u8>,String> {Err("Di
 pub fn protected_smoke()->Result<(),String> {Err("Direct WHP protected-mode test requires Windows 10 x64".into())}
 #[cfg(not(windows))]
 pub fn long_smoke()->Result<(),String> {Err("Direct WHP long-mode test requires Windows 10 x64".into())}
+
+#[cfg(not(windows))]
+pub fn kernel_contract_smoke()->Result<(),String> {Err("Direct WHP kernel contract test requires Windows 10 x64".into())}
+#[cfg(not(windows))]
+pub fn boot_kernel(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write)->Result<(),String> {Err("Direct WHP kernel execution requires Windows 10 x64".into())}

@@ -3,6 +3,16 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuMode { Real16, Protected32, Long64 }
 impl CpuMode {
+    pub fn from_exit(context:&[u8])->Result<Self,String> {
+        if context.len()!=224 {return Err("Invalid execution context size".into());}
+        let flags=u16::from_le_bytes(context[8..10].try_into().unwrap());
+        let attributes=u16::from_le_bytes(context[30..32].try_into().unwrap());
+        if flags&4==0 {Ok(Self::Real16)}
+        else if flags&16!=0 && attributes&0x2000!=0 {Ok(Self::Long64)}
+        else if attributes&0x4000!=0 {Ok(Self::Protected32)}
+        else {Err("16-bit protected/compatibility I/O is not implemented".into())}
+    }
+
     pub fn next_rip(self,rip:u64,length:u8)->Result<u64,String> {
         if !(1..=15).contains(&length) {return Err("Invalid instruction length".into());}
         let next=rip.checked_add(u64::from(length)).ok_or("Instruction pointer overflow")?;
@@ -81,6 +91,13 @@ mod tests {
         assert_eq!(CpuMode::Long64.next_rip(0xffff_8000_0000_0000,3).unwrap(),0xffff_8000_0000_0003);
         for rip in [0x0000_7fff_ffff_ffff,0x0000_8000_0000_0000,u64::MAX] {assert!(CpuMode::Long64.next_rip(rip,1).is_err());}
         assert!(CpuMode::Long64.next_rip(0,0).is_err());assert!(CpuMode::Long64.next_rip(0,16).is_err());
+    }
+    #[test] fn infer_mode_after_guest_transitions() {
+        let mut c=[0;224];assert_eq!(CpuMode::from_exit(&c).unwrap(),CpuMode::Real16);
+        c[8]=4;c[31]=0x40;assert_eq!(CpuMode::from_exit(&c).unwrap(),CpuMode::Protected32);
+        c[8]=20;c[31]=0x20;assert_eq!(CpuMode::from_exit(&c).unwrap(),CpuMode::Long64);
+        c[31]=0x40;assert_eq!(CpuMode::from_exit(&c).unwrap(),CpuMode::Protected32);
+        c[31]=0;assert!(CpuMode::from_exit(&c).is_err());assert!(CpuMode::from_exit(&[]).is_err());
     }
     #[test] fn protected_start_state() {
         let f=fixture(CpuMode::Protected32).unwrap();assert_eq!(f.ram.len(),RAM_BYTES);
