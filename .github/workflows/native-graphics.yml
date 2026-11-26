@@ -1,0 +1,41 @@
+name: Native graphics guest driver and HAL audit
+on:
+  push:
+    paths:
+      - '.github/workflows/native-graphics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  guest-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-android-boot-assets
+          path: original-boot
+          run-id: 45776865308
+          github-token: ${{ github.token }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Inspect original nested ext4 filesystem without mounting or writing it
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full squashfs-tools e2fsprogs
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
+          7z x android11.iso system.sfs -ographics-source
+          rm android11.iso
+          unsquashfs -d graphics-payload graphics-source/system.sfs
+          test -f graphics-payload/system.img
+          python3 tests/native_graphics_guest_audit.py graphics-payload/system.img original-boot/kernel.config
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-graphics-guest-contract
+          path: native-graphics-guest-audit.json
+          retention-days: 7

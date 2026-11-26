@@ -10,6 +10,8 @@ on:
       - '.github/workflows/native-android.yml'
       - '.github/workflows/native-android-system.yml'
       - 'tests/native_android_*.py'
+      - 'tests/native_graphics*.py'
+      - '.github/workflows/native-graphics.yml'
       - '.github/workflows/native-kernel.yml'
       - 'tests/native_kernel_checkpoint.py'
       - 'tests/native_initramfs.py'
