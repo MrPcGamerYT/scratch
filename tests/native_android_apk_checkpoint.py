@@ -21,7 +21,7 @@ def main():
         assert path.is_file() and not path.is_symlink() and path.stat().st_size==info['bytes'] and digest(path)==info['sha256'],name
     exe=str(Path('rust/nexus-engine/target/release/nexus-engine.exe').resolve())
     log=Path('native-apk-serial.log')
-    cmd='earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 root=/dev/ram0 ROOT=/dev/vda SRC=/android HWACCEL=0 virtio_mmio.device=4K@0xd0000000:5 rdinit=/init'
+    cmd='earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 clocksource=tsc root=/dev/ram0 ROOT=/dev/vda SRC=/android HWACCEL=0 virtio_mmio.device=4K@0xd0000000:5 rdinit=/init'
     p=subprocess.run([exe,'probe-android-observe-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),str(root/'android-system.zlag'),'native-apk.cow','--ram-mib=2048','--framebuffer=native-apk-software.ppm',f'--bridge-apk-smoke={root/"smoke.apk"}'],capture_output=True,text=True,timeout=330)
     serial=log.read_text(errors='replace') if log.exists() else ''
     timing=Path(str(log)+'.timing.json');metrics=json.loads(timing.read_text()) if timing.exists() else {}
@@ -34,11 +34,11 @@ def main():
             'home_candidate_diagnostics_captured':all(marker in serial for marker in ['NEXUS_HOME_CANDIDATES_BEGIN','NEXUS_HOME_CRASH_LOG_END']),
             'android_home_verified':False,
             'installer_reported_ok':'NATIVE_BRIDGE_EVENT NEXUS 1 RESULT APK_INSTALL OK' in p.stdout.splitlines(),
-            'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],
+            'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],'guest_clock_diagnostics':[line for line in serial.splitlines() if any(k in line for k in ['clocksource','tsc:','TSC'])],
             'base_unchanged':digest(root/'android-system.zlag')==manifest['android-system.zlag']['sha256']}
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
     diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
-    critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
+    critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['clocksource','tsc:','TSC','NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
     for label,text in [('HOST',p.stdout+'\n'+p.stderr),('ANR_HOME_INVENTORY',diagnostic[:30000]),('HOME_DIAGNOSTICS',serial[serial.find('NEXUS_HOME_CANDIDATES_BEGIN'):serial.find('NEXUS_HOME_CRASH_LOG_END')+len('NEXUS_HOME_CRASH_LOG_END')] if 'NEXUS_HOME_CANDIDATES_BEGIN' in serial else 'Home candidate diagnostics absent'),('BOOT_DIAGNOSTICS',critical[-60000:]),('SERIAL_TAIL',serial[-12000:])]:
         for at in range(0,len(text),2800):
             message=f'REAL_APK_{label}_{at}='+text[at:at+2800]
