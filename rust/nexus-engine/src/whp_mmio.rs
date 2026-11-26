@@ -114,6 +114,26 @@ pub fn mmio_smoke()->Result<(),String> {
             f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
             f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
         }
+        // Three requests: write sector 1, flush, then read sector 1 into a distinct buffer.
+        // Rings are fixture input; guest code itself negotiates, starts and notifies the queue.
+        for (index,address,length,flags,next) in [
+            (0,0x22000u64,16u32,1u16,1u16),(1,0x23000,512,1,2),(2,0x24000,1,2,0),
+            (3,0x22010,16,1,4),(4,0x24001,1,2,0),
+            (5,0x22020,16,1,6),(6,0x23200,512,3,7),(7,0x24002,1,2,0),
+        ] {
+            let at=0x20000+index*16;
+            f.ram[at..at+8].copy_from_slice(&address.to_le_bytes());
+            f.ram[at+8..at+12].copy_from_slice(&length.to_le_bytes());
+            f.ram[at+12..at+14].copy_from_slice(&flags.to_le_bytes());
+            f.ram[at+14..at+16].copy_from_slice(&next.to_le_bytes());
+        }
+        for (at,value) in [(0x21002,3u16),(0x21004,0),(0x21006,3),(0x21008,5)] {f.ram[at..at+2].copy_from_slice(&value.to_le_bytes());}
+        f.ram[0x22000..0x22004].copy_from_slice(&1u32.to_le_bytes());
+        f.ram[0x22008..0x22010].copy_from_slice(&1u64.to_le_bytes());
+        f.ram[0x22010..0x22014].copy_from_slice(&4u32.to_le_bytes());
+        f.ram[0x22028..0x22030].copy_from_slice(&1u64.to_le_bytes());
+        for (n,byte) in f.ram[0x23000..0x23200].iter_mut().enumerate() {*byte=(n as u8).wrapping_mul(37).wrapping_add(9);}
+        f.ram[0x24000..0x24003].fill(0xff);
         let mut code=Vec::new();
         let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
             if long {code.push(0x67);}code.push(if size==1 {0xa0} else {0xa1});code.extend_from_slice(&((MMIO_BASE as u32)+offset).to_le_bytes());
@@ -126,24 +146,55 @@ pub fn mmio_smoke()->Result<(),String> {
         for (index,offset) in [0,4,8,0x10,0x108,0x10c].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
         write(&mut code,0,0);load(&mut code,0,4,0x1b018); // RO write must be ignored.
         for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,518),(0x24,1),(0x20,1),(0x70,11)] {write(&mut code,offset,value);}
-        load(&mut code,0x70,4,0x1b01c);load(&mut code,0x108,1,0x1b020);write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b024);code.push(0xf4);
+        load(&mut code,0x70,4,0x1b01c);load(&mut code,0x108,1,0x1b020);
+        for (offset,value) in [(0x30,0),(0x38,8),(0x80,0x20000),(0x90,0x21000),(0xa0,0x21800),(0x44,1),(0x70,15),(0x50,0)] {write(&mut code,offset,value);}
+        load(&mut code,0x60,4,0x1b028);write(&mut code,0x64,1);load(&mut code,0x60,4,0x1b02c);
+        write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b024);code.push(0xf4);
         // Execute long-mode code through the nonidentity VA 400000 -> PA 18000 alias.
         let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
         with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
             configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
+            let root=std::env::temp_dir().join(format!("nexus-live-mmio-{}-{}",std::process::id(),long));
+            std::fs::create_dir(&root).map_err(|e|e.to_string())?;
+            let raw=root.join("raw");let base=root.join("base.zlag");let cow=root.join("disk.cow");
+            std::fs::write(&raw,[0u8;2048]).map_err(|e|e.to_string())?;
+            crate::image::import_raw(&raw,&base).map_err(|e|e.to_string())?;
+            let original=std::fs::read(&base).map_err(|e|e.to_string())?;
+            let mut backend=crate::overlay::Overlay::create(&base,&cow)?;
+            let mut serviced=0;
             let emulator=Emulator::new()?;let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:crate::virtio_mmio::BlockMmio::new(4,false)?,error:None,translations:0,accesses:0};
             let (result,timed_out)=bounded(partition,5000,|| {
                 for _ in 0..128 {
                     let exit=run_once(partition)?;
-                    match exit.reason() {8=>return Ok(Ok(())),1=>emulator.emulate(&mut ctx,&exit,long)?,reason=>return Err(format!("Unexpected MMIO fixture exit 0x{reason:x}"))}
+                    match exit.reason() {8=>return Ok(Ok(())),1=>{
+                        emulator.emulate(&mut ctx,&exit,long)?;
+                        if ctx.device.work_pending() {
+                            // Emulator returned and sole vCPU is stopped. No callback/RAM borrow is live.
+                            let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
+                            let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+                            let done=ctx.device.service(&mut memory,&mut backend,8)?;
+                            if done.iter().any(|c|c.status!=0) {return Err("Live MMIO block request failed".into());}
+                            serviced+=done.len();
+                        }
+                    },reason=>return Err(format!("Unexpected MMIO fixture exit 0x{reason:x}"))}
                 }Ok(Err("MMIO fixture exit budget exceeded".to_string()))
             })?;
             if timed_out {return Err("MMIO fixture deadline exceeded".into());}result?;
-            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),40)};
-            for (n,expected) in [0x74726976,2,2,518,131072,1,0x74726976,11,0,0].into_iter().enumerate() {
+            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),48)};
+            for (n,expected) in [0x74726976,2,2,518,131072,1,0x74726976,11,0,0,1,0].into_iter().enumerate() {
                 let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("MMIO register {n} mismatch 0x{actual:x}"));}
             }
+            if serviced!=3 {return Err("Missing live write/flush/read completions".into());}
+            let ram=unsafe {std::slice::from_raw_parts(ctx.ram,ctx.bytes)};
+            if ram[0x23000..0x23200]!=ram[0x23200..0x23400]||ram[0x24000..0x24003]!=[0;3]||ram[0x21802..0x21804]!=3u16.to_le_bytes() {
+                return Err("Live MMIO DMA data/status/used index mismatch".into());
+            }
+            drop(backend);
+            let mut reopened=crate::overlay::Overlay::open(&base,&cow)?;
+            let mut persisted=[0;512];reopened.read_sectors(1,&mut persisted)?;
+            if persisted!=ram[0x23000..0x23200]||std::fs::read(&base).map_err(|e|e.to_string())?!=original {return Err("Live MMIO COW persistence/base integrity mismatch".into());}
+            drop(reopened);std::fs::remove_dir_all(&root).map_err(|e|e.to_string())?;
             if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real MMIO/translation callback execution".into());}Ok(())
         })?;
     }Ok(())
