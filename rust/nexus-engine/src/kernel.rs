@@ -189,6 +189,12 @@ mod tests {
         assert_eq!(plan.entry,0x100000);assert_eq!(plan.runtime_end,0x1100000);
         put64(&mut image,0x258,u64::MAX);assert!(KernelPlan::build(&image,None,"",DEFAULT_RAM).is_err());
     }
+    #[test] fn selected_cpu_count_requires_matching_boot_profile() {
+        let mut p=KernelPlan::build(&contract_image(),None,"",DEFAULT_RAM).unwrap();
+        for count in 1..=8 {p.cpu_count=count;assert_eq!(p.validate_regions().is_ok(),count==1);}
+        p.apic_probe=true;for count in 1..=8 {p.cpu_count=count;p.validate_regions().unwrap();}
+        for count in [0,9,u32::MAX] {p.cpu_count=count;assert!(p.validate_regions().is_err());}
+    }
     #[test] fn overlap_validation() {
         let mut p=KernelPlan::build(&contract_image(),None,"",DEFAULT_RAM).unwrap();
         p.regions.push(Region{address:BOOT_PARAMS,bytes:vec![1]});assert!(p.validate_regions().is_err());

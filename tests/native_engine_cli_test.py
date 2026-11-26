@@ -32,7 +32,12 @@ with tempfile.TemporaryDirectory() as folder:
                             (['--framebuffer=a.ppm','--framebuffer=b.ppm'],'Invalid/duplicate framebuffer'),
                             (['--ram-mib=256','--ram-mib=512'],'Duplicate RAM'),
                             (['--ram-mib=4096'],'128..3072'),
-                            (['--ram-mib=-1'],'unsigned decimal')]:
+                            (['--ram-mib=-1'],'unsigned decimal'),
+                            (['--cpus=0'],'1..8'),
+                            (['--cpus=9'],'1..8'),
+                            (['--cpus=-1'],'Invalid/duplicate CPU'),
+                            (['--cpus=2','--cpus=4'],'Invalid/duplicate CPU'),
+                            (['--cpus=2'],'requires --apic-probe')]:
         failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0',*options,ok=False)
         assert message in failure.stderr,failure.stderr
     failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0','--bridge-apk-smoke=absent.apk',ok=False)

@@ -34,6 +34,17 @@ def unpack_archive(blob):
 
 
 class FixtureTests(unittest.TestCase):
+    def test_selected_cpu_affinity_fixture_is_deterministic_and_writable(self):
+        import struct
+        for count in range(1,9):
+            elf=init_elf(expected_cpus=count)
+            self.assertEqual(elf,init_elf(expected_cpus=count))
+            self.assertIn(f'NEXUS_SMP_AFFINITY_OK cpus={count}'.encode(),elf)
+            self.assertEqual(struct.unpack_from('<I',elf,68)[0],7)
+            self.assertEqual(unpack_archive(initramfs(expected_cpus=count))['init'][1],elf)
+        for count in (0,9,-1):
+            with self.assertRaises(ValueError):init_elf(expected_cpus=count)
+
     def test_private_bridge_fixture_is_separate_from_default_guest(self):
         default=unpack_archive(initramfs())
         bridge=unpack_archive(initramfs(bridge=True))
