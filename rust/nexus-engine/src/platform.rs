@@ -31,7 +31,7 @@ impl EarlyPlatform {
         }
         // Only COM1 is populated; absent COM2/3/4 ports have open-bus reads.
         if ((0x2f8..=0x2ff).contains(&io.port)||(0x3e8..=0x3ef).contains(&io.port)||(0x2e8..=0x2ef).contains(&io.port))&&io.size==1 {
-            return Ok(if io.write {None} else {Some(io.input_register(0xff)))});
+            return Ok(if io.write {None} else {Some(io.input_register(0xff))});
         }
         self.uart.access(io)
     }
