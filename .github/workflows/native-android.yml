@@ -1,0 +1,90 @@
+name: Native Android kernel integration
+on:
+  workflow_dispatch:
+    inputs:
+      assets_run:
+        description: 'Reuse native-android-boot-assets from a previous run (optional)'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  assets:
+    if: ${{ inputs.assets_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Verify source and extract copied boot files only; no virtual machine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full lz4 zstd
+          if [ ! -f android11.iso ]; then
+            curl --fail --location --retry 2 --max-time 900 'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS14/FOSS/Generic/Bliss-v14.10.3-x86_64-OFFICIAL-foss-20241012.iso' -o android11.iso
+          fi
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
+          mkdir -p android-boot-assets
+          7z x android11.iso kernel initrd.img ramdisk.img -oandroid-boot-assets
+          python3 tests/native_android_assets.py android-boot-assets
+      - uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ffc253263a1375a65fa6c9f62a893e9767fbebfa
+          path: kernel-helpers
+          sparse-checkout: scripts
+      - name: Inspect original kernel configuration without changing Android
+        run: |
+          if kernel-helpers/scripts/extract-ikconfig android-boot-assets/kernel > android-boot-assets/kernel.config; then
+            grep -E 'CONFIG_(ANDROID|ASHMEM|VIRTIO|EXT4|SQUASHFS|FB|DRM|SERIAL_8250|HYPERV|PARAVIRT)' android-boot-assets/kernel.config > android-boot-assets/driver-audit.txt || true
+          else
+            rm -f android-boot-assets/kernel.config
+            echo 'Embedded kernel configuration unavailable; do not infer enabled drivers.' > android-boot-assets/driver-audit.txt
+          fi
+          cat android-boot-assets/driver-audit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android-boot-assets
+          path: android-boot-assets/
+  native-entry:
+    needs: assets
+    if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-android-boot-assets
+          path: android-boot-assets
+          run-id: ${{ inputs.assets_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build independent Rust WHP engine; no QEMU
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Execute original Android kernel with isolated diagnostic PID1
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_android_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-android-entry-evidence
+          path: |
+            android-kernel-*.log
+            android-kernel-*.timing.json
+            android-kernel-*.ppm
+            android-kernel-checkpoint.json
+            android-diagnostic-initramfs.cpio
+            native-engine-*.log
+            android-boot-assets/manifest.json
+            android-boot-assets/driver-audit.txt
+            android-boot-assets/kernel.config
