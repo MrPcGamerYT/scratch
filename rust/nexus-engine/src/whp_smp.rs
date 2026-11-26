@@ -78,14 +78,15 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize)->Result<u32,String> {
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let mut ctx=ApicContext{partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,error:None};
-    for _ in 0..256 {
+    for step in 0..256 {
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
         if exit.reason()!=1 {return Ok(exit.reason());}
+        if step<8 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
         let hr=unsafe {WHvEmulatorTryMmioEmulation(emulator.handle,(&mut ctx as *mut ApicContext).cast(),exit.0[8..].as_ptr(),access.0.as_ptr(),&mut status)};
-        if let Some(e)=ctx.error.take() {return Err(e);}check(hr,"APIC emulate")?;
+        if let Some(e)=ctx.error.take() {return Err(format!("{e}; RIP=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap())));}check(hr,"APIC emulate")?;
         if status!=1 {return Err(format!("APIC instruction not emulated: {status:x}"));}
     }Err("APIC exit budget exceeded".into())
 }
