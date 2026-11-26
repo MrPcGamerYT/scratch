@@ -18,7 +18,7 @@ struct StopApic(ApicFabric);
 impl Drop for StopApic {fn drop(&mut self) {
     let mut state=self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);state.stop=true;
 }}
-struct ApicContext {ram_gate:RamGate,timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
+struct ApicContext {ram_gate:RamGate,timer_clock:std::time::Instant,partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,lapics:ApicFabric,error:Option<String>}
 fn sync_cr8(c:&ApicContext,local:&mut crate::lapic::LocalApic)->Result<(),String> {
     let name=0x20;let mut value=Register::scalar(0);
     unsafe {check(WHvGetVirtualProcessorRegisters(c.partition,c.index,&name,1,&mut value),"APIC read CR8")?;}
@@ -120,10 +120,7 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                 // Level-triggered INIT deassert is not a second CPU reset.
                 if kind==5&&value&(1<<15)!=0&&value&(1<<14)==0 {return Ok(());}
                 let shorthand=(value>>18)&3;
-                if let Some(tx)=&c.startup {
-                    if shorthand!=0||c.icr_high>>24!=1 {return Err("Fixture startup target must be AP1".into());}
-                    tx.send(event).map_err(|_|"AP startup worker disconnected")?;
-                } else {
+                {
                     let mut state=c.lapics.lock().map_err(|_|"LAPIC lock poisoned")?;
                     let targets:Vec<usize>=match shorthand {
                         0=>vec![(c.icr_high>>24) as usize],
@@ -131,15 +128,14 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
                         _=>return Err("Self/all startup reset unsupported".into()),
                     };
                     // Validate every destination before sending any event. Initial
-                    // startup is supported; runtime INIT/hotplug reset is not yet.
+                    // INIT is consumed by the target's worker before it reenters WHP.
                     for &target in &targets {
                         state.startup_routes.get(target).and_then(Option::as_ref).ok_or("Startup targets absent/BSP CPU")?;
-                        if kind==5&&state.started_aps.get(target)==Some(&true) {return Err("Runtime AP INIT reset is not implemented; refusing silent ignored reset".into());}
                     }
                     for target in targets {
                         if kind==6&&state.started_aps.get(target)==Some(&true) {continue;} // duplicate SIPI is ignored architecturally
                         state.startup_routes[target].as_ref().ok_or("Missing startup route")?.send(event).map_err(|_|"OS AP startup worker disconnected")?;
-                        if kind==6 {state.started_aps[target]=true;}
+                        state.started_aps[target]=kind==6;
                     }
                 }
             } else {
@@ -171,19 +167,27 @@ fn inject_dma_fault(failure:crate::kernel::DmaFailure,index:u32,count:u32,starte
     }
 }
 type ApicObserver<'a>=Option<&'a mut dyn FnMut(&mut ApicState)->Result<bool,String>>;
-fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sync::mpsc::Sender<StartupEvent>>,lapics:ApicFabric,mut observe:ApicObserver<'_>)->Result<(u32,u64),String> {
+fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,lapics:ApicFabric,mut observe:ApicObserver<'_>,reset:Option<&std::sync::mpsc::Receiver<StartupEvent>>)->Result<(u32,u64),String> {
     let callbacks=Box::new(EmulatorCallbacks{size:std::mem::size_of::<EmulatorCallbacks>() as u32,reserved:0,io:apic_io,memory:apic_memory,get:apic_get,set:apic_set,translate:apic_translate});
     let mut emulator=std::ptr::null_mut();
     unsafe {check(WHvEmulatorCreateEmulator(&*callbacks,&mut emulator),"APIC create emulator")?;}
     if emulator.is_null() {return Err("APIC emulator returned null handle".into());}
     let emulator=Emulator{handle:emulator,_callbacks:callbacks};
     let ram_gate=lapics.lock().map_err(|_|"LAPIC lock poisoned")?.ram_gate.clone();
-    let mut ctx=ApicContext{ram_gate,timer_clock:std::time::Instant::now(),partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None,startup};
+    let mut ctx=ApicContext{ram_gate,timer_clock:std::time::Instant::now(),partition:handle as *mut c_void,index,ram:ram as *mut u8,bytes,icr_high:0,lapics,error:None};
     let os=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?.os;
     let count=ctx.lapics.lock().map_err(|_|"LAPIC lock poisoned")?.len() as u32;
     let deadline=std::time::Instant::now()+std::time::Duration::from_secs(if os {30} else {5});
     let mut halted=false;let mut halt_waits=0;
     for _ in 0..500000 {
+        if let Some(rx)=reset {
+            match rx.try_recv() {
+                Ok(StartupEvent::Init)=>return Ok((0x3000,halt_waits)),
+                Ok(StartupEvent::Sipi(_))=>continue, // redundant SIPI while running
+                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+                Err(_)=>return Err("AP startup channel disconnected while running".into()),
+            }
+        }
         if std::time::Instant::now()>=deadline {
             let names=[0x10,0x11];let mut state=[Register::scalar(0);2];
             unsafe {WHvGetVirtualProcessorRegisters(ctx.partition,index,names.as_ptr(),2,state.as_mut_ptr());}
@@ -388,6 +392,16 @@ fn smp_cycle()->Result<u64,String> {
         0xfa,0x83,0x3d,0x70,0xa0,0,0,1,0x74,4,0xfb,0xf4,0xeb,0xf2,
         0x66,0xba,0xf8,3,0xb0,0x55,0xee,
         0xfa,0x83,0x3d,0x70,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4]);
+    code.truncate(code.len()-2); // replace final CLI/HLT with runtime reset tests
+    for generation in 2..=4u8 {
+        code.extend_from_slice(&[0xc7,0x05,0x10,3,0xe0,0xfe,0,0,0,1]);
+        // Assert INIT, deassert it (not another reset), SIPI twice.
+        for command in [0xc500u32,0x8500,0x4609,0x4609] {
+            code.extend_from_slice(&[0xc7,0x05,0,3,0xe0,0xfe]);code.extend_from_slice(&command.to_le_bytes());
+        }
+        code.extend_from_slice(&[0x83,0x3d,0xc4,0xa0,0,0,generation,0x75,0xf7]);
+    }
+    code.extend_from_slice(&[0xfa,0xf4]);
     // Unknown MSR read/write must fault, preserve registers, and return via #GP fixup.
     let mut msr_probe=vec![0xb8,0x34,0x12,0,0,0xba,0x78,0x56,0,0,0xb9,0xef,0xbe,0xad,0xde,
         0x0f,0x32,0x0f,0x30,0xa3,0xb8,0xa0,0,0,0x89,0x15,0xbc,0xa0,0,0];
@@ -432,12 +446,21 @@ fn smp_cycle()->Result<u64,String> {
     // AP loads its GDT, sets PE and far-jumps before enabling interrupts/MMIO.
     f.ram[0x5200..0x5206].copy_from_slice(&[23,0,0,0x50,0,0]);
     f.ram[0x5300..0x5306].copy_from_slice(&[0x0f,2,0,0xb0,0,0]);
-    let ap_protected=[0x66,0xb8,16,0,0x8e,0xd8,0x8e,0xd0,0xbc,0,0x70,0,0,
+    let mut ap_protected=vec![0x66,0xb8,16,0,0x8e,0xd8,0x8e,0xd0,0xbc,0,0x70,0,0,
         0x0f,0x01,0x1d,0,0x53,0,0,
         0xc7,0x05,0xf0,0,0xe0,0xfe,0xff,1,0,0,
         0xc7,0x05,0xd0,0,0xe0,0xfe,0,0,0,1,0xfb,0x90,
         0xc6,0x05,0,0xa0,0,0,0x5a,
         0xfa,0x83,0x3d,0x40,0xa0,0,0,2,0x74,4,0xfb,0xf4,0xeb,0xf2,0xfa,0xf4];
+    // After segment/stack/IDT setup, before enabling the reset LAPIC, check
+    // defaults and aggregate any stale TPR/SVR bits over every restart.
+    let probe=[0xa1,0x80,0,0xe0,0xfe,0x09,0x05,0xc8,0xa0,0,0,
+        0xa1,0xf0,0,0xe0,0xfe,0x35,0xff,0,0,0,0x09,0x05,0xc8,0xa0,0,0,
+        0xff,0x05,0xc0,0xa0,0,0];
+    ap_protected.splice(20..20,probe);
+    // Dirty the LAPIC before each final halt; INIT must discard this TPR.
+    ap_protected.truncate(ap_protected.len()-2);
+    ap_protected.extend_from_slice(&[0xc7,0x05,0x80,0,0xe0,0xfe,0xf0,0,0,0,0xff,0x05,0xc4,0xa0,0,0,0xfa,0xf4]);
     f.ram[0x9600..0x9600+ap_protected.len()].copy_from_slice(&ap_protected);
     f.ram[0xb208..0xb210].copy_from_slice(&[0,0x98,8,0,0,0x8e,0,0]);
     let ap_handler=[0xff,0x05,0x40,0xa0,0,0,
@@ -457,30 +480,15 @@ fn smp_cycle()->Result<u64,String> {
     // It must retrigger only after guest EOI, and stop when the handler masks it.
     lapics.lock().map_err(|_|"LAPIC lock poisoned")?.io.set_line(0,true)?;
     let ((bsp,ap,ap_halts),expired)=timer_pump(&partition,||bounded(&partition,5000,||std::thread::scope(|scope| {
+        let _stop=StopApic(lapics.clone());
         let (tx,rx)=std::sync::mpsc::channel();
+        {let mut state=lapics.lock().map_err(|_|"LAPIC lock poisoned")?;state.startup_routes=vec![None,Some(tx)];state.started_aps=vec![false;2];}
         let ap_lapics=lapics.clone();
-        let ap=scope.spawn(move || {
-            let mut initialized=false;
-            loop {
-                match rx.recv_timeout(std::time::Duration::from_secs(4)).map_err(|_|"AP received no startup event")? {
-                    StartupEvent::Init=>initialized=true,
-                    StartupEvent::Sipi(vector) if initialized=>{
-                        let mut cs=Register::segment(0x9b);
-                        cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
-                        cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
-                        let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
-                        unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,1,names.as_ptr(),2,values.as_ptr()),"Guest-requested SIPI entry")?;}
-                        return run_index(handle,1,ram,bytes,None,ap_lapics,None);
-                    }
-                    StartupEvent::Sipi(_)=>return Err("SIPI received before INIT".into()),
-                }
-            }
-        });
-        let bsp=run_index(handle,0,ram,bytes,Some(tx),lapics.clone(),None);
-        let ap=ap.join().map_err(|_|"AP run thread panicked")?;
-        let (ap,ap_halts)=ap?;
-        if ap!=8 {return Err(format!("AP stopped at unexpected exit 0x{ap:x}"));}
-        Ok((bsp?.0,ap,ap_halts))
+        let ap=scope.spawn(move ||ap_worker(handle,1,ram,bytes,rx,ap_lapics));
+        let bsp=run_index(handle,0,ram,bytes,lapics.clone(),None,None);
+        lapics.lock().map_err(|_|"LAPIC lock poisoned")?.stop=true;
+        let ap_halts=ap.join().map_err(|_|"AP run thread panicked")??;
+        Ok((bsp?.0,8,ap_halts))
     })))?;
     if expired||bsp!=8||ap!=8 {return Err(format!("SMP INIT/SIPI failed: BSP exit={bsp:x} AP exit={ap:x} timeout={expired}"));}
     // Both vCPUs have stopped and workers joined before accessing shared RAM.
@@ -495,6 +503,8 @@ fn smp_cycle()->Result<u64,String> {
     if word(0xa030)!=5||word(0xa034)!=0||word(0xa038)!=1||word(0xa03c)!=0||scalar_register(&partition,4)?!=cpu::STACK {
         return Err("Local IPI/timer handler/EOI/restored stack verification failed".into());
     }
+    if word(0xa0c0)!=4||word(0xa0c4)!=4||word(0xa0c8)!=0 {return Err(format!("Runtime AP reset defaults/restart mismatch starts={} stops={} stale={:x}",word(0xa0c0),word(0xa0c4),word(0xa0c8)));}
+    println!("NATIVE_AP_RESET_OK restarts=3 starts=4 stops=4 stale_lapic=0 duplicate_sipi_ignored=true");
     if word(0xa040)!=2 {return Err("Remote AP physical/logical IPI handlers did not run exactly twice".into());}
     let mut ap_stack=Register::scalar(0);let rsp=4;
     unsafe {check(WHvGetVirtualProcessorRegisters(partition.0,1,&rsp,1,&mut ap_stack),"AP restored stack")?;}
@@ -561,34 +571,14 @@ fn run_apic_os(partition:&Partition,memory:&Mapping<'_>,serial:&mut dyn std::io:
             let live=live.clone();
             workers.push(scope.spawn(move || {
                 live.fetch_add(1,std::sync::atomic::Ordering::SeqCst);let _count=WorkerCount(live);
-                let result=(|| {
-                    let mut initialized=false;
-                    loop {
-                        if state.lock().map_err(|_|"LAPIC lock poisoned")?.stop {return Ok(());}
-                        match rx.recv_timeout(std::time::Duration::from_millis(10)) {
-                            Ok(StartupEvent::Init)=>initialized=true,
-                            Ok(StartupEvent::Sipi(vector)) if initialized=>{
-                                let mut cs=Register::segment(0x9b);
-                                cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
-                                cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
-                                let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
-                                unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,index,names.as_ptr(),2,values.as_ptr()),"Linux SIPI entry")?;}
-                                let (reason,_)=run_index(handle,index,ram,bytes,None,state.clone(),None)?;
-                                if reason!=0 {return Err(format!("Linux CPU{index} unexpected exit 0x{reason:x}"));}return Ok(());
-                            },
-                            Ok(StartupEvent::Sipi(_))=>return Err("Linux SIPI without INIT".into()),
-                            Err(std::sync::mpsc::RecvTimeoutError::Timeout)=>continue,
-                            Err(_)=>return Err("Linux startup channel disconnected".into()),
-                        }
-                    }
-                })();
+                let result=ap_worker(handle,index,ram,bytes,rx,state.clone()).map(|_|());
                 if result.is_err() {if let Ok(mut state)=state.lock() {state.stop=true;}}
                 result
             }));
         }
         {let mut state=fabric.lock().map_err(|_|"LAPIC lock poisoned")?;
             state.startup_routes=routes;state.started_aps=vec![false;partition.2 as usize];}
-        let bsp=run_index(handle,0,ram,bytes,None,fabric.clone(),Some(&mut observe));
+        let bsp=run_index(handle,0,ram,bytes,fabric.clone(),Some(&mut observe),None);
         fabric.lock().map_err(|_|"LAPIC lock poisoned")?.stop=true;
         for worker in workers {worker.join().map_err(|_|"Linux AP worker panicked")??;}
         bsp
@@ -632,9 +622,57 @@ fn priority_cycle()->Result<(),String> {
     unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
     configure_fixture(&partition,&f)?;
     let fabric=std::sync::Arc::new(std::sync::Mutex::new(ApicState{dma_failure:None,started_aps:Vec::new(),ram_gate:std::sync::Arc::new(std::sync::RwLock::new(())),dma_rendezvous:0,disk:None,os:false,stop:false,startup_routes:Vec::new(),injections:0,timer_injections:0,io_accesses:0,platform:crate::platform::EarlyPlatform::default(),pit_edges:0,epoch:std::time::Instant::now(),cpus:vec![crate::lapic::LocalApic::new(0)],io:crate::ioapic::IoApic::new()}));
-    let ((reason,_),expired)=timer_pump(&partition,||bounded(&partition,5000,||run_index(partition.0 as usize,0,memory.address as usize,memory.bytes,None,fabric,None)))?;
+    let ((reason,_),expired)=timer_pump(&partition,||bounded(&partition,5000,||run_index(partition.0 as usize,0,memory.address as usize,memory.bytes,fabric,None,None)))?;
     let mut evidence=[0u32;5];
     unsafe {std::ptr::copy_nonoverlapping(memory.address.cast::<u8>().add(0xa000).cast::<u32>(),evidence.as_mut_ptr(),5);}
     if expired||reason!=8||evidence!=[1,0x47,1,0,5] {return Err(format!("CR8/TPR deferred IPI failed: reason={reason} expired={expired} evidence={evidence:x?}"));}
     println!("NATIVE_CR8_TPR_OK masked_irr=1 premature_delivery=0 delivered_after_lower=1 tpr_read=47 cr8_read=5");Ok(())
+}
+
+fn ap_worker(handle:usize,index:u32,ram:usize,bytes:usize,rx:std::sync::mpsc::Receiver<StartupEvent>,state:ApicFabric)->Result<u64,String> {
+    let mut initialized=false;let mut reset_pending=false;let mut waits=0;
+    loop {
+        if state.lock().map_err(|_|"LAPIC lock poisoned")?.stop {return Ok(waits);}
+        let event=if reset_pending {reset_pending=false;StartupEvent::Init} else {
+            match rx.recv_timeout(std::time::Duration::from_millis(10)) {
+                Ok(event)=>event,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)=>continue,
+                Err(_)=>return Err("AP startup channel disconnected".into()),
+            }
+        };
+        match event {
+            StartupEvent::Init=>{
+                // No WHvRun is active on this VP. Recreate it to discard stale
+                // architectural, pending-event and translation state together.
+                let mut fabric=state.lock().map_err(|_|"LAPIC lock poisoned")?;
+                unsafe {
+                    check(WHvDeleteVirtualProcessor(handle as *mut c_void,index),"INIT delete inactive VP")?;
+                    check(WHvCreateVirtualProcessor(handle as *mut c_void,index,0),"INIT recreate VP")?;
+                }
+                fabric[index as usize]=crate::lapic::LocalApic::new(index as u8);
+                let names=[0x1c,0x1e,0x1f,0x2001,0x20,0x13,0x15,0x12,0x14,0x10,0x11,0x1a];
+                let values=[Register::scalar(0x60000010),Register::scalar(0),Register::scalar(0),Register::scalar(0),Register::scalar(0),
+                    Register::segment(0x9b),Register::segment(0x93),Register::segment(0x93),Register::segment(0x93),
+                    Register::scalar(0),Register::scalar(2),Register::table(0,0x3ff)];
+                unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"INIT reset entry")?;}
+                initialized=true;
+            }
+            StartupEvent::Sipi(vector) if initialized=>{
+                let mut cs=Register::segment(0x9b);
+                cs.0[..8].copy_from_slice(&(u64::from(vector)<<12).to_le_bytes());
+                cs.0[12..14].copy_from_slice(&(u16::from(vector)<<8).to_le_bytes());
+                let names=[0x13,0x10];let values=[cs,Register::scalar(0)];
+                unsafe {check(WHvSetVirtualProcessorRegisters(handle as *mut c_void,index,names.as_ptr(),2,values.as_ptr()),"Guest SIPI restart entry")?;}
+                initialized=false;
+                let (reason,halt_waits)=run_index(handle,index,ram,bytes,state.clone(),None,Some(&rx))?;waits+=halt_waits;
+                match reason {
+                    0=>return Ok(waits),
+                    0x3000=>reset_pending=true,
+                    8 if !state.lock().map_err(|_|"LAPIC lock poisoned")?.os=>{},
+                    _=>return Err(format!("AP CPU{index} unexpected exit 0x{reason:x}")),
+                }
+            }
+            StartupEvent::Sipi(_)=>{}, // SIPIs outside wait-for-SIPI are ignored
+        }
+    }
 }
