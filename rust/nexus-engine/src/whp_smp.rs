@@ -1,12 +1,10 @@
-// Included inside whp::windows. Real WHP AP startup, not fabricated AP markers.
+// Included inside whp::windows. Experimental two-vCPU startup frontend.
+// Guest INIT/SIPI commands drive architectural AP startup; markers are guest stores.
+// This is not the production Linux SMP scheduler or a complete LAPIC/IOAPIC.
 fn registers_at(partition:&Partition,index:u32,names:&[u32],values:&[Register])->Result<(),String> {
     if index>=partition.2||names.len()!=values.len() {return Err("Invalid indexed register access".into());}
     unsafe {check(WHvSetVirtualProcessorRegisters(partition.0,index,names.as_ptr(),names.len() as u32,values.as_ptr()),"WHP indexed registers")}
 }
-#[repr(C)]
-struct InterruptRequest {control:u64,destination:u32,vector:u32}
-#[link(name="WinHvPlatform")]
-extern "system" {fn WHvRequestInterrupt(partition:*mut c_void,control:*const InterruptRequest,size:u32)->i32;}
 enum StartupEvent {Init,Sipi(u8)}
 struct ApicContext {partition:*mut c_void,index:u32,ram:*mut u8,bytes:usize,icr_high:u32,spurious:u32,tpr:u32,error:Option<String>,startup:Option<std::sync::mpsc::Sender<StartupEvent>>}
 fn apic_callback(context:*mut c_void,f:impl FnOnce(&mut ApicContext)->Result<(),String>)->i32 {
@@ -61,14 +59,11 @@ extern "system" fn apic_memory(ctx:*mut c_void,access:*mut EmulatorMemory)->i32 
             if offset==0x300 {
                 if value&!0x0000cfff!=0 {return Err("APIC ICR shorthand/reserved bits not supported".into());}
                 let kind=(value>>8)&7;
-                if ![0,4,5,6].contains(&kind) {return Err("Unsupported APIC delivery mode".into());}
-                let request=InterruptRequest{control:u64::from(kind|((value>>11)&1)<<8|((value>>15)&1)<<12),destination:c.icr_high>>24,vector:value&255};
-                if kind==5||kind==6 {
-                    if request.destination!=1||value&(1<<11)!=0 {return Err("Startup target must be dormant physical AP1".into());}
-                    let tx=c.startup.as_ref().ok_or("No AP startup router on this CPU")?;
-                    let event=if kind==5 {StartupEvent::Init} else {StartupEvent::Sipi(value as u8)};
-                    tx.send(event).map_err(|_|"AP startup worker disconnected")?;
-                } else {unsafe {check(WHvRequestInterrupt(c.partition,&request,16),"APIC ICR delivery")?;}}
+                if ![5,6].contains(&kind) {return Err("Only INIT/SIPI delivery is implemented in the experimental startup frontend".into());}
+                if c.icr_high>>24!=1||value&(1<<11)!=0 {return Err("Startup target must be dormant physical AP1".into());}
+                let tx=c.startup.as_ref().ok_or("No AP startup router on this CPU")?;
+                let event=if kind==5 {StartupEvent::Init} else {StartupEvent::Sipi(value as u8)};
+                tx.send(event).map_err(|_|"AP startup worker disconnected")?;
             } else {
                 match offset {
                     0x80=>c.tpr=value&255,
@@ -90,15 +85,6 @@ fn run_index(handle:usize,index:u32,ram:usize,bytes:usize,startup:Option<std::sy
         let mut exit=ExitContext([0;224]);
         unsafe {check(WHvRunVirtualProcessor(ctx.partition,index,exit.0.as_mut_ptr().cast(),224),"WHP indexed run")?;}
         if handle_cpuid(ctx.partition,index,2,true,&exit)? {continue;}
-        if exit.reason()==0x1006 {
-            let icr=u64::from_le_bytes(exit.0[48..56].try_into().unwrap());
-            let upper=(icr>>32) as u32;let destination=if upper<=255 {upper} else if upper&0x00ffffff==0 {upper>>24} else {return Err(format!("Unsupported startup ICR 0x{icr:x}"));};
-            let kind=(icr>>8)&7;
-            if destination!=1||icr&(1<<11)!=0 {return Err(format!("Unsupported startup target ICR 0x{icr:x}"));}
-            let event=match kind {5=>StartupEvent::Init,6=>StartupEvent::Sipi(icr as u8),_=>return Err(format!("Invalid INIT/SIPI trap 0x{icr:x}"))};
-            ctx.startup.as_ref().ok_or("INIT/SIPI trap without startup router")?.send(event).map_err(|_|"AP startup worker disconnected")?;
-            continue;
-        }
         if exit.reason()!=1 {return Ok(exit.reason());}
         if step<8 {eprintln!("SMP_MMIO cpu={index} rip=0x{:x} gpa=0x{:x}",u64::from_le_bytes(exit.0[32..40].try_into().unwrap()),u64::from_le_bytes(exit.0[72..80].try_into().unwrap()));}
         let mut access=MemoryExit([0;40]);access.0.copy_from_slice(&exit.0[48..88]);let mut status=0;
