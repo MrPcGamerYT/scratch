@@ -173,6 +173,43 @@ mod windows {
             check_ram(partition,memory)
         })
     }
+    pub fn transition_smoke()->Result<(),String> {
+        use crate::cpu::{self,CpuMode};
+        let ram=cpu::transition_image()?;
+        with_guest_at(&[],cpu::ENTRY,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(ram.as_ptr(),memory.address.cast::<u8>(),ram.len());}
+            // No configure_fixture call: CR0/CR3/CR4/EFER and CS remain real mode.
+            let mut bus=crate::io::TestBus::default();let mut modes=Vec::new();
+            let ((),timed_out)=bounded(partition,5000,|| {
+                for _ in 0..16 {
+                    let context=run_once(partition)?;
+                    let mode=CpuMode::from_exit(&context.0)?;
+                    match context.reason() {
+                        2=>{
+                            let io=crate::io::IoExit::decode(&context.0)?;modes.push(mode);
+                            let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
+                            if let Some(rax)=bus.access(io)? {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
+                            else {set_registers(partition,&[0x10],&[rip])?;}
+                        }
+                        8 if mode==CpuMode::Long64=>return Ok(()),
+                        reason=>return Err(format!("Guest mode transition failed at exit 0x{reason:x}, mode {mode:?}")),
+                    }
+                }
+                Err("Guest transition exit budget exceeded".into())
+            })?;
+            if timed_out {return Err("Guest mode transition timed out".into());}
+            let stored=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(cpu::DATA),8)};
+            if bus.console!=b"RPL"||modes!=[CpuMode::Real16,CpuMode::Protected32,CpuMode::Long64]
+                ||stored!=cpu::VALUE64.to_le_bytes()||accumulator(partition)?!=cpu::VALUE64
+                ||scalar_register(partition,0x1c)?&0x80000001!=0x80000001
+                ||scalar_register(partition,0x1e)?!=0x1000
+                ||scalar_register(partition,0x1f)?&0x20==0
+                ||scalar_register(partition,0x2001)?&0x500!=0x500 {
+                return Err("Guest-driven mode transition/paging result mismatch".into());
+            }
+            Ok(())
+        })
+    }
     pub fn io_smoke()->Result<(),String> {
         let mut code=vec![0xba,0xe9,0x00]; // DX=private debug port, NOT host hardware.
         for byte in b"NEXUS\n" {code.extend_from_slice(&[0xb0,*byte,0xee]);}
@@ -600,3 +637,8 @@ pub fn mmio_smoke()->Result<(),String> {Err("WHP MMIO execution requires Windows
 pub use windows::boot_kernel_disk;
 #[cfg(not(windows))]
 pub fn boot_kernel_disk(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant,_base:&std::path::Path,_cow:&std::path::Path,_create:bool)->Result<(),String> {Err("WHP VirtIO Linux boot requires Windows x64".into())}
+
+#[cfg(windows)]
+pub use windows::transition_smoke;
+#[cfg(not(windows))]
+pub fn transition_smoke()->Result<(),String> {Err("Guest mode transition execution requires Windows x64 WHP".into())}

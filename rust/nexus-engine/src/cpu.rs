@@ -80,6 +80,41 @@ pub fn fixture(mode:CpuMode)->Result<Fixture,String> {
     write(&mut f.ram,ENTRY,&code)?;
     Ok(f)
 }
+/// Real-mode entry image: the guest itself loads the GDT, sets CR0.PE,
+/// enables PAE and EFER.LME, installs CR3 and enables paging, then far-jumps
+/// into long mode. Host must seed only the real-mode entry state.
+pub fn transition_image()->Result<Vec<u8>,String> {
+    let mut ram=vec![0;RAM_BYTES];
+    for (address,value) in [(GDT+8,0x00cf9b000000ffff),
+        (GDT+16,0x00cf93000000ffff),(GDT+24,0x00af9b000000ffff),
+        (0x1000,0x2003),(0x2000,0x3003),(0x3000,0x83),
+        (0x3010,0x4003),(0x4000,DATA as u64|3)] {qword(&mut ram,address,value)?;}
+    write(&mut ram,0x5200,&[31,0,0,0x50,0,0])?; // GDTR: limit31, base0x5000
+    write(&mut ram,ENTRY,&[
+        0xfa,0x31,0xc0,0x8e,0xd8,0x8e,0xc0,0x8e,0xd0, // CLI; zero data segments
+        0xbc,0x00,0x7c,0xba,0xe9,0,0xb0,b'R',0xee,
+        0x0f,0x01,0x16,0x00,0x52, // LGDT [0x5200]
+        0x0f,0x20,0xc0,0x66,0x83,0xc8,1,0x0f,0x22,0xc0,
+        0x66,0xea,0,0x82,0,0,8,0, // JMP ptr16:32 -> protected entry
+    ])?;
+    write(&mut ram,0x8200,&[
+        0x66,0xb8,16,0,0x8e,0xd8,0x8e,0xc0,0x8e,0xd0,
+        0xbc,0x00,0xf0,0x1f,0, // ESP=STACK
+        0xba,0xe9,0,0,0,0xb0,b'P',0xee,
+        0x0f,0x20,0xe0,0x83,0xc8,0x20,0x0f,0x22,0xe0, // CR4.PAE
+        0xb8,0,0x10,0,0,0x0f,0x22,0xd8, // CR3=0x1000
+        0xb9,0x80,0,0,0xc0,0x0f,0x32, // RDMSR EFER
+        0x0d,0,1,0,0,0x0f,0x30, // EFER.LME
+        0x0f,0x20,0xc0,0x0d,0,0,0,0x80,0x0f,0x22,0xc0, // CR0.PG
+        0xea,0,0x84,0,0,24,0, // JMP long-mode code selector
+    ])?;
+    let mut long=vec![0xba,0xe9,0,0,0,0xb0,b'L',0xee,0x48,0xb8];
+    long.extend_from_slice(&VALUE64.to_le_bytes());
+    long.extend_from_slice(&[0x48,0xa3]);long.extend_from_slice(&ALIAS.to_le_bytes());
+    long.extend_from_slice(&[0x48,0x31,0xc0,0x48,0xa1]);long.extend_from_slice(&ALIAS.to_le_bytes());
+    long.push(0xf4);write(&mut ram,0x8400,&long)?;
+    Ok(ram)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +147,14 @@ mod tests {
         assert_eq!(read(&f.ram,0x3008),0); // 2..4 MiB deliberately NOT mapped.
         assert_eq!(&f.ram[IDT+0x800..IDT+0x808],&[0,0x81,8,0,0,0x8e,0,0]);
         assert_eq!(read(&f.ram,INTERRUPT_COUNT),0);
+    }
+    #[test] fn transition_tables_and_real_entry_are_independent_of_seeded_long_state() {
+        let ram=transition_image().unwrap();assert_eq!(ram.len(),RAM_BYTES);
+        assert_eq!(ram[ENTRY],0xfa);assert_eq!(ram[0x8200],0x66);
+        assert_eq!(&ram[0x5200..0x5206],&[31,0,0,0x50,0,0]);
+        assert_eq!(read(&ram,GDT+8),0x00cf9b000000ffff);
+        assert_eq!(read(&ram,GDT+24),0x00af9b000000ffff);
+        assert_eq!(read(&ram,0x4000),DATA as u64|3);assert_eq!(read(&ram,DATA),0);
     }
     #[test] fn fixture_writes_fail_closed() {
         let mut ram=[0;16];assert!(write(&mut ram,16,&[1]).is_err());
