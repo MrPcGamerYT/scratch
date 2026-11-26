@@ -41,7 +41,8 @@ def filesystem_checkpoint(exe,kernel,cmd,config,unclean=False):
             marker='NEXUS_EXT4_FSYNC_UNCLEAN_STOP_READY'
         sample={'sample':index+1,'unclean_vm_stop':unclean,'operation':('create_write_fsync_dirsync_vm_stop' if unclean else 'create_write_fsync_dirsync_unmount') if index==0 else 'readonly_remount_read_unmount',
                 'engine_exit':p.returncode,'marker':marker,'marker_seen':marker in serial,'metrics':metrics,
-                'stderr':p.stderr,'serial_sha256':hashlib.sha256(log.read_bytes()).hexdigest() if log.exists() else None}
+                'stderr':p.stderr,'serial_sha256':hashlib.sha256(log.read_bytes()).hexdigest() if log.exists() else None,
+                'journal_recovery_observed':'recovery complete' in serial,'base_unchanged':hashlib.sha256(base.read_bytes()).hexdigest()==digest}
         samples.append(sample)
         Path(prefix+'-checkpoint.json').write_text(json.dumps({'verified':False,'samples':samples},indent=2))
         notice('EXT4_SAMPLE='+json.dumps(sample))
@@ -54,7 +55,7 @@ def filesystem_checkpoint(exe,kernel,cmd,config,unclean=False):
         assert metrics.get('linux_userspace_ready_ms') is not None and metrics['total_boot_verified'] is False
         assert hashlib.sha256(base.read_bytes()).hexdigest()==digest
         assert hashlib.sha256(raw.read_bytes()).hexdigest()==checksums['filesystem.ext4']
-    result={'verified':True,'scope':'ext4 file/directory fsync with VM termination while mounted, journal replay and readonly remount; not host crash or Android certification' if unclean else 'ext4 clean file/directory fsync, unmount, two separate guest/process readonly remounts; not host crash or Android certification','samples':samples}
+    result={'verified':True,'scope':'ext4 file/directory fsync with VM termination while mounted, journal replay and readonly remount; not host crash or Android certification' if unclean else 'ext4 clean file/directory fsync, unmount, two separate guest/process readonly remounts; not host crash or Android certification','source_ext4_sha256':checksums['filesystem.ext4'],'base_zlag_sha256':digest,'samples':samples}
     Path(prefix+'-checkpoint.json').write_text(json.dumps(result,indent=2))
     return result
 

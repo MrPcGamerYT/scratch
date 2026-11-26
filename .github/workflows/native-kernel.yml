@@ -96,6 +96,26 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/native_kernel_checkpoint.py',run_name='__main__')
+      - name: Verify ext4 clean and unclean-VM persistence evidence
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          config=Path('kernel-artifact/kernel.config').read_text()
+          if 'CONFIG_EXT4_FS=y' not in config:
+              print('::notice::Legacy kernel regression only; no ext4 acceptance claim')
+          else:
+              clean=json.loads(Path('filesystem-checkpoint.json').read_text())
+              recovery=json.loads(Path('filesystem-unclean-checkpoint.json').read_text())
+              assert clean['verified'] and recovery['verified']
+              assert len(clean['samples'])==3 and len(recovery['samples'])==2
+              assert recovery['samples'][1]['journal_recovery_observed']
+              for sample in clean['samples']+recovery['samples']:
+                  assert sample['engine_exit']==0 and sample['marker_seen'] and sample['base_unchanged']
+                  assert sample['metrics']['irq5_injections']>0
+                  assert sample['metrics']['android_home_ready_ms'] is None
+                  assert sample['metrics']['total_boot_verified'] is False
+              print('::notice::EXT4_ACCEPTANCE='+json.dumps({'commit':os.environ['GITHUB_SHA'],'clean_three_boots':True,'unclean_vm_journal_replay':True,'base_unchanged':True,'source_ext4_sha256':clean['source_ext4_sha256'],'android_ready':False}))
       - uses: actions/upload-artifact@v4
         if: always()
         with:
