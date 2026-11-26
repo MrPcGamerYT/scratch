@@ -72,6 +72,11 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Inspect original Android init and built-in driver contract
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_android_contract.py',run_name='__main__')
       - name: Execute original Android kernel with isolated diagnostic PID1
         shell: python
         run: |
@@ -86,6 +91,7 @@ jobs:
             android-kernel-*.timing.json
             android-kernel-*.ppm
             android-kernel-checkpoint.json
+            android-boot-contract.json
             android-diagnostic-initramfs.cpio
             native-engine-*.log
             android-boot-assets/manifest.json
