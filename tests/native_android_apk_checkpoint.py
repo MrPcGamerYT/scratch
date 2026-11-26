@@ -29,6 +29,8 @@ def main():
             'bridge_service_connected':'NATIVE_BRIDGE_EVENT HELLO' in p.stdout.splitlines(),
             'android_boot_completed':'NATIVE_BRIDGE_EVENT NEXUS 1 READY 1' in p.stdout.splitlines(),
             'apk_begin_acknowledged':'NATIVE_BRIDGE_EVENT NEXUS 1 APK NEXT' in p.stdout.splitlines(),
+            'anr_baseline_captured':all(marker in serial for marker in ['NEXUS_ANR_BASELINE_BEGIN','NEXUS_ANR_BASELINE_END']) and 'NEXUS_ANR_BASELINE_UNAVAILABLE' not in serial,
+            'anr_reproduction_verified':False,
             'installer_reported_ok':'NATIVE_BRIDGE_EVENT NEXUS 1 RESULT APK_INSTALL OK' in p.stdout.splitlines(),
             'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],
             'base_unchanged':digest(root/'android-system.zlag')==manifest['android-system.zlag']['sha256']}

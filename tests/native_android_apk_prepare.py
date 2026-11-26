@@ -44,8 +44,12 @@ set -e
 pm path org.nexus.smoke | grep '^package:'
 echo NEXUS_ANDROID_REAL_APK_PRESENT
 pm uninstall org.nexus.smoke
-if pm path org.nexus.smoke | grep '^package:'; then exit 1; fi
+packages=$(pm list packages org.nexus.smoke)
+if printf '%s\\n' "$packages" | grep -Fx 'package:org.nexus.smoke'; then exit 1; fi
 echo NEXUS_ANDROID_REAL_APK_UNINSTALLED
+echo NEXUS_ANR_BASELINE_BEGIN
+if ! timeout 15 dumpsys activity lastanr; then echo NEXUS_ANR_BASELINE_UNAVAILABLE; fi
+echo NEXUS_ANR_BASELINE_END
 '''
     diag='''#!/system/bin/sh
 exec >/dev/ttyS0 2>&1

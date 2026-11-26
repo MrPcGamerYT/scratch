@@ -64,7 +64,7 @@ class NativeGuestIntegrationTests(unittest.TestCase):
                 'getprop': 'echo 1',
                 'input': 'sleep 3',
                 'dumpsys': "echo 'topResumedActivity=ActivityRecord{abc u0 org.example.game/.Main t1}'",
-                'pm': f'cat > "{root}/installed.apk"',
+                'pm': f'[ "$#" -eq 6 ] && [ "$1" = install ] && [ "$2" = -r ] && [ "$3" = --user ] && [ "$4" = 0 ] && [ "$5" = -S ] && [ "$6" -gt 0 ] || exit 64; cat > "{root}/installed.apk"',
                 'svc': 'exit 0',
             }.items():
                 path = utilities/name

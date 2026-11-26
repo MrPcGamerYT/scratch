@@ -75,7 +75,7 @@ static int execute(const char *key) {
             int console=open("/dev/console",O_WRONLY|O_CLOEXEC);
             if (console>=0) { dup2(console,1); dup2(console,2); if (console>2) close(console); }
             char bytes[32]; snprintf(bytes,sizeof(bytes),"%lld",(long long)info.st_size);
-            execl(NEXUS_SYSTEM_BIN "pm", "pm", "install", "-r", "--user", "0", "-S", bytes, "-", (char *)NULL);
+            execl(NEXUS_SYSTEM_BIN "pm", "pm", "install", "-r", "--user", "0", "-S", bytes, (char *)NULL);
         }
         else if (key) execl(NEXUS_SYSTEM_BIN "input", "input", "keyevent", key, (char *)NULL);
         else execl(NEXUS_SYSTEM_BIN "svc", "svc", "power", "shutdown", (char *)NULL);
