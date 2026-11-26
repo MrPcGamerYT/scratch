@@ -155,3 +155,47 @@ CPU/MSR capabilities, followed by clock/interrupt delivery and userspace.
 
 Foundation run **45746596905** also passed Ubuntu and Windows unit tests,
 strict Clippy, release builds and repeated Windows WHP contract checks.
+
+## PIC register and RTC milestone
+
+The following checks supersede the port 0xA1 blocker above:
+
+- `8a92c00`: real-kernel run **45749525762** passed three entries past PIC
+  access and stopped at port **0x70**. Foundation **45749525735** passed.
+- `2bfb95e`: real-kernel run **45749694804** passed three entries past RTC
+  access, now stopping at **PIT control 0x34** (channel 0 rate generator), RIP
+  `0xffffffff81132591`. Foundation **45749694948** passed.
+- Same pinned kernel SHA256 as earlier. Latest first serial capture was
+  6208 bytes, SHA256
+  `40658a75f64ea1e01b53f948a3e911866c02a8351180ec7f8716c2a5060e76ed`.
+  Full raw logs and timing reports are workflow artifacts, not the earlier
+  774-byte committed capture. Individual runs can differ with host CPU/MSR
+  exposure; unsupported AMD MSR and TSC warnings remain unresolved.
+
+PIC scope: cascaded edge-triggered 8086 initialization, byte mask register
+roundtrips, OCW3 IRR/ISR selection and EOI with no pending interrupts. No
+connected interrupt sources, interrupt acknowledge/injection, rotation,
+auto-EOI or special-mask modes. Unsupported commands fail. Zero IRR/ISR is
+valid only for this disconnected-source subset, not a claim of working IRQs.
+PIT channel 0 must be connected to real guest interrupt delivery before Linux
+scheduler/tick operation can be certified.
+
+RTC scope: UTC BCD 24-hour calendar, seconds advancing from an initial host
+epoch with monotonic engine elapsed time, update-in-progress window, valid
+battery flag, NMI-mask shadow and shutdown register. Alarm/periodic interrupts,
+time setting and unsupported CMOS registers fail explicitly. No host I/O port
+access is performed. Leap date/day rollover, unsupported commands, masks,
+initialization and port routing have deterministic tests.
+
+No Android guest ran in these tests. The previously reported app ANRs are
+**not fixed or diagnosed** by these chipset changes. Keep the read-only
+stability evidence gate and safe cleanup policy in
+[guest-stability-and-cleanup.md](guest-stability-and-cleanup.md); do not remove
+Android dependencies to conceal engine/device stalls. No guest packages were
+removed or new image published in this milestone.
+
+Final routing-test foundation run **45749838738** at `81b2b54` passed both
+platforms, including strict Clippy, release builds, chipset width/unknown-port
+refusal, upper-RAX preservation and repeated live WHP contracts. The 11 Android
+probe/diagnostic unit tests also passed locally; that is not an affected-guest
+runtime test.
