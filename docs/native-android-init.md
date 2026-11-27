@@ -200,3 +200,36 @@ full ANR evidence captured (baseline, after-home, events), no ANR detected,
 non-blank scanout. `anr_fixed` remains False — this is evidence capture, not
 ANR remediation. Safe slimming (removing unnecessary packages/services) is
 the next step.
+
+## Fix 5: Safe slimming of bloatware packages before ANR baseline (completed)
+
+The ANR baseline was being captured against a fully-populated Android image.
+Safe slimming disables unnecessary bloatware packages before the ANR baseline
+so the evidence reflects a launcher-only, slimmed state.
+
+1. **Slimming step in the APK check script.** The `nexus-apk-check.sh` payload
+   in `tests/native_android_apk_prepare.py` now runs a slimming loop between
+   the APK uninstall and the ANR baseline. It iterates a known-safe bloatware
+   package list (Chrome, Gmail, Maps, Photos, YouTube, Email, MMS,
+   SoundRecorder, Calculator, DeskClock, Spiral, Browser, Books, Movies,
+   Music, Dialer, Photos-lite, Play Store) and calls `pm disable --user 0`
+   for each present package. It uses `pm disable` (not uninstall) so the
+   system can re-enable if needed, and only disables packages definitely not
+   required for Home. It echoes `NEXUS_SLIM_BEGIN`, `NEXUS_SLIM_DISABLED <n>`,
+   and `NEXUS_SLIM_END`.
+2. **Slimming evidence parsing.** `tests/native_anr_evidence.py` now parses
+   the `NEXUS_SLIM_BEGIN`/`NEXUS_SLIM_END` section, extracts
+   `NEXUS_SLIM_DISABLED <n>`, and reports `slim_ran` and `slim_disabled` in
+   the `ANDROID_ANR_EVIDENCE` notice.
+3. **Tests.** Added `test_slim_disabled_count_parsed` and
+   `test_slim_not_run_defaults_zero` to `tests/native_anr_evidence_tests.py`.
+
+**Confirmed:** Run 45960107098 (full image rebuild) succeeded with `slim_ran:
+true`, `slim_disabled: 3`, full ANR evidence captured after slimming, no ANR
+detected, 413 packages, BlissLauncher resumed, clean crash capture, non-blank
+scanout. Run 45963598706 (confirmation) succeeded with `slim_ran: true`,
+`slim_disabled: 3`, 416 packages, no ANR, Home rendered. Two
+kernel-entry-boot-flake failures (45961781439, 45962758210 — `RIP=
+0xffffffff81d33ba9`) are the known intermittent guest-boot flake, not
+slimming regressions. `anr_fixed` remains False — slimming reduces the
+package surface but is not ANR remediation.
