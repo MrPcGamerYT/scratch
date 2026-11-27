@@ -16,22 +16,26 @@ jobs:
         with:
           ref: ${{ github.ref }}
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Build release engine (no test/clippy gate — stable exe for physical-check testing)
+      - name: Build, test, clippy and net-smoke the engine
         shell: python
         run: |
-          import subprocess,sys
-          # Build ONLY. tests/clippy run in native-apk.yml; here we want a reliable
-          # exe download for running `physical-check` on a real Windows 10/11 host.
-          proc=subprocess.run(['cargo','build','--release','--locked',
-                               '--manifest-path','rust/nexus-engine/Cargo.toml'],
+          import subprocess,sys,os
+          # Full gate: tests, clippy -D warnings, release build (build_native_engine.py),
+          # then the in-process net-smoke. This verifies Fix 9 without the flaky APK checkpoint.
+          proc=subprocess.run([sys.executable,'tests/build_native_engine.py'],
                               capture_output=True,text=True)
           if proc.stdout: print(proc.stdout)
           if proc.stderr: print(proc.stderr)
-          # Always persist the full build output so a failure is readable via the
-          # Contents API (CI log download is unreliable on this runner).
           with open('.ci-diag-build.txt','w') as f:
               f.write('RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc.returncode, proc.stdout, proc.stderr))
-          sys.exit(proc.returncode)
+          if proc.returncode:
+              sys.exit(proc.returncode)
+          # Run the in-process VirtIO-MMIO net device smoke.
+          proc2=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'net-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc2.stdout.strip(): print(proc2.stdout.strip())
+          if proc2.stderr.strip(): print(proc2.stderr.strip())
+          sys.exit(proc2.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash
