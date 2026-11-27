@@ -90,6 +90,13 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nexus-engine-exe
+          path: rust/nexus-engine/target/release/nexus-engine.exe
+          if-no-files-found: error
+          retention-days: 14
       - name: Require real Android install, package presence and uninstall over native COM2
         shell: python
         run: |
@@ -110,13 +117,6 @@ jobs:
           if not os.path.isfile('native-win10-physical.json'):
               sys.exit('physical-check did not write native-win10-physical.json')
           runpy.run_path('tests/native_win10_physical_check.py',run_name='__main__')
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: nexus-engine-exe
-          path: rust/nexus-engine/target/release/nexus-engine.exe
-          if-no-files-found: error
-          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:
