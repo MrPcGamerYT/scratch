@@ -46,7 +46,7 @@ impl BootTrace {
         }
     }
     pub fn json(&self)->String {
-        let target_met=self.android_home_ready_ms.map_or(None,|ms|Some(ms<=100000));
+        let target_met=self.android_home_ready_ms.map(|ms|ms<=100000);
         format!(concat!("{{\n  \"schema\":1,\n  \"clock\":\"host_monotonic\",\n  \"origin\":\"engine_main_including_input_load\",\n",
             "  \"android_home_target_ms\":100000,\n  \"android_home_ready_ms\":{},\n  \"total_boot_verified\":false,\n  \"target_met\":{},\n",
             "  \"header_validated_ms\":{},\n  \"vm_ready_ms\":{},\n  \"vcpu_run_requested_ms\":{},\n  \"linux_banner_ms\":{},\n  \"linux_userspace_ready_ms\":{},\n  \"android_init_second_stage_ms\":{},\n  \"stopped_ms\":{},\n",
