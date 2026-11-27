@@ -174,3 +174,29 @@ BlissLauncher resumed, clean crash capture, non-blank scanout (114k+ colors),
 TSC retained, and bridge completion. This is diagnostic stability with a
 rendered Home, not full usable-Home certification (input responsiveness, ANR
 fixes, and the ~100s target remain unproven in product launch context).
+
+## Fix 4: ANR evidence parsing and diagnostic trimming (completed)
+
+The guest "Not responding" issue required ANR evidence to be captured and
+parsed, and the diagnostic needed to fit within the bridge worker budget so
+post-Home ANR sections could run.
+
+1. **ANR evidence parser.** `tests/native_anr_evidence.py` parses the
+   `NEXUS_ANR_BASELINE_*`, `NEXUS_ANR_AFTER_HOME_*`, `NEXUS_ANR_EVENTS_*`,
+   and `NEXUS_PACKAGE_INVENTORY_*` sections from the serial log. It extracts
+   ANR-detection lines (excluding "No ANR" negations), counts packages, and
+   reports `anr_detected`. Wired into the checkpoint as
+   `ANDROID_ANR_EVIDENCE`.
+2. **Diagnostic trimmed to fit worker budget.** The `home-diagnostic.sh`
+   boot-completed wait was reduced from 8×3s to 4×2s, readiness wait from
+   2×2s to 2×1s, keyevent timeouts from 10s to 8s, and dumpsys/logcat
+   timeouts from 10s to 8s. This freed enough time for the after-home ANR,
+   events, and package inventory sections to complete within the 300s
+   `VERIFY_TEST_APK` worker limit.
+
+**Confirmed:** Two consecutive successful runs (45956735302, 45957376595) with
+full ANR evidence captured (baseline, after-home, events), no ANR detected,
+413-415 packages inventoried, BlissLauncher resumed, clean crash capture,
+non-blank scanout. `anr_fixed` remains False — this is evidence capture, not
+ANR remediation. Safe slimming (removing unnecessary packages/services) is
+the next step.
