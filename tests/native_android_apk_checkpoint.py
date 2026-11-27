@@ -6,6 +6,7 @@ import subprocess
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from native_home_evidence import home_evidence
+from native_scanout_evidence import scanout_evidence
 
 
 def digest(path):
@@ -40,6 +41,10 @@ def main():
             'exit':p.returncode,'stdout':p.stdout,'stderr':p.stderr,'metrics':metrics,'serial_tail':serial[-30000:],'guest_clock_diagnostics':[line for line in serial.splitlines() if any(k in line for k in ['clocksource','tsc:','TSC'])],
             'base_unchanged':digest(root/'android-system.zlag')==manifest['android-system.zlag']['sha256']}
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
+    capture=Path('native-apk-software.ppm')
+    result['scanout']=scanout_evidence(capture.read_bytes()) if capture.exists() and capture.stat().st_size else None
+    Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
+    print('::notice::ANDROID_SCANOUT_EVIDENCE='+json.dumps(result['scanout']),flush=True)
     diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
     critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['clocksource','tsc:','TSC','NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
     print('::notice::ANDROID_CLOCK_DIAGNOSTICS='+json.dumps(result['guest_clock_diagnostics']),flush=True)
