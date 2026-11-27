@@ -39,13 +39,14 @@ on post-fs-data
 '''
     check='''#!/system/bin/sh
 exec >/dev/ttyS0 2>&1
-set -e
-[ "$(getprop ro.build.version.sdk)" = 30 ]
-pm path org.nexus.smoke | grep '^package:'
+# No set -e: ANR/home-repro/inventory checks are diagnostic and may fail
+# intermittently. Only the APK install/uninstall steps are critical.
+[ "$(getprop ro.build.version.sdk)" = 30 ] || { echo NEXUS_APK_CHECK_SDK_FAILED; exit 1; }
+pm path org.nexus.smoke | grep '^package:' || { echo NEXUS_APK_CHECK_PRESENT_FAILED; exit 1; }
 echo NEXUS_ANDROID_REAL_APK_PRESENT
-pm uninstall org.nexus.smoke
+pm uninstall org.nexus.smoke || { echo NEXUS_APK_CHECK_UNINSTALL_FAILED; exit 1; }
 packages=$(pm list packages org.nexus.smoke)
-if printf '%s\\n' "$packages" | grep -Fx 'package:org.nexus.smoke'; then exit 1; fi
+if printf '%s\\n' "$packages" | grep -Fx 'package:org.nexus.smoke'; then echo NEXUS_APK_CHECK_STILL_PRESENT; exit 1; fi
 echo NEXUS_ANDROID_REAL_APK_UNINSTALLED
 echo NEXUS_ANR_BASELINE_BEGIN
 if ! timeout 15 dumpsys activity lastanr; then echo NEXUS_ANR_BASELINE_UNAVAILABLE; fi
@@ -64,6 +65,7 @@ echo NEXUS_ANR_EVENTS_END
 echo NEXUS_PACKAGE_INVENTORY_BEGIN
 if ! timeout 10 pm list packages -f; then echo NEXUS_PACKAGE_INVENTORY_UNAVAILABLE; fi
 echo NEXUS_PACKAGE_INVENTORY_END
+exit 0
 '''
     diag='''#!/system/bin/sh
 exec >/dev/ttyS0 2>&1
