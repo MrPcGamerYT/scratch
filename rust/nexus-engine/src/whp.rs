@@ -520,6 +520,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                                 trace.observe_serial(emitted,elapsed_ms());
                                 if emitted.contains(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
                             }
+                            if let Some(bridge)=platform.bridge.as_mut() {
+                                let bridge_bytes=std::mem::take(&mut bridge.raw_output);
+                                if !bridge_bytes.is_empty() {
+                                    trace.observe_serial(&bridge_bytes,elapsed_ms());
+                                }
+                            }
                             if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
                             else {set_registers(partition,&[0x10],&[rip])?;}
                             if (goal==RunGoal::Diagnostic&&trace.linux_userspace_ready_ms.is_some())||(goal==RunGoal::AndroidInit&&trace.android_init_second_stage_ms.is_some()) {return Ok(Ok(()));}
