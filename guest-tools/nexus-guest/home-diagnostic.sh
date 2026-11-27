@@ -23,50 +23,44 @@ if [ -n "$component" ]; then
 else
     echo NEXUS_HOME_NO_CANDIDATE
 fi
-# Wait for the launcher process to be running before injecting keyevents.
-# Use ps -A (more reliable across Android builds than pidof) and emit raw output.
 package="${component%%/*}"
+# Find the launcher PID via dumpsys activity processes (Android-native, reliable).
 find_pid() {
-    # ps -A lists all processes; grep for the package name.
-    ps -A 2>/dev/null | grep -F "$package" | awk '{print $1}' | head -n 1
+    dumpsys activity processes 2>/dev/null | grep -F "$package" | awk '{print $1}' | head -n 1
 }
+# Short readiness wait: just 2 attempts, 2s each.
 ready=0
-for attempt in 1 2 3 4 5 6; do
+for attempt in 1 2; do
     pid=$(find_pid)
     if [ -n "$pid" ]; then ready=1; break; fi
-    sleep 3
+    sleep 2
 done
 echo "NEXUS_HOME_PROCESS_READY $ready"
-echo "NEXUS_HOME_PS_A_BEGIN"
-ps -A 2>/dev/null | grep -F "$package" || echo "NEXUS_HOME_PS_A_NO_MATCH"
-echo "NEXUS_HOME_PS_A_END"
 before=$(find_pid)
 echo "NEXUS_HOME_PID_BEFORE $before"
-# Send keyevents with retries; a transient input timeout is not launcher loss.
+# Send keyevents with a single retry; keep total time bounded.
 send_keyevent() {
     local code="$1" label="$2"
-    for attempt in 1 2 3; do
-        if timeout 10 input keyevent "$code"; then
-            echo "NEXUS_HOME_${label}_KEY_SENT"
-            return 0
-        fi
-        sleep 2
-    done
-    echo "NEXUS_HOME_${label}_KEY_FAILED"
-    return 1
+    if timeout 10 input keyevent "$code"; then
+        echo "NEXUS_HOME_${label}_KEY_SENT"
+    elif timeout 10 input keyevent "$code"; then
+        echo "NEXUS_HOME_${label}_KEY_SENT_RETRY"
+    else
+        echo "NEXUS_HOME_${label}_KEY_FAILED"
+    fi
 }
 echo NEXUS_HOME_RECENTS_BEGIN
-send_keyevent 187 RECENTS || true
+send_keyevent 187 RECENTS
 sleep 2
 timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity'
 echo NEXUS_HOME_RECENTS_END
-send_keyevent 3 HOME || true
-sleep 8
+send_keyevent 3 HOME
+sleep 5
 after=$(find_pid)
 echo "NEXUS_HOME_PID_AFTER $after"
 if [ -n "$before" ] && [ -n "$after" ] && [ "$before" = "$after" ]; then echo NEXUS_HOME_PROCESS_RETAINED; fi
 echo NEXUS_HOME_FRAME_STATS_BEGIN
-timeout 10 dumpsys gfxinfo "${component%%/*}" | head -n 65
+timeout 10 dumpsys gfxinfo "$package" | head -n 40
 echo NEXUS_HOME_FRAME_STATS_END
 echo NEXUS_HOME_ACTIVITY_STATE_BEGIN
 timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity|Hist #0|mFocusedApp'
