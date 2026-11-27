@@ -9,6 +9,8 @@ struct NexusBinding {
     double x;
     double y;
     std::uint8_t repeat;
+    std::uint8_t burst_count;
+    std::uint16_t reserved;
     std::int32_t interval_ms;
 };
 struct NexusAimResult {
@@ -16,10 +18,61 @@ struct NexusAimResult {
     double y;
     std::uint32_t reset;
 };
+struct NexusPoint {
+    double x;
+    double y;
+};
+struct NexusPinchPair {
+    double x1;
+    double y1;
+    double x2;
+    double y2;
+};
+struct NexusScriptStep {
+    std::uint8_t op;
+    std::uint8_t reserved[3];
+    std::int32_t duration_ms;
+    double x1;
+    double y1;
+    double x2;
+    double y2;
+};
+
 std::uint8_t nexus_valid_key(std::int32_t key);
 std::uint32_t nexus_validate_bindings(const NexusBinding *bindings, std::size_t length);
 double nexus_aim_clamp_anchor(double value);
 double nexus_aim_clamp_sensitivity(double value);
 NexusAimResult nexus_aim_move(double anchor_x, double anchor_y, double x, double y, double gain,
                               double dx, double dy, std::int32_t width, std::int32_t height);
+NexusAimResult nexus_aim_move_xy(double anchor_x, double anchor_y, double x, double y,
+                                 double gain_x, double gain_y, double dx, double dy,
+                                 std::int32_t width, std::int32_t height);
+NexusPoint nexus_dpad_target(double center_x, double center_y, double radius,
+                             std::uint8_t up, std::uint8_t down, std::uint8_t left, std::uint8_t right,
+                             double modifier_scale);
+NexusPoint nexus_swipe_point(double x1, double y1, double x2, double y2, double progress);
+NexusPinchPair nexus_pinch_points(double center_x, double center_y, double radius,
+                                  double progress, std::uint8_t zoom_in);
+NexusPoint nexus_moba_target(double skill_x, double skill_y, double radius,
+                             double origin_x, double origin_y, double cursor_x, double cursor_y);
+std::uint32_t nexus_validate_script_steps(const NexusScriptStep *steps, std::size_t length);
+// Caller owns UTF-8 NUL-terminated strings and output buffer for each call.
+// flags: 1 multitouch, 2 hide cursor, 4 local ADB, 8 explicitly selected TCG, 16 DirectSound guest output, 32 experimental virtio-vga, 64 reduced AVX (TCG only), 128 experimental VirGL OpenGL.
+struct NexusVmRequest {
+    const char *disk;
+    const char *firmware_dir;
+    const char *uefi_code;
+    const char *uefi_vars;
+    std::uint32_t memory_mb, cpus, adb_port, flags;
+};
+std::size_t nexus_vm_plan(const NexusVmRequest *request, std::uint8_t *output, std::size_t capacity);
+struct NexusResourceBudget { std::uint32_t cpus, memory_mb; };
+NexusResourceBudget nexus_resource_budget(std::uint32_t host_threads, std::uint64_t host_memory_mb);
+std::uint64_t nexus_host_memory_mb();
+struct NexusInputDelta { std::int32_t x, y; };
+NexusInputDelta nexus_input_accumulate(std::int32_t x, std::int32_t y, std::int32_t dx, std::int32_t dy);
+std::uint32_t nexus_input_interval(std::uint32_t requested);
+std::int32_t nexus_whpx_available();
+// Manual working-set trim; 1 success, 0 failed, -1 unsupported.
+std::int32_t nexus_trim_working_set(std::uint32_t pid);
 }

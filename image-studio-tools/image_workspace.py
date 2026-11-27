@@ -14,12 +14,17 @@ def create_copy(source, destination, qemu_img='qemu-img'):
     result = subprocess.run([qemu_img, 'info', '--output=json', source],
                             capture_output=True, text=True, check=True)
     info = json.loads(result.stdout)
-    if info.get('format') != 'qcow2' or 'backing-filename' in info:
-        raise ValueError('Only standalone QCOW2 source images are supported.')
+    if info.get('format') not in ('qcow2', 'raw') or 'backing-filename' in info:
+        raise ValueError('Only standalone QCOW2 or raw partition/disk images are supported.')
     # Exclusive creation avoids overwriting either the source or an existing image.
     # A failed copy is retained for inspection rather than deleting user data.
-    with open(source, 'rb') as inp, open(destination, 'xb') as out:
-        shutil.copyfileobj(inp, out, 1024 * 1024)
+    if info['format'] == 'raw':
+        with open(destination, 'xb'):
+            pass  # Reserve exclusively before qemu-img writes its own output.
+        subprocess.run([qemu_img, 'convert', '-f', 'raw', '-O', 'qcow2', source, destination], check=True)
+    else:
+        with open(source, 'rb') as inp, open(destination, 'xb') as out:
+            shutil.copyfileobj(inp, out, 1024 * 1024)
     return destination
 
 

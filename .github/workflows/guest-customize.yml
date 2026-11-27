@@ -1,0 +1,56 @@
+name: Inspect guest customization prerequisites
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/guest-customize.yml
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-guestfs libguestfs-tools qemu-utils erofs-utils
+          sudo chmod a+r /boot/vmlinuz*
+      - uses: actions/download-artifact@v4
+        with:
+          name: Nexus-Experimental-Android-Guest
+          path: guest
+          run-id: '45575332515'
+          github-token: ${{ github.token }}
+      - name: Inspect actual system payload without modifying the base
+        env:
+          LIBGUESTFS_BACKEND: direct
+          LIBGUESTFS_BACKEND_SETTINGS: force_tcg
+        run: |
+          mkdir -p evidence system-root
+          /usr/bin/python3 - <<'PY'
+          import guestfs
+          g = guestfs.GuestFS(python_return_dict=True)
+          g.add_drive_opts('guest/android-candidate.qcow2', format='qcow2', readonly=True)
+          g.launch()
+          g.mount_ro('/dev/sda2', '/')
+          print(g.ls('/android'))
+          g.download('/android/system.efs', 'system.efs')
+          g.umount_all()
+          g.shutdown()
+          g.close()
+          PY
+          file system.efs | tee evidence/payload-format.txt
+          sudo mount -o ro,loop system.efs system-root
+          sudo find system-root -maxdepth 4 \( -iname '*bootanimation*' -o -name '*build.prop' -o -iname '*setup*' -o -iname '*launcher*' -o -iname '*notice*' \) | sort > evidence/layout.txt
+          sudo find system-root -maxdepth 3 -type d | sort >> evidence/layout.txt
+          sudo sh -c 'find system-root -maxdepth 4 -name "*.rc" -exec grep -HnE "bootanim|boot_completed|setupwizard|pointer" {} +' > evidence/init-references.txt || true
+          cat evidence/*.txt | head -180 | sed 's/%/%25/g;s/$/%0A/' | tr -d '\n' | xargs -0 printf '::notice title=Guest customization layout::%s\n'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guest-customization-inspection
+          path: evidence/
+          retention-days: 7

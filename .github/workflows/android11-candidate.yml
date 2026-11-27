@@ -1,0 +1,166 @@
+name: Build and verify minimal Android 11 guest
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/android11-candidate.yml
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated guest tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils python3-guestfs libguestfs-tools grub-efi-amd64-bin grub-common ovmf adb p7zip-full python3-pil fonts-dejavu-core musl-tools cpio squashfs-tools aapt apksigner android-framework-res
+          sudo chmod a+r /boot/vmlinuz*
+      - name: Unit checks
+        run: |
+          /usr/bin/python3 tests/guest_builder_tests.py
+          /usr/bin/python3 tests/android_probe_tests.py
+          /usr/bin/python3 tests/guest_bridge_tests.py
+          /usr/bin/python3 tests/native_guest_integration_tests.py
+      - uses: actions/cache/restore@v4
+        id: source-cache
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Resolve and fingerprint official FOSS source
+        run: |
+          mkdir -p candidate/evidence source-evidence fixture
+          python3 - <<'PY'
+          import urllib.request, xml.etree.ElementTree as ET, pathlib, json
+          url = 'https://sourceforge.net/projects/blissos-x86/rss?path=/Official/BlissOS14/FOSS'
+          request = urllib.request.Request(url, headers={'User-Agent':'Nexus-source-inspection/1.0'})
+          root = ET.fromstring(urllib.request.urlopen(request, timeout=60).read())
+          title = '/Official/BlissOS14/FOSS/Generic/Bliss-v14.10.3-x86_64-OFFICIAL-foss-20241012.iso'
+          item = next((item for item in root.findall('./channel/item') if item.findtext('title') == title), None)
+          if item is None:
+              raise SystemExit('Selected release absent from official metadata; refusing a guessed source')
+          pathlib.Path('source-evidence/official-item.xml').write_bytes(ET.tostring(item))
+          pathlib.Path('source-evidence/source.json').write_text(json.dumps({'url':item.findtext('link'),'title':title,'edition':'FOSS Generic, not GApps','authenticity':'Official RSS origin, not a verified publisher signature'},indent=2))
+          PY
+          if [ ! -f android11.iso ]; then
+            curl --fail --location --retry 2 --max-time 900 'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS14/FOSS/Generic/Bliss-v14.10.3-x86_64-OFFICIAL-foss-20241012.iso' -o android11.iso
+          fi
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
+          sha256sum android11.iso | tee source-evidence/SOURCE-SHA256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET, hashlib
+          root = ET.parse('source-evidence/official-item.xml').getroot()
+          for field in root.iter():
+              if field.tag.split('}')[-1] == 'hash' and field.text:
+                  algo = field.attrib.get('algo','').lower().replace('-','')
+                  if algo in ['md5','sha1','sha256']:
+                      digest = hashlib.new(algo)
+                      with open('android11.iso','rb') as stream:
+                          for block in iter(lambda:stream.read(4194304),b''): digest.update(block)
+                      if digest.hexdigest().lower() != field.text.strip().lower(): raise SystemExit('Publisher feed hash mismatch')
+          PY
+          7z x android11.iso -ofixture > source-evidence/extract.log
+          find fixture -maxdepth 2 -type f | head -60 > source-evidence/payload-layout.txt
+      - uses: actions/cache/save@v4
+        if: steps.source-cache.outputs.cache-hit != 'true'
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Build new standalone disk and original boot asset
+        run: |
+          set -o pipefail
+          trap 'echo "::error::Guest bridge build step failed at line $LINENO: $BASH_COMMAND"' ERR
+          cp /usr/share/doc/musl/copyright source-evidence/MUSL-COPYRIGHT.txt
+          dpkg-query -W musl musl-tools > source-evidence/bridge-toolchain.txt
+          musl-gcc -std=c11 -O2 -static -Wall -Wextra -Werror guest-tools/nexus-guest/agent.c -o candidate/nexus-agent
+          /usr/bin/python3 guest-tools/make_boot_animation.py candidate/nexus-bootanimation.zip
+          /usr/bin/python3 guest-tools/install_bridge_tree.py --tree fixture --agent candidate/nexus-agent --evidence source-evidence --boot-animation candidate/nexus-bootanimation.zip 2>&1 | tee source-evidence/bridge-build.log
+          /usr/bin/python3 guest-tools/prepare_guest.py --tree fixture --iso android11.iso --sha256 "$(sha256sum android11.iso | cut -d' ' -f1)" --profile drm-gbm-no-avx --native-bridge --output candidate/android-candidate.qcow2 2>&1 | tee candidate/evidence/build.log
+      - name: First boot, explicitly provision clean offline template and require Home without ANRs
+        run: |
+          qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/android-candidate.qcow2" candidate/provision.qcow2
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/provision-vars.fd
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/provision.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/provision-vars.fd --provision --output candidate/evidence/first-boot --timeout 1800
+      - name: Flatten only after confirmed clean shutdown
+        run: |
+          python3 - <<'PY'
+          import json
+          result=json.load(open('candidate/evidence/first-boot/result.json'))
+          assert result.get('clean_shutdown') and result.get('home_without_adb') and result.get('provisioned_this_boot'), result
+          PY
+          qemu-img convert -c -f qcow2 -O qcow2 candidate/provision.qcow2 candidate/nexus-android11.qcow2
+          qemu-img check candidate/nexus-android11.qcow2
+          sha256sum candidate/nexus-android11.qcow2 > candidate/base-before-verification.sha256
+      - name: Second boot must pass Home and shutdown over virtio with no NIC or ADB
+        run: |
+          mkdir -p candidate/apk-smoke
+          printf '%s' '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.nexus.bridge.smoketest" android:versionCode="1" android:versionName="1"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="30"/><application android:hasCode="false" android:label="Nexus bridge CI fixture"/></manifest>' > candidate/apk-smoke/AndroidManifest.xml
+          aapt package -f -M candidate/apk-smoke/AndroidManifest.xml -I /usr/share/android-framework-res/framework-res.apk -F candidate/apk-smoke/unsigned.apk
+          keytool -genkeypair -noprompt -keystore candidate/apk-smoke/ci.jks -storepass ci-test-only -keypass ci-test-only -alias ci -keyalg RSA -keysize 2048 -dname CN=NexusCIFixture -validity 2
+          apksigner sign --ks candidate/apk-smoke/ci.jks --ks-pass pass:ci-test-only --key-pass pass:ci-test-only --out candidate/apk-smoke/fixture.apk candidate/apk-smoke/unsigned.apk
+          qemu-img create -f qcow2 -F qcow2 -b "$PWD/candidate/nexus-android11.qcow2" candidate/second-boot.qcow2
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd candidate/second-vars.fd
+          /usr/bin/python3 tests/android_native_probe.py --disk candidate/second-boot.qcow2 --uefi-code /usr/share/OVMF/OVMF_CODE_4M.fd --uefi-vars candidate/second-vars.fd --apk-fixture candidate/apk-smoke/fixture.apk --output candidate/evidence/second-boot --timeout 1800
+          sha256sum -c candidate/base-before-verification.sha256
+      - name: Package separately from every existing user image
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, shutil, hashlib
+          root=pathlib.Path('candidate'); out=pathlib.Path('guest-download'); images=out/'images'
+          first=json.loads((root/'evidence/first-boot/result.json').read_text()); second=json.loads((root/'evidence/second-boot/result.json').read_text())
+          assert first.get('clean_shutdown') and second.get('clean_shutdown') and second.get('native_apk_install_completed') and second.get('native_foreground_package')
+          assert first.get('home_without_adb') and first.get('adb_used') is False and second.get('home_without_adb') and second.get('native_home_command_completed') and second.get('adb_used') is False
+          images.mkdir(parents=True)
+          (images/'android-base.qcow2').hardlink_to(root/'nexus-android11.qcow2')
+          for source,name in [('/usr/share/OVMF/OVMF_CODE_4M.fd','android-uefi-code.fd'),('/usr/share/OVMF/OVMF_VARS_4M.fd','android-uefi-vars.fd')]: shutil.copyfile(source,images/name)
+          for name,value in [('acceleration','tcg'),('graphics','virtio'),('cpu-profile','reduced-avx'),('nexus-bridge','1')]: (images/(name+'.txt')).write_text(value+'\n')
+          shutil.copytree('source-evidence',out/'source-evidence')
+          shutil.copytree('guest-tools/nexus-guest',out/'native-bridge-source')
+          shutil.copyfile('guest-tools/install_bridge_ramdisk.py',out/'native-bridge-source/install_bridge_ramdisk.py')
+          shutil.copytree(root/'evidence',out/'verification')
+          shutil.copyfile('/usr/share/doc/ovmf/copyright',out/'OVMF-NOTICES.txt')
+          (out/'README.txt').write_text('NEXUS ANDROID 11 FOSS CANDIDATE - EXPERIMENTAL\nUpstream Bliss OS 14.10.3 FOSS Generic (2024-10-12). Android SDK 30 required by gates. Not an Android source build or fastest-engine certification. Upstream notices/files retained; Nexus service/init files added and system.sfs repacked; Nexus boot asset installed offline; visual branding still needs review.\nNo GApps edition was selected; individual upstream component terms still apply. Source: https://sourceforge.net/projects/blissos-x86/files/Official/BlissOS14/FOSS/Generic/ and https://github.com/BlissOS .\nSetup was explicitly provisioned on a clean account-free CI template, not by bypassing Google login/FRP. New image, new instance only. Never overwrite an existing backing base. Back up your old Player/images AND user instance together. Extract this images folder beside the updated Player executable in a separate permanent folder. A different Player folder still shares per-user instance state: deliberate migration/new-instance isolation is required.\nNative v1 bridge gates require boot status, Home check, navigation command and clean shutdown without NIC or ADB on second boot. This candidate also gates native foreground-package discovery and APK streaming/installation on a disposable verification overlay. App identity is polled, not framework push events. Display geometry is not integrated; engine presentation telemetry requires the separately matched instrumented Windows engine. Linux TCG 2 CPU / 3072 MiB tests only. Windows, WHPX, physical GPU, games, sound/network and cursor alignment remain unverified. Older Android/security patch levels need review; do not use sensitive accounts. Home and clean shutdown gates are not full stability certification.\n')
+          files=sorted(path for path in out.rglob('*') if path.is_file())
+          lines=[]
+          for path in files:
+              h=hashlib.sha256()
+              with path.open('rb') as stream:
+                  for block in iter(lambda:stream.read(4194304),b''): h.update(block)
+              lines.append(h.hexdigest()+'  '+path.relative_to(out).as_posix()+'\n')
+          (out/'SHA256SUMS.txt').write_text(''.join(lines))
+          PY
+      - name: Expose outcomes including failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in Path('candidate/evidence').rglob('result.json'):
+              text=path.read_text()
+              print('::notice title='+str(path)+'::'+text[-6000:].replace('%','%25').replace('\n','%0A'))
+          for path in Path('candidate/evidence').rglob('serial.log'):
+              text=path.read_text(errors='replace')[-16000:]
+              for offset in range(0,len(text),2800):
+                  print('::notice title='+str(path)+'-'+str(offset)+'::'+text[offset:offset+2800].replace('%','%25').replace('\n','%0A'))
+          for name in ['bridge-build.log','system-image-layout.json','squashfs-layout.txt','payload-layout.txt']:
+              path=Path('source-evidence')/name
+              if path.exists(): print('::notice title='+name+'::'+path.read_text(errors='replace')[-5000:].replace('%','%25').replace('\n','%0A'))
+          for path in Path('source-evidence').glob('SOURCE-SHA256.txt'):
+              print('::notice title=Source fingerprint::'+path.read_text())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android11-candidate-evidence
+          path: |
+            candidate/evidence/
+            source-evidence/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Nexus-Android11-FOSS-Candidate
+          path: guest-download/
+          compression-level: 0
+          retention-days: 7

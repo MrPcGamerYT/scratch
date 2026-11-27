@@ -5,7 +5,17 @@ param(
 $ErrorActionPreference = 'Stop'
 $launcher = Join-Path $PSScriptRoot '../scripts/launch.ps1'
 # The CI runner need not have WHPX; test argument and filesystem behavior with a stub.
-function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) [pscustomobject]@{ State = 'Enabled' } }
+function Get-WindowsOptionalFeature { param([switch]$Online, [string]$FeatureName) if ($env:NEXUS_NO_WHPX -eq '1') { throw 'TCG must not query WHPX.' }; [pscustomobject]@{ State = 'Enabled' } }
+if ($Case -eq 'missing-rom') {
+    $broken = Join-Path $env:NEXUS_TEST_DIR 'broken-engine'
+    New-Item -ItemType Directory -Path (Join-Path $broken 'bin'), (Join-Path $broken 'share/qemu') | Out-Null
+    Copy-Item $Stub (Join-Path $broken 'bin/NexusEngine.exe')
+    Copy-Item $Stub (Join-Path $broken 'bin/qemu-img.exe')
+    Set-Content (Join-Path $broken 'share/qemu/bios-256k.bin') 'fixture BIOS'
+    Set-Content (Join-Path $broken 'share/qemu/vgabios-stdvga.bin') 'fixture VGA'
+    & $launcher -QemuDir (Join-Path $broken 'bin') -DiskPath (Join-Path $broken 'must-not-exist.qcow2') -IsoPath $env:NEXUS_TEST_ISO -Boot iso
+    exit $LASTEXITCODE
+}
 if ($Case -eq 'missing-disk') {
     & $launcher -QemuDir $env:NEXUS_TEST_DIR -DiskPath (Join-Path $env:NEXUS_TEST_DIR 'missing.qcow2') -Boot disk
     exit $LASTEXITCODE
@@ -17,7 +27,7 @@ if ($Case -eq 'same-image') {
 $root = Join-Path $env:RUNNER_TEMP ('nexus tests ' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
-    Copy-Item $Stub (Join-Path $root 'qemu-system-x86_64.exe')
+    Copy-Item $Stub (Join-Path $root 'NexusEngine.exe')
     Copy-Item $Stub (Join-Path $root 'qemu-img.exe')
     $env:NEXUS_TEST_DIR = $root
     $env:NEXUS_TEST_ISO = Join-Path $root 'stock image.iso'
@@ -30,14 +40,29 @@ try {
     foreach ($item in @('create', 'qcow2', $disk, '32G', 'whpx,kernel-irqchip=off', '2048', '2', 'order=d', $env:NEXUS_TEST_ISO, 'user,id=net0,hostfwd=tcp:127.0.0.1:5556-:5555')) {
         if ($argsLog -cnotcontains $item) { throw "Missing argument: $item" }
     }
+    $reportFiles = @(Get-ChildItem (Join-Path $root 'diagnostics') -Filter '*.json')
+    if ($reportFiles.Count -ne 1) { throw 'Expected one per-launch diagnostic report.' }
+    $report = Get-Content $reportFiles[0].FullName -Raw | ConvertFrom-Json
+    if ($report.cpus -ne 2 -or $report.memoryMB -ne 2048 -or $report.automaticCpus -or $report.automaticMemory -or $report.acceleratedGuestGpu -or $report.exitCode -ne 0) { throw 'Manual allocation or honest graphics reporting regressed.' }
     Remove-Item $env:NEXUS_TEST_LOG
     & $launcher -QemuDir $root -DiskPath $disk -Boot disk
+    $reports = @(Get-ChildItem (Join-Path $root 'diagnostics') -Filter '*.json' | ForEach-Object { Get-Content $_.FullName -Raw | ConvertFrom-Json })
+    $automaticReport = @($reports | Where-Object automaticCpus)
+    if ($reports.Count -ne 2 -or $automaticReport.Count -ne 1 -or -not $automaticReport[0].automaticMemory -or $automaticReport[0].cpus -lt 1 -or $automaticReport[0].cpus -gt 8 -or $automaticReport[0].memoryMB -lt 512 -or $automaticReport[0].memoryMB -gt 8192) { throw 'Automatic allocations or unique diagnostic reports regressed.' }
     $argsLog = Get-Content $env:NEXUS_TEST_LOG
-    if ($argsLog -cnotcontains 'order=c' -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
-    foreach ($testCase in @('missing-disk', 'same-image')) {
+    if ($argsLog -cnotcontains 'order=c'  -or $argsLog -cnotcontains 'user,id=net0' -or $argsLog -contains '-cdrom' -or $argsLog -contains 'create') { throw 'Disk boot arguments are incorrect' }
+    Remove-Item $env:NEXUS_TEST_LOG
+    $env:NEXUS_NO_WHPX = '1'
+    & $launcher -QemuDir $root -DiskPath $disk -Boot disk -Acceleration tcg
+    if ($LASTEXITCODE -ne 0) { throw 'Explicit TCG launch failed.' }
+    $env:NEXUS_NO_WHPX = '0'
+    $softwareArgs = Get-Content $env:NEXUS_TEST_LOG
+    if ($softwareArgs -cnotcontains 'tcg,thread=multi' -or $softwareArgs -cnotcontains 'max' -or $softwareArgs -contains 'whpx,kernel-irqchip=off') { throw 'Software mode did not bypass WHPX.' }
+    foreach ($testCase in @('missing-disk', 'same-image', 'missing-rom')) {
         & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $PSCommandPath -Stub $Stub -Case $testCase
         if ($LASTEXITCODE -ne 1) { throw "Expected failure for $testCase, got $LASTEXITCODE" }
     }
+    if (Test-Path (Join-Path $root 'broken-engine/must-not-exist.qcow2')) { throw 'Missing ROM must be caught before disk creation.' }
     $global:LASTEXITCODE = 0
     Write-Host 'Launcher contract tests passed.'
 } finally {

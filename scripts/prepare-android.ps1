@@ -9,9 +9,29 @@ param(
     [string]$CopyFrom = '',
     [switch]$Bliss,
     [string]$SourceVars = '',
-    [string]$ExpectedSha256 = ''
+    [string]$ExpectedSha256 = '',
+    [string]$ApprovalDirectory = '',
+    [ValidateSet('whpx','tcg')][string]$Acceleration = 'whpx',
+    [ValidateSet('std','virtio')][string]$Graphics = 'std'
 )
 $ErrorActionPreference = 'Stop'
+function Confirm-InstallationStage([string]$Prompt) {
+    if (-not $ApprovalDirectory) { return (Read-Host $Prompt) }
+    if (-not (Test-Path -LiteralPath $ApprovalDirectory -PathType Container)) { throw 'Approval directory is missing.' }
+    $request = Join-Path $ApprovalDirectory 'request.txt'
+    $response = Join-Path $ApprovalDirectory 'approve.txt'
+    if (Test-Path -LiteralPath $response) { Remove-Item -LiteralPath $response }
+    [IO.File]::WriteAllText($request, $Prompt)
+    Write-Output "APPROVAL REQUIRED: $Prompt" | Out-Host
+    $deadline = [DateTime]::UtcNow.AddHours(1)
+    while (-not (Test-Path -LiteralPath $response)) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Approval timed out. Workspace retained for Resume.' }
+        Start-Sleep -Milliseconds 300
+    }
+    $answer = [IO.File]::ReadAllText($response).Trim()
+    Remove-Item -LiteralPath $request, $response
+    return $answer
+}
 try {
     $disk = [IO.Path]::GetFullPath($DiskPath)
     $targetDir = Join-Path ([IO.Path]::GetFullPath($PlayerFolder)) 'images'
@@ -27,9 +47,19 @@ try {
     if ($Bliss -and (-not (Test-Path -LiteralPath $uefiCode -PathType Leaf) -or -not (Test-Path -LiteralPath $uefiTemplate -PathType Leaf))) { throw 'Bundled UEFI firmware is missing; use the updated Image Studio package.' }
     if ((Test-Path -LiteralPath $stagedCode) -or (Test-Path -LiteralPath $stagedVars)) { throw 'UEFI staging files already exist. No files will be overwritten.' }
     if ($Resume -and $CopyFrom) { throw 'Choose either -Resume or -CopyFrom, not both.' }
+    if (Test-Path -LiteralPath (Join-Path $targetDir 'graphics.txt')) { throw 'Staged graphics configuration already exists. Back up the player images folder before retrying.' }
+    if (Test-Path -LiteralPath (Join-Path $targetDir 'acceleration.txt')) { throw 'Staged acceleration configuration already exists. Back up the player images folder before retrying.' }
     if (Test-Path -LiteralPath $target) { throw 'A prepared base already exists in the player folder. It will not be overwritten.' }
     if (-not (Test-Path -LiteralPath (Join-Path $PlayerFolder 'ProjectNexus.exe') -PathType Leaf)) { throw 'PlayerFolder must contain ProjectNexus.exe.' }
     if (-not (Test-Path -LiteralPath $img -PathType Leaf)) { throw "qemu-img not found: $img" }
+    Write-Host 'STAGE: Checking bundled QEMU tools before creating or booting any disk'
+    foreach ($tool in @('qemu-img.exe', 'NexusEngine.exe')) {
+        $exe = Join-Path $QemuDir $tool
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Bundled tool missing: $exe. Extract the complete Developer package." }
+        try { $version = & $exe --version 2>&1; $exitCode = $LASTEXITCODE }
+        catch { throw "Cannot launch $tool. It may be locked, blocked or missing a dependency. Close other tools and finish extracting the package. Details: $($_.Exception.Message)" }
+        if ($exitCode -ne 0) { throw "$tool self-check failed (exit $exitCode): $version. No VM was started." }
+    }
     if ($Resume) {
         if (-not (Test-Path -LiteralPath $disk -PathType Leaf)) { throw 'Resume requires an existing disk file.' }
         if ($Bliss -and -not (Test-Path -LiteralPath $vars -PathType Leaf)) { throw 'Resume requires the existing DiskPath.uefi-vars.fd file.' }
@@ -78,9 +108,10 @@ Other Android images can have different menus or may not support auto install.
 '@
             }
             $fwArgs = @{}; if ($Bliss) { $fwArgs = @{ UefiCodePath = $uefiCode; UefiVarsPath = $vars } }
-            & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -IsoPath $IsoPath -DiskPath $disk -Boot iso @fwArgs
-            if ($LASTEXITCODE -ne 0) { throw 'Installer VM failed. Disk was retained; use -Resume after investigating.' }
-            if ((Read-Host 'Did installation finish and the guest shut down cleanly? Type YES to boot the disk') -cne 'YES') { throw 'Not staged. Disk retained; use -Resume to boot it later.' }
+            Write-Host 'STAGE: Installing from ISO - complete the installer in the VM, then shut down cleanly'
+            & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -IsoPath $IsoPath -DiskPath $disk -Boot iso -Acceleration $Acceleration -Graphics $Graphics @fwArgs
+            if ($LASTEXITCODE -ne 0) { throw 'Installer VM failed. Do not stage this disk or assume installation completed. Preserve the log. If installation never started, use a fresh workspace with Install after fixing the error; Resume only boots an already installed disk.' }
+            if ((Confirm-InstallationStage 'Did installation finish and the guest shut down cleanly? Approve to boot the disk.') -cne 'YES') { throw 'Not staged. Disk retained; use -Resume to boot it later.' }
         }
     }
     $json = & $img info --output=json $disk
@@ -89,19 +120,23 @@ Other Android images can have different menus or may not support auto install.
     if ($info.format -ne 'qcow2' -or $null -ne $info.'backing-filename') { throw 'Disk must be a standalone QCOW2 image with no backing file.' }
     & $img check $disk
     if ($LASTEXITCODE -ne 0) { throw 'Disk failed qemu-img check. It was not staged.' }
+    Write-Host 'STAGE: Verifying installed disk without ISO'
     Write-Host 'Booting the disk without an ISO. Verify Android starts, make permitted changes in the guest, then shut it down cleanly.'
     $fwArgs = @{}; if ($Bliss) { $fwArgs = @{ UefiCodePath = $uefiCode; UefiVarsPath = $vars } }
-    & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -DiskPath $disk -Boot disk @fwArgs
+    & (Join-Path $PSScriptRoot 'launch.ps1') -QemuDir $QemuDir -DiskPath $disk -Boot disk -Acceleration $Acceleration -Graphics $Graphics @fwArgs
     if ($LASTEXITCODE -ne 0) { throw 'Disk boot failed. Disk was retained; use -Resume after investigating.' }
-    if ((Read-Host 'Did Android boot and shut down cleanly, and are you ready to stage it? Type YES') -cne 'YES') { throw 'Not staged. Disk retained.' }
+    if ((Confirm-InstallationStage 'Did Android boot and shut down cleanly, and are you ready to stage it?') -cne 'YES') { throw 'Not staged. Disk retained.' }
     & $img check $disk
     if ($LASTEXITCODE -ne 0) { throw 'Disk failed qemu-img check after boot. It was not staged.' }
+    Write-Host 'STAGE: Publishing validated image to the fixed player filename'
     New-Item -ItemType Directory -Force $targetDir | Out-Null
     if ($Bliss) {
         # Stage firmware before the disk so an incomplete copy cannot be auto-booted.
         [IO.File]::Copy($uefiCode, $stagedCode, $false)
         [IO.File]::Copy($vars, $stagedVars, $false)
     }
+    [IO.File]::WriteAllText((Join-Path $targetDir 'acceleration.txt'), $Acceleration)
+    [IO.File]::WriteAllText((Join-Path $targetDir 'graphics.txt'), $Graphics)
     # Publish the base only after a complete copy. A failed copy cannot be booted.
     $temporary = Join-Path $targetDir ('.android-base-' + [guid]::NewGuid().ToString('N') + '.tmp')
     try {

@@ -2,11 +2,11 @@
 
 A Windows Android-player prototype using a source-built QEMU engine and Windows Hypervisor Platform (WHPX). The player opens a developer-prepared system image and does not offer disk creation, ISO selection or Android installation. A separately packaged developer tool prepares the image.
 
-**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The keymapper supports single-pointer taps, sequential markers and repeat-while-held; it also has experimental aim/fire and optional multi-contact injection; support in Android and games is not yet verified, and it does not have a general macro recorder. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
+**This is not a finished BlueStacks alternative.** GPU acceleration, resolution/DPI and device profiles are not implemented and appear disabled in settings. The **Nexus Keymap Studio** implements multi-scheme v3 JSON profiles, tap/burst/turbo-repeat sequences, 8-way WASD D-pads with sprint/walk modifiers, directional swipes (including swipe-and-hold), two-finger symmetric pinch-zoom, MOBA directional skill pads with quick-cast/manual-aim/cancel, multi-step coordinate macro scripts, asymmetric X/Y mouse-aim with Left-Click Fire, Right-Click ADS and Free-Look eye camera, extended keyboard/mouse/wheel bindings, and a translucent click-through Win32 HUD overlay for key hints and live crosshairs. Support in Android and real games remains unverified, and there is no live input-recording macro recorder yet. No Android image is bundled, and Android compatibility or real-world performance is not guaranteed.
 
 ## Player preview
 
-Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup**, not the emulator: controls do not save settings or operate Android. The Windows Qt player implements the corresponding layout and the existing working features described below; the keymap preview is illustrative and differs from the actual Qt editor.
+Run `python3 preview/server.py` from the repository root and open port 4173. This is an interactive **design mockup** showcasing the Nexus Keymap Studio, control presets, live stage key-hint overlay, macro script validator, conflict checker, and player settings—not the emulator itself: controls do not save settings or operate Android.
 
 ## Requirements
 
@@ -21,6 +21,31 @@ Run `python3 preview/server.py` from the repository root and open port 4173. Thi
 - Guest compatibility, graphics, native-bridge support and redistribution rights depend on the image. Android-x86 9.0-r2 is old and potentially unpatched; do not use it for sensitive accounts or data. No proprietary translation libraries are provided.
 
 ## Separate developer image tool
+
+### Desktop preparation tool — ISO only (Windows)
+
+Download **ProjectNexus-Windows** and **ProjectNexus-ImageStudio-Developer** from the latest successful build. Each GitHub artifact download contains a product ZIP and its `.zip.sha256` checksum. Extract the GitHub download, then extract the enclosed product ZIP into a normal folder. Do not run EXEs inside an archive. Keep all DLLs, Qt plugins, scripts and QEMU files together.
+
+Both product ZIPs are created with ZIP64 support, CRC-tested and every entry is verified against a SHA-256 manifest before upload. `MANIFEST.sha256` is inside each product ZIP. Check the downloaded product ZIP in PowerShell with `Get-FileHash .\ProjectNexus-Windows.zip -Algorithm SHA256` (or the Developer ZIP name) and compare against its sibling `.sha256` file. A mismatch means the download is incomplete or changed: download again before extraction.
+
+Open **NexusImageStudio.exe**. The desktop preparation tool now accepts **only a Bliss OS x86-64 PC installer `.iso`**, not ZIPs, OTA payloads or disk imports. It requires Windows PowerShell or PowerShell 7 and Windows Hypervisor Platform enabled.
+
+1. Choose **Install from Bliss OS PC ISO** and select the ISO. An optional publisher SHA-256 can verify it before disk creation.
+2. Choose an empty workspace and the player folder containing `ProjectNexus.exe`.
+3. Leave Bliss UEFI enabled for a UEFI-based release. Start preparation, install Bliss in the VM, and shut it down cleanly.
+4. Confirm the checkpoint to boot the installed disk without the ISO. Verify Android starts; shut down cleanly and confirm publishing.
+5. The fixed output is `images/android-base.qcow2`, with matching UEFI firmware files. No disk renaming is needed. Existing published images are never overwritten.
+6. **Resume retained ISO installation** continues the workspace's `android-install.qcow2`; it does not accept another image format.
+
+**Edit offline image files (WSLg)** remains available for editing a new disk copy. Requires Windows 11 WSLg/Ubuntu with `sudo apt install python3-tk python3-guestfs qemu-utils libguestfs-tools`. Shut down all VMs first, choose a new working copy, mount a supported filesystem and edit files. Close the editor to flush changes. Originals stay unchanged; unsupported/verified/encrypted filesystems may need additional tooling. ISO preparation does not edit the ISO itself, and editing root files may break Android verified boot. OTA extraction utilities remain in the source repository for reference but are not included in the ISO-only desktop package.
+
+### Fullscreen and Aim & Fire placement
+
+**F11** toggles fullscreen, including when the embedded guest has focus. The player title bar, action toolbar and status bar hide in fullscreen and return on exit. F11 is reserved and cannot be used as a game binding. The Windows hook ignores F11 when another application or an app modal dialog has focus; other apps are not given a global fullscreen shortcut.
+
+In Keymap Studio choose **Aim & Fire**, then click the game's fire-button location. A **FIRE** marker appears immediately and can be dragged like other controls; there is no coordinate-entry dialog required to place it. The aim anchor starts centered. **Aim options** configures the toggle key, sensitivity, ADS and Free-Look. Once armed in the player, the toggle key locks/unlocks aim: host cursor capture and the visible crosshair stay centered, while the game fire touch uses your draggable FIRE location. The guest camera-touch anchor may be dragged separately for games requiring a different touch region; it does not move the host cursor-lock center. A fire-location hint remains visible while the active crosshair is shown, even with general hints off.
+
+### PowerShell backend (optional)
 
 Download and extract the **ProjectNexus-ImageStudio-Developer** artifact separately from the **ProjectNexus-Windows** player artifact. Download a legally obtained Bliss OS x86-64 ISO from the [Bliss OS project](https://sourceforge.net/projects/blissos-x86/) and check the exact image's redistribution terms. The ISO is **not bundled**. On a Windows host with WHPX enabled, run the separate tool:
 
@@ -81,34 +106,43 @@ Volume, RAM cleanup and FPS are disabled because they are not implemented. The a
 
 The developer tool is a separate package, but this is not access control: a person who controls their PC and its files can inspect or modify an image with other tools. For stronger integrity, a future signed-image verification design would be needed; it still cannot guarantee control over a hostile host.
 
-## Keymap and mouse
+## Nexus Keymap Studio, HUD overlay and mouse aim
 
-1. Start the VM and open the Android screen or game. Click **Keymap** in the top dock.
-2. Choose a key and action; click to add markers and drag them into place. You can place the **same key at several locations**. Select a marker in the list to remove it.
-3. In **Hold / tap sequence** mode, one marker holds a click until release; multiple markers click in order once, even for a quick keypress. **Repeat while held** repeats the sequence until the key is released. Set the delay in the editor.
-4. Save, check **On** next to Keymap, then click the Android display to focus it. The hook is enabled only on request and releases held clicks on focus loss, disable, or shutdown. The default profile is saved in `%APPDATA%\ProjectNexus\Project Nexus\keymaps\default.json`; older profiles are loaded automatically.
+1. Click **Keymap** in the top dock (works both while Android is running with a live guest screenshot and offline against a 16:9 alignment grid).
+2. Switch or create named **Schemes**, load starter **Templates** (*Battle Royale / FPS*, *MOBA 5v5*, *Action RPG*, or *Blank*), **Import / Export** portable v3 JSON profiles, and use **40-step Undo / Redo**, **2% Snap Grid**, and live **Key Conflict** diagnostics.
+3. Choose a tool from the palette and click/drag on the canvas, using direct **Click-to-Bind** capture for keyboard keys (`A–Z`, `0–9`, `F1–F12`, arrows, numpad, punctuation, `Shift`/`Ctrl`/`Alt`/`Tab`/`Enter`/`Space`), mouse buttons (`Right Click`, `Middle Click`, `Mouse 4/5`), and `Wheel Up` / `Wheel Down`:
+   - **Tap / Burst / Repeat**: Hold-or-sequential tap chains, **Burst N×** rapid taps on press (`2..50` taps), or **Turbo Repeat** while held (`25..5000 ms`).
+   - **WASD 8-Way D-Pad**: Smooth continuous virtual thumbstick drag without dropping contact across cardinal/diagonal transitions, plus optional **Sprint** and **Walk** modifier radius scaling.
+   - **Directional Swipe**: Smooth interpolated two-point drag (`25..5000 ms`) with optional **Hold at end** while the key remains held.
+   - **Pinch Zoom**: Symmetric two-finger expand/contract gesture (requires multi-touch mode) with optional modifier chord (e.g., `Ctrl + Wheel Up/Down`).
+   - **MOBA Skill Pad**: Directional skill-shot pad mapping live host cursor angle around a hero origin in **Quick Cast**, **Manual Aim (cast on release)**, or **Auto Cast** modes, plus an optional **Cancel Skill** key and target coordinate.
+   - **Macro Script**: Text-authored multi-step automation (`tap`, `wait`, `swipe`, `down`, `move`, `up`, `multipress`) with live syntax/coordinate validation and interactive canvas coordinate picking.
+4. Save, check **On** next to **Keymap**, and toggle **Hints** in the dock to display or hide the frameless click-through Win32 key-hint overlay (`KeymapOverlay`) over the guest viewport. Profiles are saved under `%APPDATA%\ProjectNexus\Project Nexus\keymaps\`; legacy v1/v2 profiles load automatically and upgrade cleanly to v3.
 
-In standard mode, actions use one virtual mouse pointer, and other mapped keys are ignored while a sequence runs. In experimental multi-touch mode, different mapped keys can use separate slots concurrently; multiple markers assigned to one key remain sequential. Timing is best-effort, not a latency guarantee. If the screenshot is blank or positions are inaccurate, bring the display into view and verify coordinates after changing orientation or size.
+In standard single-pointer mode, actions share one virtual USB tablet pointer (two-finger pinch-zoom requires multi-touch). In experimental multi-touch mode (**Settings → Preferences → Experimental multi-touch keymapping**), `KeymapEngine` dynamically allocates across QEMU's 10-slot `virtio-multitouch-pci` device while reserving slots `0..2` for `AimController` when armed. Timing is best-effort, not a latency guarantee.
 
-### Experimental aim & fire
+### Aim, Pan, Shoot, ADS & Free-Look
 
-In **Keymap → Configure aim & fire**, set the camera area and fire-button coordinates as percentages of the guest display and adjust sensitivity. Save. Click **Aim & fire** in the dock to arm it, click the Android display, then press **F8**. Move the physical mouse to send a camera drag; left mouse button sends a press at the fire position. Press **F8** again to release, or use **Disarm aim**. Losing focus, resizing the window, QMP failure, or closing the VM also releases the cursor and pointer.
+In **Keymap → Configure Aim…** (or **Aim & fire** in the dock), configure:
+- **Start / Stop key** (default `F8`) and **Hold-to-Suspend key** (default `Tab`, temporarily freeing the host cursor for inventory/looting while releasing on key-up).
+- **Camera anchor** (`10%..90%`) and independent **Horizontal (X)** and **Vertical (Y)** mouse sensitivities (`0.05..10.0`) with automatic invisible touch recentering near viewport edges.
+- **Left-Click Fire** target coordinates, **Right-Click ADS Scope** (Hold or Tap-Toggle), **Free-Look Eye** camera key (`Alt` by default), and customizable **On-Screen Crosshair** reticle (`Cross + Dot`, `Cross`, `Dot`, or `Circle`).
 
-This is experimental and built independently, not BlueStacks parity. Enable **Settings → Preferences → Experimental multi-touch keymapping**, save and restart the player to send separate QEMU virtio touchscreen contacts for aim, fire and up to eight concurrent mapped keys. QEMU accepting the commands does not prove the Bliss guest recognizes the device; Android, game input, Windows hooks and performance remain unverified. In standard mode aiming pauses during firing and mapped keyboard taps are disabled while aim is armed. Aim restarts its drag at screen edges in both modes. There are no true WASD joystick/d-pad, ADS, MOBA, joystick or full macro controls yet.
+Click **Aim & fire** in the dock to arm it, focus the Android display, and press your Start/Stop key (`F8`). Losing focus, minimizing/resizing the window, opening a modal dialog, QMP failure, or stopping the VM immediately releases mouse capture and all active touch/pointer contacts. QEMU accepting virtio multitouch and pointer events does not by itself prove Bliss/Android guest or game compatibility; real-PC testing is still required.
 
-**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it. Aim uses its own temporary capture and F8 release. The Windows hooks and clipping require real-PC testing.
+**Lock** is separate: it only confines the cursor; **Ctrl+Alt+L** releases it.
 
 ## Scope and limitations
 
-- QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
+- In the default hardware mode, QEMU is started with WHPX, QEMU's default CPU model, and a basic `std` VGA device for compatibility. The `host` CPU model is deliberately not required because support varies between WHPX builds. This is **not** Direct3D passthrough, ANGLE integration, or a gaming-grade accelerated graphics path. Compatibility and performance depend on QEMU and the chosen image; no boot-time, FPS, or input-latency target has been verified.
 - ARM-only APKs need an image with a compatible, legally obtained native bridge and matching Android configuration. Copying a library or setting generic properties alone is not sufficient. No bridge is configured here.
-- The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU virtio multitouch device and separate contact slots. Bliss guest support and real game behavior are **not verified**. There is no d-pad/joystick mapping, host-to-guest touch daemon, general-purpose macro recorder, or multi-instance UI yet.
+- The keymapper uses QMP. Standard mode uses a single USB tablet pointer; optional experimental mode adds a QEMU 10-slot virtio multitouch device (`slots 0..9`). Bliss guest support and real game behavior are **not verified**. There is no live event-recording macro recorder, host-to-guest touch daemon, or multi-instance UI yet.
 - One process owns one disk at a time. Do not start another VM using the same QCOW2 file. Back up important images and always shut down cleanly.
 - On WHPX failure, verify the Windows feature and reboot, BIOS virtualization, host architecture, and your QEMU build. Guest boot problems can also result from incompatible images or installer/boot choices.
 
 ## Rust migration
 
-This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the small C ABI in `src/rustcore.h`. **Keymap validation and experimental aim-coordinate calculations run in Rust**; existing JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make the single-pointer input multitouch.
+This is an incremental migration, not a complete Rust player. `rust/nexus-core` is compiled as a static library and called by the existing Qt application through the C ABI in `src/rustcore.h`. **Key/mouse binding validation, tap/burst/repeat invariants, 8-way D-pad vector math, swipe interpolation, symmetric pinch-zoom geometry, MOBA cursor-angle projection, macro script step validation, and asymmetric X/Y aim-coordinate calculations run in Rust**; existing v1/v2/v3 JSON profile versions remain supported. The Qt UI, Windows hooks, QMP transport, disk management, and developer tools are still C++/PowerShell/Python. QEMU remains the bundled source-built C engine. No additional Rust runtime installation is required for end users. The Rust crate has no third-party crate dependencies; the standard library has its own license obligations. Moving this logic to Rust does not itself prove better performance or make single-pointer input multitouch.
 
 ## GitHub Actions tests
 
@@ -127,3 +161,244 @@ QEMU is open source, primarily GPL version 2, and can be redistributed under its
 Project Nexus builds a **modified QEMU 10.2.0**, preserving QEMU's name, attribution and licensing. The first small engine patch is in [`packaging/qemu-patches/0001-sdl2-batch-present.patch`](packaging/qemu-patches/0001-sdl2-batch-present.patch). In the SDL 2D renderer it still uploads each changed rectangle, but batches screen presents that occur during one synchronous hardware refresh. Updates outside that refresh still present immediately. This may reduce redundant rendering work when VGA emits multiple dirty rectangles; it is not a new graphics driver, FPS limiter, or proof of improved Android game performance.
 
 GitHub Actions exercises the patch against a tiny VGA workload on the Windows build with SDL's dummy driver and reports rectangle uploads and screen presents. This is a regression and work-count check—not a real-world CPU, frame-time, boot-time or Android benchmark. A before/after comparison on the same real Windows machine and Android workload is needed before claiming any speedup. The bundled source archive contains the patched source and the separate patch, and the base revision is pinned in the workflow.
+
+## Rust runtime migration and performance measurement
+
+The native player now obtains its complete QEMU argument plan from the Rust runtime (`runtime.rs`) over a size-checked C ABI. Rust owns launch-resource validation, loopback-only ADB configuration, multitouch/UEFI device selection and path encoding. On Windows, Rust probes WHPX hypervisor capability before launch; the player refuses to silently fall back to software CPU emulation. Capability presence is not a guarantee that a specific VM starts. QEMU still owns virtual CPU/device execution, Qt/C++ still owns UI/process lifecycle/input hooks, and the file editor is retained. This is a migration step, not a Rust-native replacement for QEMU.
+
+Run `cargo run --locked --release --manifest-path rust/nexus-core/Cargo.toml --bin runtime-bench` for the reproducible launch-planner microbenchmark. CI records this alongside Rust tests and a C++/Rust JSON/ABI integration test. It measures configuration-construction cost only, **not game FPS, end-to-end latency, boot performance or superiority to another emulator**. A fastest-emulator claim requires reproducible real-game measurements on matched hardware/settings; none is made here. GPU acceleration and guest driver compatibility remain major performance work.
+
+## Direct HUD binding and single title bar
+
+In Keymap Studio, click an empty canvas location with Tap or Select active. A dashed **Press a key…** marker waits for the next keyboard key, mouse button (including left click), or wheel direction on the canvas. Escape or loss of canvas focus cancels it. Pending markers are never serialized; only successful valid captures enter the profile and undo history. Existing controls remain draggable. F11 and system-reserved keys are not game bindings. Left-click bindings conflict with Aim Fire and are reported by the scheme diagnostics.
+
+The player's dock tools now live in its single draggable custom title bar, alongside window controls. The secondary header, visible Start/Stop/Retry controls and bottom status bar are removed from the player layout; automatic startup and graceful window-close behavior remain. Errors still use dialogs; fullscreen hides the title bar and F11 restores it. The browser preview demonstrates the title bar and click-to-bind workflow but does not run Android; its fullscreen action is a simulated layout state.
+
+### Missing `kvmvapic.bin` / WHPX installation failures
+
+The player and Developer packages require `qemu/share/qemu/kvmvapic.bin` in addition to the BIOS and VGA ROM. Older bundles omitted the virtual-APIC ROM. New builds supply it from the pinned QEMU revision, including when reusing a cached engine artifact, and ZIP packaging checks the ROM is present and nonempty. The installer checks for missing companion ROMs before disk creation when the bundled BIOS is detected; the player validates all required PC ROMs before startup.
+
+A subsequent `WHPX: Failed to emulate MMIO access` or virtual-processor crash can be a separate host/guest compatibility issue; adding a missing ROM does not prove this is resolved. Preserve Windows build, CPU model, exact ISO version/hash and the full log if it persists. Do not publish a disk from a failed installation. Resume is appropriate only for an installed disk; when installation never started, use Install with a fresh workspace after correcting the engine package. Never overwrite an existing working disk or disable host security protections to guess at a fix.
+
+### Workaround for WHPX MMIO / virtual-processor crashes
+
+`Windows Hypervisor Platform accelerator is operational` followed by `WHPX: Failed to emulate MMIO access` means enabling virtualization again is not a confirmed fix. The host accelerated execution path is failing; the exact cause depends on Windows, CPU, QEMU and guest. There is now an **explicit**, slower bypass:
+
+1. Extract the updated Developer and player packages into fresh folders; preserve prior images/workspaces.
+2. In Image Studio select **CPU execution → Software compatibility (TCG)**. Choose Install, the PC ISO and a fresh workspace. This passes `-accel tcg,thread=multi -cpu max` to BOTH installer and verification boots and does not query/initialize WHPX.
+3. Complete installation and verification normally. Software emulation can take much longer. It is not a gaming-performance fix and may still fail with an incompatible guest.
+4. On successful publishing, `images/acceleration.txt` records the explicitly chosen mode. The player uses this mode unless overridden in **Settings → Performance → CPU execution**. The default Settings choice is **Use prepared image's selection**. Software-mode player windows display a slow-software warning in their title. Restart after changing the setting.
+
+No automatic WHPX retry/fallback takes place; no existing disk is modified by a hidden retry. To try hardware acceleration later choose WHPX in Settings, with the understanding the original host crash may persist. Firmware smoke tests in CI exercise real bundled QEMU/Q35/UEFI under multi-thread TCG with the `max` CPU; they do NOT install your Bliss ISO or validate WHPX on your machine. Report Windows build (`winver`), CPU model and the exact ISO filename/hash with the complete log if either mode fails. Resume is only for an installed disk; it does not rerun the ISO installer on a blank/partially installed disk.
+
+## Image Studio easy setup and stable Browse dialogs
+
+The default desktop screen now asks for only **1. Bliss PC ISO**, **2. extracted emulator folder**, then **3. Prepare Android disk**. Workspace names are generated automatically for new installs. The last existing ISO/player paths and CPU execution choice are remembered; a nearby player folder is detected when possible. Compatibility TCG is the default for a new Image Studio configuration, clearly labelled slow; previously saved execution choices are retained.
+
+**Advanced options** contains Resume, workspace selection, optional ISO checksum, firmware mode and hardware/software execution. **Show technical log** reveals diagnostics; failures also reveal the log. **I finished this step** confirms a clean guest shutdown before the next stage. Both bundled QEMU tools are executable-self-checked before disk creation/boot, so blocked or incomplete bundles fail early with an actionable error. Actual Bliss partitioning/installation and boot verification remain guided and version-dependent; this does not blindly auto-format or auto-approve an installation.
+
+Browse uses a Qt-owned ISO/folder picker. File/message dialogs are excluded from the global borderless-window filter, preventing their flags/handles from being changed during Show (which could immediately cancel a picker). Regression tests check file selection, folder cancellation and persistence of the visible picker with the chrome filter active. The offline file editor remains available and retains its WSLg dependencies.
+
+### Compact player and Android display controls
+
+The player's single title bar is now 36 logical pixels high (previously 56),
+with compact dock controls and the same move/maximize/minimize/close behavior.
+Display settings provide landscape/portrait resolution presets and DPI overrides,
+plus Android-default reset. **Apply to running Android** is separate from Save:
+it changes the guest immediately using `wm size` and `wm density` through ADB.
+Android retains these overrides. Local ADB forwarding must have been enabled
+before launch; the guest must support and authorize TCP ADB, and trusted Android
+platform-tools must be supplied next to the player or on PATH. Operations are
+asynchronous, timed, and report errors/partial application rather than claiming
+success. Apply both Android defaults to recover from an unsuitable configuration.
+Resolution changes may require adjusting keymaps.
+
+This is still QEMU standard-VGA graphics with Rust runtime/input components, not
+a completed Rust-native GPU engine. Vulkan, DirectX, ASTC and GPU passthrough
+remain unavailable; resolution/DPI controls do not add hardware rendering.
+
+### Player diagnostics
+
+Settings → Diagnostics provides read-only non-empty package-file checks, UEFI
+pair validation, ADB executable discovery, configured engine/resources and a
+refreshable current-session log. Copy explicitly places the report on your local
+clipboard; nothing is uploaded. Review paths/usernames before sharing. QEMU stderr
+is drained while running and bounded (16 KB error tail, 64 KB session history),
+so long-running guests cannot accumulate unlimited error output. The report does
+not prove successful Android boot, ADB authorization or valid ISO contents.
+
+Use the single **Emulator preview** on port 4173. The preview reloads automatically
+when its HTML or wallpaper changes; it does not inspect a real Android guest.
+
+### Automatic audio output and APK drops
+
+The player always adds Intel HDA with an output-only codec and DirectSound on
+Windows' default playback device. There is no end-user sound enable/disable switch;
+legacy `audioOutput` preferences are ignored. A compatible Android HDA driver and
+a working Windows audio device are required; microphone input and per-device
+routing are not implemented. Rust flag 16 selects audio; valid mask is 31. CI
+checks backend/device availability, not audible Android playback.
+
+Drop one local, non-empty `.apk` onto the player to use the existing confirmed ADB
+installation flow. Remote URLs, directories and multi-file drops are rejected.
+Nothing installs without confirmation. Android must already be running with
+forwarded, authorized TCP ADB and platform-tools available. File extension checks
+are not malware scanning: install only packages you trust. Browser preview drops
+are simulations; files are not read or uploaded.
+
+
+### Prepared Android appliance and cleanup
+
+Developers install/customize Android in Image Studio, shut it down cleanly, verify
+boot without the ISO and publish it as `images/android-base.qcow2` together with
+any prepared UEFI files. Preserve that complete images folder when distributing
+the player. Branding/debloating must be performed in the guest or offline file
+editor before publishing; Nexus does not automatically customize Android.
+Ensure the guest and included apps are licensed for distribution.
+
+Users open ProjectNexus.exe, not the installer. A per-user copy-on-write disk
+protects the supplied base and preserves subsequent user changes. The startup
+screen animates while preparing the VM and connecting its display, then shows
+Android's own boot screen. Display attachment is **not** Android boot completion;
+there is no invented boot percentage. Firmware, driver, hardware-acceleration
+and prepared-image compatibility still need testing.
+
+Network uses user-mode NAT and virtio-net by default (no inbound LAN exposure).
+Guest driver, DHCP/DNS, host firewall and a working host internet connection are
+required. This does not imply every game/network protocol is supported.
+
+The ♻ toolbar action asks confirmation, uses authorized ADB `am kill-all` for
+eligible guest background processes, then requests a Windows working-set trim
+for Nexus and its owned QEMU process through Rust. It does not force-stop every
+app, erase data, reduce configured RAM, reclaim other PC apps' memory, or measure
+bytes saved. Trimming may cause page faults/stutter; it is manual, not automatic.
+Missing ADB/authorization or command failure is reported without claiming success.
+
+Real guest/game FPS, a movable measured-FPS HUD, accelerated graphics and a
+lower-latency raw-input transport remain unfinished. Do not substitute Qt paint
+rate or a timer count for game FPS. No zero-latency or fastest-emulator claim is made.
+
+### Experimental raw mouse and input batching
+
+Settings → Game settings provides an opt-in relative raw-mouse receiver and
+4/8/16 ms aim-movement batching intervals. Save, release aim, and activate it again
+to apply. Compatibility cursor input and 16 ms batching remain defaults pending
+real-game validation. Arm/disarm aim from the Keymap menu; configure bindings and
+independent X/Y sensitivity in Keymap Studio. Raw device counts may need different
+sensitivity from cursor deltas. Absolute tablets/touch devices are not supported
+by this relative-mouse mode.
+
+The raw receiver preserves other process-local registrations, releases its own
+registration on capture stop, and accepts movement only while the guest is focused
+and aim is active (not suspended). Existing mouse hooks still handle button capture
+and cursor confinement. Raw mode does not silently fall back on registration error.
+The Rust core owns overflow-safe movement accumulation and supported batching
+interval validation. A precise Qt timer schedules batches; OS scheduling and QMP
+transport can still delay them. Lower intervals increase host/monitor work.
+
+Diagnostics reports movement packets, sent movement batches and maximum observed
+host batching wait. These are **not** hardware latency, input-to-photon latency,
+game FPS, or a performance guarantee. No fake FPS overlay is displayed. GPU
+acceleration and representative game benchmarks remain required milestones.
+
+### Experimental VirtIO display path for corrupted VGA output
+
+Image Studio → Advanced options → Display device now offers Standard VGA and
+VirtIO VGA. Use **Resume with the exact retained workspace** to test a different
+virtual display without reinstalling/formatting the disk. Close the previous VM
+first; preserve a backup after shutdown. On a new boot, do not reapply temporary
+`nomodeset HWACCEL=0` edits when testing the VirtIO driver. Publishing still
+requires a readable Android boot and clean shutdown. A changing logo alone is
+not successful verification.
+
+The chosen device is retained in `images/graphics.txt`; the player inherits it
+unless Settings → Graphics overrides it (restart required). Only `std` and
+`virtio` are accepted; absent/invalid prepared values fall back to Standard VGA.
+Rust flag 32 selects `virtio-vga,id=nexus_display`, with VGA disabled to avoid
+creating two display devices; touch targets the same display ID. Valid flag mask
+is now 63. The required VirtIO VGA ROM is included and checked in portable ZIPs.
+
+This is **not** virgl, Vulkan, DirectX or GPU passthrough. It does not promise a fix
+for striped RGB output, frame-buffer stride/format problems or every Bliss build.
+CI tests device presence and a visible UEFI firmware screendump on both devices,
+not Android colors, compositor correctness or game FPS. Test results from the
+actual guest are still needed before changing defaults.
+
+### Automatic resource budget and host GPU inventory
+
+New player configurations without saved CPU/RAM allocations use a conservative
+Rust-owned automatic budget: half the logical threads (1–8 CPUs), approximately
+one quarter of physical RAM (512–8192 MB). This reserves host headroom, not a
+benchmark-derived optimum. Unknown host RAM uses a 2048 MB fallback. A low-memory
+host can remain below the Android image's requirements; automatic allocation
+cannot make an underpowered host suitable for gaming. Existing explicit values
+remain manual. Settings → Performance can switch between modes; restart applies
+resource changes. Saved TCG/WHPX and prepared-image choices are not overwritten.
+
+Settings → Graphics and refreshed Diagnostics enumerate DXGI adapters with names,
+dedicated VRAM and shared-memory capacities. These are not live usage figures.
+Window GPU preference remains Windows-managed/automatic. There is **no accelerated
+Android GPU renderer or integrated/dedicated guest GPU selection** yet. Detection
+is not activation; VirtIO VGA is scanout, not GPU passthrough/virgl/gfxstream.
+A backend must be integrated and validated with compatible guest drivers before
+auto adapter selection can become an Android rendering feature.
+
+Image Studio installer and verification launches now also choose CPU/RAM budgets
+from the host unless `launch.ps1 -Cpus` / `-MemoryMB` were explicitly supplied.
+This uses the same conservative policy as the Rust player, implemented separately
+in PowerShell for the standalone developer workflow. TCG/WHPX and graphics remain
+explicit: no silent fallback, disk conversion, or guessed GPU acceleration.
+Each launch writes a unique JSON file under the disk's `diagnostics` directory:
+Windows/CPU/GPU driver inventory, actual QEMU arguments, allocation source, and
+exit code after QEMU exits. These reports cannot prove Android boot success or
+capture compositor pixels; review paths and host identifiers before sharing.
+When reporting corrupted output or a WHPX failure, include the report and a
+screenshot, plus any QEMU error shown in the Studio log. No reinstall is needed
+to collect a report from Resume.
+
+### Real Android investigation (separate from firmware smoke tests)
+
+`.github/workflows/android-boot.yml` downloads the exact Bliss 16.9.7 ISO used
+in the reported failure, checks its recorded SHA-256 fingerprint, extracts its
+own live-boot recipe, and runs independent Standard/VirtIO display probes on
+Linux TCG. The fingerprint identifies the diagnostic fixture; it is not an
+independently authenticated publisher signature. No VM disk or personal data is
+uploaded. Evidence artifacts contain serial output, screenshots, launch arguments
+and a structured result. Probe parser tests reject unsupported recipes rather
+than inventing boot parameters. Each boot has a 12-minute observation limit.
+
+Framework detection requires three successive ADB `sys.boot_completed=1` replies.
+The readiness gate additionally requires SurfaceFlinger running, boot animation
+stopped, and no captured fatal renderer/compositor/setup-wizard signal. A final
+screenshot is captured after these checks; passing still requires visual review. If ADB is
+unavailable, the result remains unverified even if a desktop is visible; inspect
+the screenshots and logs. Boot completion does not prove correct colors, game
+performance, installed-disk reliability, Windows WHPX or compatibility on the
+user's physical PC. Direct kernel boot uses the ISO's own kernel/initrd and live
+arguments but bypasses its firmware/GRUB menu. This workflow investigates guest
+startup; it does not yet automate installation or certify an image for release.
+
+The Phase 1 guest-image build and publication gates are documented in
+[`docs/nexus-guest-contract.md`](docs/nexus-guest-contract.md). Current CI compares
+CPU-feature masking and DRM/GBM guest-renderer hypotheses; these do not change
+Player defaults or establish acceleration. No certified Nexus guest is uploaded yet; an explicitly experimental upstream guest download is recorded in docs/android-validation.md.
+
+Experimental guest-disk construction now runs in `guest-candidate.yml`. It creates
+only an isolated virtual disk, copies the upstream Android payload into a fixed
+layout, adds a standalone EFI GRUB loader, and records a compatibility manifest.
+It then attempts real UEFI disk-only boot without the ISO. **This is not an Android
+source build, a validated Nexus image, a performance improvement, or a replacement
+for the current Image Studio workflow.** Candidate images remain experimental. A passing boot-readiness gate now retains
+a pristine-base download, firmware, launcher and checksums as a seven-day artifact.
+It is not a production release or a Windows compatibility certificate.
+
+### Experimental OpenGL backend integration
+
+The Player's experimental OpenGL/VirGL selection now requests an actual
+`virtio-vga-gl` device and SDL GL context from a newly GL-enabled Windows QEMU
+build; missing device support is a launch error, not silent software fallback.
+Windows compile/native/package tests passed. A Linux diagnostic guest reported
+OpenGL ES 3.2 through VirGL backed by host software LLVMpipe, but its screenshot
+gate failed and a stricter repeat boot timed out. **This is not reliable or
+Windows-Android-validated acceleration. DirectX/Vulkan are not implemented.**
+See [graphics-backends.md](docs/graphics-backends.md) for exact evidence and limits.

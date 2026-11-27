@@ -1,0 +1,41 @@
+name: Verify downloadable guest ZIP
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/verify-guest-zip.yml
+permissions:
+  actions: read
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Fetch exactly the verified artifact and verify ZIP CRCs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${{ github.repository }}/actions/runs/45648355363 --jq .conclusion | grep -x success
+          gh api repos/${{ github.repository }}/actions/artifacts/15040221057/zip > Nexus-Android11-FOSS-Candidate-c032908.zip
+          python3 - <<'PY'
+          import zipfile, pathlib, hashlib
+          path=pathlib.Path('Nexus-Android11-FOSS-Candidate-c032908.zip')
+          assert path.stat().st_size==2105727720, path.stat().st_size
+          with zipfile.ZipFile(path) as archive:
+              assert archive.testzip() is None
+              print('::notice title=Image bytes::'+str(archive.getinfo('images/android-base.qcow2').file_size))
+              names=archive.namelist()
+              assert 'images/android-base.qcow2' in names and 'SHA256SUMS.txt' in names
+              for line in archive.read('SHA256SUMS.txt').decode().splitlines():
+                  expected,name=line.split('  ',1)
+                  h=hashlib.sha256()
+                  with archive.open(name) as content:
+                      for block in iter(lambda:content.read(4194304),b''): h.update(block)
+                  assert h.hexdigest()==expected,name
+          h=hashlib.sha256()
+          with path.open('rb') as content:
+              for block in iter(lambda:content.read(4194304),b''): h.update(block)
+          print('::notice title=Verified ZIP SHA256::'+h.hexdigest())
+          PY

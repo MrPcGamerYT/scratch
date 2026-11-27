@@ -1,6 +1,29 @@
 name: Emulator CI
 on:
   push:
+    paths-ignore:
+      - 'rust/nexus-engine/**'
+      - 'tests/native_engine_cli_test.py'
+      - 'tests/build_native_engine.py'
+      - 'tests/whp_sdk_abi.cpp'
+      - '.github/workflows/native-engine.yml'
+      - '.github/workflows/native-android.yml'
+      - '.github/workflows/native-android-system.yml'
+      - 'tests/native_android_*.py'
+      - 'tests/native_graphics*.py'
+      - 'tests/native_device_checkpoint.py'
+      - '.github/workflows/native-graphics.yml'
+      - '.github/workflows/native-apk.yml'
+      - '.github/workflows/native-kernel.yml'
+      - 'tests/native_kernel_checkpoint.py'
+      - 'tests/native_initramfs.py'
+      - 'tests/native_initramfs_tests.py'
+      - 'tests/native_display_checkpoint.py'
+      - 'docs/native-*.md'
+      - 'docs/engine-progress-report.md'
+      - 'docs/native-kernel-loader.md'
+      - 'docs/native-engine-roadmap.md'
+      - 'docs/zlag-image-format.md'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -8,6 +31,12 @@ on:
         description: 'Reuse QEMU-source-build artifact from this run ID (optional)'
         required: false
         type: string
+
+      engine_benchmark:
+        description: 'Compare reused candidate engine with the previous baseline'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   qemu-build:
@@ -37,7 +66,7 @@ jobs:
           set -o pipefail
           if ! pacman --noconfirm --needed -S base-devel git \
             mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-glib2 mingw-w64-ucrt-x86_64-pixman \
-            mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-libslirp mingw-w64-ucrt-x86_64-pkgconf \
+            mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-virglrenderer mingw-w64-ucrt-x86_64-libepoxy mingw-w64-ucrt-x86_64-libslirp mingw-w64-ucrt-x86_64-pkgconf \
             mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-python-pip mingw-w64-ucrt-x86_64-python-packaging \
             mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja 2>&1 | tee "$RUNNER_TEMP/deps.log"; then
             tail -30 "$RUNNER_TEMP/deps.log" | while IFS= read -r line; do echo "::error::$line"; done
@@ -71,6 +100,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - name: OTA payload extraction tests
+        run: python tests/payload_tests.py
       - name: Rust core unit tests
         shell: pwsh
         run: |
@@ -85,6 +116,8 @@ jobs:
             }
             exit $code
           }
+      - name: Rust launch policy microbenchmark (not game FPS)
+        run: cargo run --locked --release --manifest-path rust/nexus-core/Cargo.toml --bin runtime-bench
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
@@ -105,8 +138,18 @@ jobs:
             }
             exit $code
           }
-      - name: Download integrity tests
-        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Native unit and integration tests
+        shell: pwsh
+        run: |
+          # Managed-disk integration runs below, after the real QEMU artifact is installed.
+          $output = & ctest --test-dir build -C Release --output-on-failure -E '^managed_disk_tests$' 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($code -ne 0) {
+            $text = ($output | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$text"
+            exit $code
+          }
       - name: PowerShell syntax and launcher contract tests
         shell: pwsh
         run: |
@@ -139,34 +182,63 @@ jobs:
             Write-Output "::error::$text"
             exit $code
           }
+      - name: Image Studio ISO-only workflow contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $output = & pwsh -NoProfile -File ./tests/archive_studio_tests.ps1 -Stub "$PWD/build/Release/qemu_stub.exe" 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $text = ($output | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$text"
+            exit $code
+          }
       - uses: actions/download-artifact@v4
         with:
           name: QEMU-source-build
           path: package/qemu
           run-id: ${{ inputs.qemu_run_id || github.run_id }}
           github-token: ${{ github.token }}
+      - name: Brand embedded engine including reused artifacts
+        shell: pwsh
+        run: |
+          python packaging/brand_engine.py package/qemu
+          if ($LASTEXITCODE -ne 0) { throw 'Engine branding failed.' }
+          $engine = Get-Item package/qemu/bin/NexusEngine.exe
+          if ($engine.VersionInfo.FileDescription -ne 'Nexus Engine') { throw 'Engine file description mismatch.' }
+          if ($engine.VersionInfo.ProductName -ne 'Nexus Engine (QEMU-based)') { throw 'Engine product attribution mismatch.' }
+          if (Test-Path package/qemu/bin/qemu-system-x86_64.exe) { throw 'Unbranded runtime executable remains.' }
       - uses: actions/checkout@v4
         with:
           repository: qemu/qemu
           ref: 698104725efad4b29079d857dfdebbd804e34c99
           path: uefi-firmware-source
-      - name: Add upstream UEFI firmware and notices
+      - name: Add required upstream PC ROMs, UEFI firmware and notices
         shell: pwsh
         run: |
           python -c "import bz2,pathlib; s=pathlib.Path('uefi-firmware-source/pc-bios'); d=pathlib.Path('package/qemu/share/qemu'); [(d / n).write_bytes(bz2.decompress((s / (n + '.bz2')).read_bytes())) for n in ('edk2-x86_64-code.fd','edk2-i386-vars.fd')]"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Cached QEMU artifacts from older builds did not include this ROM.
+          Copy-Item uefi-firmware-source/pc-bios/kvmvapic.bin package/qemu/share/qemu/
+          Copy-Item uefi-firmware-source/pc-bios/vgabios-virtio.bin package/qemu/share/qemu/
           Copy-Item uefi-firmware-source/pc-bios/edk2-licenses.txt package/qemu/licenses/
           Copy-Item packaging/THIRD-PARTY.md package/qemu/licenses/
       - name: Test bundled QEMU without MSYS2 installed
         shell: pwsh
         run: |
           try {
-            $qemu = "$PWD/package/qemu/bin/qemu-system-x86_64.exe"
+            $qemu = "$PWD/package/qemu/bin/NexusEngine.exe"
             $img = "$PWD/package/qemu/bin/qemu-img.exe"
             $accels = & $qemu -accel help 2>&1
             if ($LASTEXITCODE -ne 0 -or ($accels -join "`n") -notmatch 'whpx') { throw "Bundled QEMU missing WHPX, exit $LASTEXITCODE : $accels" }
             $displays = & $qemu -display help 2>&1
             if ($LASTEXITCODE -ne 0 -or ($displays -join "`n") -notmatch 'sdl') { throw "Bundled QEMU missing SDL, exit $LASTEXITCODE : $displays" }
+            $audio = & $qemu -audiodev help 2>&1
+            if ($LASTEXITCODE -ne 0 -or ($audio -join "`n") -notmatch 'dsound') { throw "Bundled QEMU missing DirectSound: $audio" }
+            $devices = & $qemu -device help 2>&1
+            if (($devices -join "`n") -notmatch 'virtio-vga') { throw "Bundled QEMU missing virtio-vga" }
+            if ($LASTEXITCODE -ne 0 -or ($devices -join "`n") -notmatch 'hda-output' -or ($devices -join "`n") -notmatch 'ich9-intel-hda') { throw "Bundled QEMU missing HDA output devices" }
             $env:QEMU_SYSTEM = $qemu
             $env:QEMU_IMG = $img
             $env:QEMU_DATA = "$PWD/package/qemu/share/qemu"
@@ -180,6 +252,12 @@ jobs:
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
             if ($code -ne 0) { throw "UEFI smoke failed: $output" }
+            $env:QEMU_TEST_GRAPHICS = 'virtio'
+            $output = & python tests/uefi_smoke.py 2>&1
+            $code = $LASTEXITCODE
+            Remove-Item Env:QEMU_TEST_GRAPHICS
+            $output | ForEach-Object { Write-Host $_ }
+            if ($code -ne 0) { throw "VirtIO UEFI display smoke failed: $output" }
             $output = & python tests/qmp_smoke.py 2>&1
             $code = $LASTEXITCODE
             $output | ForEach-Object { Write-Host $_ }
@@ -194,28 +272,60 @@ jobs:
             Write-Output "::error::$text"
             exit 1
           }
+      - name: Fetch isolated previous engine for reference comparison
+        if: ${{ inputs.qemu_run_id == '' || inputs.engine_benchmark == true }}
+        uses: actions/download-artifact@v4
+        with:
+          name: QEMU-source-build
+          path: baseline-qemu
+          run-id: '45580334830'
+          github-token: ${{ github.token }}
+      - name: Compare real TCG engines without Android FPS claims
+        if: ${{ inputs.qemu_run_id == '' || inputs.engine_benchmark == true }}
+        shell: pwsh
+        run: |
+          python tests/tcg_engine_benchmark.py --baseline baseline-qemu --candidate package/qemu
+          if ($LASTEXITCODE -ne 0) { throw 'Actual TCG engine comparison failed.' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && (inputs.qemu_run_id == '' || inputs.engine_benchmark == true) }}
+        with:
+          name: Nexus-engine-reference-evidence
+          path: |
+            tcg-engine-results.json
+            package/qemu/ENGINE-BUILD.txt
+          if-no-files-found: warn
       - name: Package shell
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item build/Release/ProjectNexus.exe package/
           windeployqt --release package/ProjectNexus.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Player Qt deployment failed.' }
           Copy-Item README.md package/
           New-Item -ItemType Directory -Path image-studio -Force | Out-Null
           Copy-Item -Recurse package/qemu image-studio/qemu
           Copy-Item scripts/launch.ps1 image-studio/
           Copy-Item scripts/prepare-android.ps1 image-studio/
-          Copy-Item -Recurse image-studio-tools image-studio/offline-files
+          Copy-Item scripts/image-studio.ps1 image-studio/
+          Copy-Item build/Release/NexusImageStudio.exe image-studio/
+          windeployqt --release image-studio/NexusImageStudio.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Image Studio Qt deployment failed.' }
+          New-Item -ItemType Directory -Path image-studio/offline-files -Force | Out-Null
+          Copy-Item image-studio-tools/offline_editor.py,image-studio-tools/image_workspace.py image-studio/offline-files/
           Copy-Item README.md image-studio/
+      - name: Create and verify portable ZIP downloads
+        run: python packaging/package_release.py package image-studio downloads
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-Windows
-          path: package/
+          compression-level: 0
+          path: downloads/player/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: ProjectNexus-ImageStudio-Developer
-          path: image-studio/
+          compression-level: 0
+          path: downloads/studio/
           if-no-files-found: error
   offline-files:
     name: Offline image editor (Linux libguestfs)

@@ -58,9 +58,11 @@ try:
     command('input-send-event', {'device': 'nexus_display', 'events': [mtt('update', 0), mtt('data', 0, 'x', 16000), mtt('data', 0, 'y', 17000)]})
     command('input-send-event', {'device': 'nexus_display', 'events': [mtt('end', 1, tracking=-1)]})
     command('input-send-event', {'device': 'nexus_display', 'events': [mtt('end', 0, tracking=-1), touch_off]})
+    # ACPI request acceptance is not proof an Android guest will honor it.
+    command('system_powerdown')
     command('quit')
     p.wait(timeout=10)
-    print('QMP handshake and single-pointer and two-slot QMP commands accepted (guest input not verified).')
+    print('QMP handshake, pointer, two-slot and ACPI shutdown commands accepted (guest delivery/shutdown not verified).')
 finally:
     if p.poll() is None:
         p.kill(); p.wait()

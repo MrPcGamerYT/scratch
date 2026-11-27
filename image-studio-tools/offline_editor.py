@@ -48,7 +48,7 @@ class Editor(tk.Tk):
         if self.workspace:
             messagebox.showinfo('Image Studio', 'Close this window before opening another image.', parent=self); return
         if not messagebox.askokcancel('Offline copy', 'Shut down Android and ALL VMs using the source. The source will be copied to a new file and never edited directly. Copying an active disk may produce a corrupt copy. Continue?', parent=self): return
-        source = filedialog.askopenfilename(title='Select a stopped standalone QCOW2 image', filetypes=[('QCOW2 images', '*.qcow2'), ('All files', '*')])
+        source = filedialog.askopenfilename(title='Select a stopped QCOW2 disk or raw partition image', filetypes=[('Image files', '*.qcow2 *.img *.raw'), ('All files', '*')])
         if not source: return
         target = filedialog.asksaveasfilename(title='Choose NEW working copy (will not overwrite)', defaultextension='.qcow2')
         if not target: return

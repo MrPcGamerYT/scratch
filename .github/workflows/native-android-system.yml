@@ -1,0 +1,103 @@
+name: Native Android init and system integration
+on:
+  push:
+    paths:
+      - '.github/workflows/native-android-system.yml'
+  workflow_dispatch:
+    inputs:
+      disk_run:
+        description: 'Reuse native-android-system-disk from a previous run (optional)'
+        required: false
+        type: string
+      observe:
+        description: 'Continue after second-stage init to capture userspace blockers (deadline is a failure, not boot success)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  system-disk:
+    if: ${{ inputs.disk_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: android11.iso
+          key: bliss14-foss-44e4144a3d31f823-v1
+      - name: Build isolated native Android payload disk; no QEMU, firmware or guestfs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full e2fsprogs
+          test -f android11.iso
+          echo '44e4144a3d31f8233a5826b6a5079c4514589286a2f9b59bdf8d303d10e8f577  android11.iso' | sha256sum -c -
+          mkdir -p source-payload android-tree/android/data android-system-artifact
+          7z x android11.iso kernel initrd.img system.sfs -osource-payload
+          python3 tests/native_android_assets.py source-payload
+          rm android11.iso
+          mv source-payload/system.sfs android-tree/android/
+          truncate -s 4G android-system.raw
+          mkfs.ext4 -F -b 4096 -L NEXUS_NATIVE -O ^64bit,^metadata_csum_seed,^orphan_file -d android-tree android-system.raw
+          e2fsck -fn android-system.raw
+          cargo build --release --locked --manifest-path rust/nexus-engine/Cargo.toml
+          rust/nexus-engine/target/release/nexus-engine import-raw android-system.raw android-system-artifact/android-system.zlag
+          rust/nexus-engine/target/release/nexus-engine verify android-system-artifact/android-system.zlag
+          rm android-system.raw
+          cp source-payload/kernel source-payload/initrd.img source-payload/manifest.json android-system-artifact/
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('android-system-artifact')
+          def digest(path):
+              h=hashlib.sha256()
+              with path.open('rb') as stream:
+                  for chunk in iter(lambda:stream.read(4194304),b''): h.update(chunk)
+              return h.hexdigest()
+          files={p.name:{'bytes':p.stat().st_size,'sha256':digest(p)} for p in root.iterdir() if p.is_file()}
+          (root/'system-manifest.json').write_text(json.dumps({'schema':1,'files':files,'layout':'new 4 GiB ext4 filesystem, /android/system.sfs and empty /android/data; upstream root image unchanged','qemu_used':False,'android_init_verified':False,'android_home_verified':False},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android-system-disk
+          path: android-system-artifact/
+          retention-days: 3
+  android-init:
+    needs: system-disk
+    if: ${{ always() && (needs['system-disk'].result == 'success' || inputs.disk_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-android-system-disk
+          path: android-system-artifact
+          run-id: ${{ inputs.disk_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build independent native engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Boot original Android initrd and system through native VirtIO block
+        env:
+          ANDROID_OBSERVE: ${{ inputs.observe && '1' || '0' }}
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_android_system_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-android-system-evidence
+          path: |
+            android-system-serial.log
+            android-system-serial.log.timing.json
+            android-system.ppm
+            android-system-checkpoint.json
+            android-system-artifact/manifest.json
+            android-system-artifact/system-manifest.json
+            native-engine-*.log

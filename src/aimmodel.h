@@ -1,10 +1,10 @@
 #pragma once
 #include <QPointF>
 
-// Experimental single-pointer camera drag, not guest multitouch.
 class AimModel {
 public:
     AimModel(QPointF anchor, double sensitivity);
+    AimModel(QPointF anchor, double sensitivityX, double sensitivityY);
     QPointF anchor() const { return center; }
     QPointF position() const { return point; }
     void reset() { point = center; }
@@ -13,5 +13,6 @@ public:
 private:
     QPointF center;
     QPointF point;
-    double gain;
+    double gainX;
+    double gainY;
 };

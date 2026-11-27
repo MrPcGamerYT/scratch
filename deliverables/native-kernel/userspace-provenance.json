@@ -1,0 +1,13 @@
+{
+  "run": "https://github.com/scratchhhhhhhhhhhhhhhhhhhhhhhhhhh/scratch/actions/runs/45751571983",
+  "tested_commit": "ca99d3bf58b9467c4778a50363b9d44f5c72bae9",
+  "kernel_build_run": 45744144583,
+  "kernel_sha256": "0b08e799e0f15e46d97fc94c5fa1b96be53c61c1dd04e479f47e64c4d0c9864a",
+  "initramfs_sha256": "bb351cc98fd3085968e895b456b34509752b2b51fa0dfbeadd3b797bb85bf684",
+  "serial_sha256": "24445c7c25cba0aada61a8e00df2fba9f507c5d06aa0f45e148c166110706c91",
+  "serial_bytes": 6255,
+  "evidence_reconstruction": "Exact raw bytes from ordered base64 check annotations, verified against original full-log SHA256 and byte length",
+  "scope": "Diagnostic Linux6.6 PID1/getpid/two nanosleep returns under hosted Windows2022 WHP, not Android or a Linux distribution",
+  "android_home_verified": false,
+  "gpu_verified": false
+}

@@ -29,10 +29,10 @@ index 7305238..d301f8e 100644
 + */
 +static void nexus_sdl2_present(struct sdl2_console *scon, unsigned int rectangles)
 +{
-+    trace_sdl2_2d_nexus_present(scon->idx, rectangles);
 +    SDL_RenderClear(scon->real_renderer);
 +    SDL_RenderCopy(scon->real_renderer, scon->texture, NULL, NULL);
 +    SDL_RenderPresent(scon->real_renderer);
++    trace_sdl2_2d_nexus_present(scon->idx, rectangles);
 +}
  
  void sdl2_2d_update(DisplayChangeListener *dcl,

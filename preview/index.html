@@ -2,74 +2,953 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Nexus — player UI preview</title>
+<title>Project Nexus — Keymap Studio &amp; Player Preview</title>
 <style>
-:root{color-scheme:dark;--surface:#181925;--line:#2d2e3c;--text:#f3f2f9;--muted:#999baa;--purple:#957dff;--canvas:#0d0e16}*{box-sizing:border-box}body{margin:0;background:#0e0f17;color:var(--text);font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}button,input,select{font:inherit}button{color:inherit;cursor:pointer}.preview-banner{display:flex;align-items:center;justify-content:center;gap:8px;background:#241d3e;border-bottom:1px solid #43356b;color:#d4caff;padding:8px 15px;font-size:12px}.preview-banner b{color:#fff}.shell{max-width:1700px;margin:0 auto;min-height:calc(100vh - 35px);display:flex;flex-direction:column}.header{height:74px;display:flex;align-items:center;padding:0 26px;gap:14px;background:#161722;border-bottom:1px solid #282936}.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#aa92ff,#735ae6);display:grid;place-items:center;color:#fff;font-size:22px;font-weight:800;box-shadow:0 3px 20px #8568ff35}.brand{display:flex;flex-direction:column;line-height:1.18}.brand strong{font-size:15px;letter-spacing:.14em}.brand small{font-size:9px;color:#9292a6;letter-spacing:.14em;margin-top:4px}.grow{flex:1}.version{color:#77798b;border-left:1px solid #343543;padding-left:18px;font-size:12px}.status{display:flex;align-items:center;gap:7px;color:#a7a9b8;background:#1d1e2a;padding:7px 11px;border:1px solid #30313e;border-radius:100px;font-size:11px;font-weight:650;letter-spacing:.06em}.dot{width:7px;height:7px;border-radius:50%;background:#898b9a}.primary{border:1px solid #ab9aff;background:linear-gradient(135deg,#9b82ff,#8066ed);border-radius:8px;color:#fff;font-weight:700;padding:10px 17px;box-shadow:0 6px 20px #8167f433}.primary:hover{filter:brightness(1.08)}.quiet{background:#242532;border:1px solid #353644;border-radius:8px;padding:9px 15px;color:#c7c8d4}.quiet:hover{background:#323340}.work{padding:16px;display:flex;gap:12px;flex:1;min-height:0}.player{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;min-height:580px;border:1px solid #292a38;border-radius:13px;background:linear-gradient(180deg,#0b0d1777,#090b14c9),url('../assets/nexus-wallpaper.png') center/cover}.player:after{content:"";pointer-events:none;position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 10%,#07081266 100%)}.player-content{position:relative;z-index:1;max-width:550px;padding:35px}.center-logo{width:58px;height:58px;display:grid;place-items:center;margin:auto auto 26px;border:1px solid #a18afaaa;border-radius:17px;background:#8b73ff25;color:#dcd1ff;font-size:26px;font-weight:800;box-shadow:0 8px 38px #845aff33}.kicker{display:inline-flex;align-items:center;gap:8px;color:#beafff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}.kicker:before{content:"";height:5px;width:5px;border-radius:50%;background:#a88cff;box-shadow:0 0 10px #a88cff}.player h1{font-size:clamp(25px,2.8vw,40px);line-height:1.15;letter-spacing:-.035em;margin:14px 0 11px}.player p{color:#a7a8bb;font-size:14px;line-height:1.7;margin:0}.stage-tag{position:absolute;z-index:1;bottom:19px;left:22px;color:#a6a4b8;font-size:11px;letter-spacing:.04em;display:flex;align-items:center;gap:8px}.stage-tag i{width:6px;height:6px;background:#777889;border-radius:50%}.rail{width:90px;flex:none;background:#191a26;border:1px solid #2b2c3b;border-radius:13px;display:flex;flex-direction:column;align-items:stretch;padding:15px 8px 10px;gap:4px}.rail-title{text-align:center;color:#78798f;font-weight:700;font-size:9px;letter-spacing:.13em;margin-bottom:6px}.tool{border:1px solid transparent;background:transparent;color:#b8b9ca;border-radius:9px;padding:9px 2px 8px;font-size:10px;display:flex;align-items:center;flex-direction:column;gap:5px;min-height:65px}.tool svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.tool:hover,.tool.active{background:#302b44;color:#d9cfff;border-color:#463b62}.rail-sep{width:32px;height:1px;background:#343440;align-self:center;margin:8px 0}.rail-spacer{flex:1}.bottom{display:flex;align-items:center;gap:8px;color:#898b9d;font-size:11px;padding:0 25px 14px}.bottom .tiny{width:6px;height:6px;background:#86bb9f;border-radius:50%}.bottom span:last-child{margin-left:auto;color:#626474}.overlay{position:fixed;z-index:3;inset:0;background:#06070dcc;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}.overlay.open{display:flex}.dialog{width:min(790px,100%);height:min(590px,90vh);display:flex;flex-direction:column;background:#181925;border:1px solid #39394b;border-radius:15px;box-shadow:0 28px 80px #000b;overflow:hidden}.dialog-header{padding:24px 26px 18px;display:flex;align-items:flex-start;gap:12px}.dialog h2{font-size:23px;line-height:1.1;letter-spacing:-.03em;margin:0 0 5px}.dialog-sub{font-size:12px;color:#999bad}.close{background:#262734;border:1px solid #3b3c4a;border-radius:8px;width:32px;height:32px;color:#d5d5e1;font-size:20px;line-height:1}.dialog-body{display:flex;flex:1;min-height:0;padding:6px 20px 0;gap:25px}.settings-nav{width:160px;flex:none;background:#13141f;border-radius:9px;padding:6px;align-self:flex-start}.settings-nav button{width:100%;background:transparent;border:0;border-radius:7px;text-align:left;padding:11px;color:#a7a8bb;font-size:13px}.settings-nav button.active{background:#393052;color:#eee8ff}.settings-main{padding:6px 8px 0 0;overflow:auto;flex:1}.settings-main h3{font-size:21px;letter-spacing:-.025em;margin:0 0 6px}.settings-main .desc{color:#999bab;font-size:12px;line-height:1.6;margin:0 0 22px}.field{display:grid;grid-template-columns:160px 1fr;align-items:center;gap:12px;margin:17px 0;color:#dad9e5;font-size:13px}.field input,.field select,.field .disabled{width:100%;background:#20212e;color:#f2f1fa;border:1px solid #3a3b4a;border-radius:7px;padding:10px;outline:none}.field input:focus,.field select:focus{border-color:#a58cff}.field .disabled{color:#727385;background:#1a1b25}.check{display:flex;align-items:center;gap:9px;color:#dedce9;font-size:13px;margin:17px 0}.check input{accent-color:#957dff;width:16px;height:16px}.note{font-size:12px;line-height:1.6;color:#989aab;padding:11px 12px;background:#20212d;border:1px solid #30313f;border-radius:8px;margin-top:20px}.badge{display:inline-block;border:1px solid #554b74;background:#302943;color:#c4b6ff;border-radius:20px;padding:3px 8px;font-size:10px;font-weight:700}.dialog-footer{display:flex;justify-content:flex-end;gap:10px;padding:18px 24px;border-top:1px solid #30313e}.demo-canvas{height:280px;position:relative;background:linear-gradient(#0a0d19a0,#0a0d19a0),url('../assets/nexus-wallpaper.png') center/cover;border:1px solid #373348;border-radius:9px;overflow:hidden;cursor:crosshair}.marker{position:absolute;transform:translate(-50%,-50%);border:2px solid #fff;background:#876cffdc;width:37px;height:37px;border-radius:50%;display:grid;place-items:center;font-weight:bold}.edit-body{display:grid;grid-template-columns:1fr 190px;gap:14px;padding:0 25px 20px}.edit-side label{color:#babacc;display:block;font-size:12px;margin:0 0 6px}.edit-side select{width:100%;background:#20212e;color:#eee;border:1px solid #3a3b4a;border-radius:7px;padding:9px;margin-bottom:14px}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#302b43;border:1px solid #51496b;color:#e9e2ff;padding:11px 18px;border-radius:9px;z-index:5;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}.toast.show{opacity:1}.hidden{display:none!important}@media(max-width:700px){.header{padding:0 14px}.version,.status,.header .quiet{display:none}.work{padding:8px;gap:7px}.rail{width:70px;padding-inline:4px}.player{min-height:450px}.settings-nav{width:120px}.dialog-body{gap:13px}.field{grid-template-columns:1fr;gap:5px}.edit-body{grid-template-columns:1fr}.demo-canvas{height:200px}.bottom{padding-inline:15px}}
+:root{color-scheme:dark;--surface:#181925;--line:#2d2e3c;--text:#f3f2f9;--muted:#999baa;--purple:#60a5fa;--cyan:#57d9ff;--mint:#7cf7c4;--amber:#ffd166;--pink:#ff7ab8;--canvas:#0d0e16}
+*{box-sizing:border-box}
+body{margin:0;background:#0e0f17;color:var(--text);font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}
+button,input,select,textarea{font:inherit}
+button{color:inherit;cursor:pointer}
+.preview-banner{display:flex;align-items:center;justify-content:center;gap:8px;background:#241d3e;border-bottom:1px solid #43356b;color:#d4caff;padding:8px 15px;font-size:12px;text-align:center}
+.preview-banner b{color:#fff}
+.shell{min-height:calc(100vh - 35px);display:flex;flex-direction:column}
+.header{min-height:56px;display:flex;align-items:center;padding:10px 22px;gap:12px;background:linear-gradient(100deg,#0a1220,#14243b);border-bottom:1px solid #282936}
+.logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#aa92ff,#735ae6);display:grid;place-items:center;color:#fff;font-size:18px;font-weight:800;box-shadow:0 3px 20px #8568ff35;flex:none}
+.brand strong{font-size:15px;letter-spacing:.14em}
+.dock-spacer{flex:1}
+.dock{display:flex;align-items:center;gap:3px;padding:5px;background:#20212e;border:1px solid #373746;border-radius:13px;box-shadow:0 8px 22px #0004;overflow-x:auto;scrollbar-width:thin;max-width:100%}
+.dock button{flex:none;background:transparent;border:1px solid transparent;border-radius:8px;color:#c1c0d0;padding:8px 11px;white-space:nowrap;font-size:13px}
+.dock button:hover,.dock button.active-toggle{background:#373047;border-color:#65588c;color:#f3eeff}
+.dock .dock-icon{color:#ae9bff;font-size:15px;margin-right:5px}
+.dock .unavailable{opacity:.48}
+.power{display:flex;gap:6px}
+.primary{border:1px solid #ab9aff;background:linear-gradient(135deg,#9b82ff,#8066ed);border-radius:8px;color:#fff;font-weight:700;padding:8px 15px;box-shadow:0 6px 20px #8167f433}
+.primary:hover{filter:brightness(1.08)}
+.quiet{background:#242532;border:1px solid #353644;border-radius:8px;padding:8px 13px;color:#c7c8d4}
+.quiet:hover:not(:disabled){background:#323340}
+.quiet:disabled{opacity:.42;cursor:not-allowed}
+.work{flex:1;display:flex;min-height:0}
+.player{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;min-height:580px;background:linear-gradient(180deg,#0b0d1777,#090b14c9),url('../assets/nexus-wallpaper.png') center/cover}
+.player:after{content:"";pointer-events:none;position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 10%,#07081266 100%)}
+.player-content{position:relative;z-index:1;max-width:560px;padding:32px}
+.center-logo{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 22px;border:1px solid #a18afaaa;border-radius:16px;background:#8b73ff25;color:#dcd1ff;font-size:25px;font-weight:800;box-shadow:0 8px 38px #845aff33}
+.kicker{display:inline-flex;align-items:center;gap:8px;color:#beafff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.kicker:before{content:"";height:5px;width:5px;border-radius:50%;background:#a88cff;box-shadow:0 0 10px #a88cff}
+.player h1{font-size:clamp(25px,2.8vw,40px);line-height:1.15;letter-spacing:-.035em;margin:14px 0 11px}
+.player p{color:#a7a8bb;font-size:14px;line-height:1.68;margin:0}
+.stage-overlay{position:absolute;inset:0;z-index:2;pointer-events:none}
+.hint-pill{position:absolute;transform:translate(-50%,-50%);background:#10121ed9;border:1.5px solid #9d86ff;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;color:#f5f3ff;white-space:nowrap;box-shadow:0 3px 10px #0008}
+.hint-ring{position:absolute;transform:translate(-50%,-50%);border:1.5px dashed #9d86ffaa;background:#10121e48;border-radius:50%}
+.stage-crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;pointer-events:none}
 
-/* A single dock keeps the guest display clear. */
-.shell{max-width:none}.header{min-height:72px;height:auto;padding:10px 22px;gap:12px}.dock{display:flex;align-items:center;gap:3px;padding:5px;background:#20212e;border:1px solid #373746;border-radius:13px;box-shadow:0 8px 22px #0004;overflow-x:auto;scrollbar-width:thin;max-width:100%}.dock button{flex:none;background:transparent;border:1px solid transparent;border-radius:8px;color:#c1c0d0;padding:9px 11px;white-space:nowrap}.dock button:hover{background:#373047;border-color:#514967;color:#eee8ff}.dock .dock-icon{color:#ae9bff;font-size:16px;margin-right:6px}.header .brand small{display:none}.work{padding:0;display:flex}.player{border-radius:0;border:0;min-height:580px}.stage-tag,.bottom{display:none}.dock-spacer{flex:1}.dock .unavailable{opacity:.5}.power{display:flex;gap:4px}.power button{padding:8px 10px;font-size:12px}.header .logo{width:34px;height:34px;font-size:18px;border-radius:10px}
-@media(max-width:1000px){.header{flex-wrap:wrap}.dock{order:3;width:100%}.header .brand{margin-right:auto}.dock-spacer{display:none}.player{min-height:500px}.work{padding:0}.power{display:none}}
+.overlay{position:fixed;z-index:10;inset:0;background:#06070dd8;display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.overlay.open{display:flex}
+.dialog{width:min(790px,100%);height:min(600px,92vh);display:flex;flex-direction:column;background:#181925;border:1px solid #39394b;border-radius:15px;box-shadow:0 28px 80px #000c;overflow:hidden}
+.key-dialog{width:min(1180px,100%);height:min(780px,94vh)}
+.aim-dialog{width:min(600px,100%);height:auto;max-height:92vh}
+.dialog-header{padding:18px 22px 13px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #292a38}
+.dialog h2{font-size:21px;line-height:1.15;letter-spacing:-.025em;margin:0 0 4px}
+.dialog-sub{font-size:12px;color:#999bad}
+.dialog-sub strong{color:#cdbfff}
+.grow{flex:1}
+.close{background:#262734;border:1px solid #3b3c4a;border-radius:8px;width:32px;height:32px;color:#d5d5e1;font-size:20px;line-height:1}
+.dialog-body{display:flex;flex:1;min-height:0;padding:14px 20px 0;gap:22px}
+.settings-nav{width:160px;flex:none;background:#13141f;border-radius:9px;padding:6px;align-self:flex-start}
+.settings-nav button{width:100%;background:transparent;border:0;border-radius:7px;text-align:left;padding:11px;color:#a7a8bb;font-size:13px}
+.settings-nav button.active{background:#393052;color:#eee8ff}
+.settings-main{padding:4px 8px 14px 0;overflow:auto;flex:1}
+.settings-main h3{font-size:20px;letter-spacing:-.02em;margin:0 0 6px}
+.settings-main .desc{color:#999bab;font-size:12px;line-height:1.6;margin:0 0 18px}
+.field{display:grid;grid-template-columns:160px 1fr;align-items:center;gap:10px;margin:13px 0;color:#dad9e5;font-size:13px}
+.field input,.field select,.field .disabled,textarea{width:100%;background:#20212e;color:#f2f1fa;border:1px solid #3a3b4a;border-radius:7px;padding:8px 10px;outline:none}
+.field input:focus,.field select:focus,textarea:focus{border-color:#a58cff}
+.field .disabled{color:#727385;background:#1a1b25}
+.check{display:flex;align-items:center;gap:9px;color:#dedce9;font-size:13px;margin:12px 0}
+.check input{accent-color:#957dff;width:16px;height:16px}
+.note{font-size:12px;line-height:1.55;color:#989aab;padding:10px 12px;background:#20212d;border:1px solid #30313f;border-radius:8px;margin-top:12px}
+.badge{display:inline-block;border:1px solid #554b74;background:#302943;color:#c4b6ff;border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700}
+.dialog-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 22px;border-top:1px solid #30313e}
+.footer-actions{display:flex;gap:8px;margin-left:auto}
 
-/* Keymap preview: scrollable at small sizes, with a clear distinction between
-   existing controls and ideas that are not yet implemented. */
-.key-dialog{width:min(1020px,100%);height:min(720px,92vh)}
-.key-scroll{overflow:auto;flex:1;min-height:0;padding:0 25px 20px}
-.edit-body{padding:0;grid-template-columns:minmax(0,1fr) 245px;align-items:start}
-.edit-side{display:flex;flex-direction:column;gap:8px}.edit-side select,.edit-side input{width:100%;background:#20212e;color:#eee;border:1px solid #3a3b4a;border-radius:7px;padding:9px;margin:0}.edit-side label{margin:0}.edit-side input:disabled{opacity:.45}.edit-side .quiet{text-align:center}.edit-side .dialog-sub{margin:0}.demo-canvas{height:auto;aspect-ratio:16 / 9;min-height:220px;touch-action:none}.marker{padding:0;cursor:grab;touch-action:none;color:white}.marker.selected{outline:3px solid #c6b9ff;outline-offset:3px}.marker:active{cursor:grabbing}.canvas-hint{color:#a9a6ba;font-size:12px;margin:10px 0}.binding-list{border:1px solid #373746;border-radius:8px;overflow:auto;max-height:135px;min-height:52px}.binding-row{display:block;width:100%;text-align:left;background:#20212e;border:0;border-bottom:1px solid #333442;color:#dedce9;padding:8px 10px}.binding-row.selected{background:#463963}.empty-list{padding:12px;color:#9a9bad;font-size:12px}.future{margin-top:18px;padding:12px 14px;background:#20212d;border:1px solid #30313f;border-radius:9px;color:#a8a8b8;font-size:12px}.future strong{color:#d1cddd}.future p{margin:5px 0 0}.aim-dialog{width:min(550px,100%);height:auto;max-height:90vh}.aim-content{padding:0 25px 18px;overflow:auto}.aim-content .field{grid-template-columns:155px 1fr;margin:10px 0}.aim-content .note{margin-top:12px}.dialog-sub strong{color:#cdbfff}@media(max-width:700px){.key-scroll{padding:0 16px 16px}.edit-body{grid-template-columns:1fr}.demo-canvas{min-height:160px}.edit-side{gap:8px}.key-dialog{height:min(800px,92vh)}.aim-content .field{grid-template-columns:1fr}.dialog-header{padding:18px 18px 12px}.dialog-footer{padding:12px 18px}}
-</style></head>
+/* Keymap Studio Controls */
+.studio-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 22px;background:#141520;border-bottom:1px solid #282938;font-size:12px}
+.studio-toolbar select,.studio-toolbar input[type="range"]{background:#20212e;color:#eee;border:1px solid #3a3b4a;border-radius:7px;padding:6px 9px}
+.palette-bar{display:flex;flex-wrap:wrap;gap:6px;padding:9px 22px;background:#171824;border-bottom:1px solid #282938}
+.tool-pill{background:#222332;border:1px solid #37384a;border-radius:8px;padding:6px 11px;font-size:12px;color:#cac9da}
+.tool-pill.active{background:#43356d;border-color:#9b82ff;color:#fff;font-weight:650}
+.key-scroll{overflow:auto;flex:1;min-height:0;padding:14px 22px}
+.edit-body{display:grid;grid-template-columns:minmax(0,1fr) 305px;gap:16px;align-items:start}
+.demo-canvas{position:relative;aspect-ratio:16/9;min-height:240px;background:linear-gradient(#0a0d199e,#0a0d19b5),url('../assets/nexus-wallpaper.png') center/cover;border:1px solid #3b3750;border-radius:10px;overflow:hidden;cursor:crosshair;touch-action:none;user-select:none}
+.demo-canvas.grid-on{background-image:linear-gradient(to right,#9d86ff1f 1px,transparent 1px),linear-gradient(to bottom,#9d86ff1f 1px,transparent 1px),linear-gradient(#0a0d199e,#0a0d19b5),url('../assets/nexus-wallpaper.png');background-size:5% 5%,5% 5%,cover,cover}
+.canvas-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.marker{position:absolute;transform:translate(-50%,-50%);border:2px solid #fff;background:#3a76f6dc;min-width:36px;height:36px;padding:0 7px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;cursor:grab;touch-action:none;box-shadow:0 4px 14px #0009}
+.marker.dpad{width:92px;height:92px;border-radius:50%;background:#251f46bf;border-color:#9d86ff;flex-direction:column;gap:2px}
+.marker.swipe-end{min-width:22px;width:22px;height:22px;background:#57d9ff;border-color:#fff;padding:0}
+.marker.swipe-start{background:#125270eb;border-color:#57d9ff}
+.marker.zoom{width:76px;height:76px;border-radius:50%;background:#5c441099;border:2px dashed #ffd166}
+.marker.moba{width:68px;height:68px;border-radius:50%;background:#601c42bf;border-color:#ff7ab8}
+.marker.script{border-radius:9px;background:#124e3ee8;border-color:#6ee7b7}
+.marker.aim{background:#12483ae8;border-color:#7cf7c4}
+.marker.aim-sub{min-width:30px;height:28px;font-size:10px;background:#821c22e6;border-color:#ff7875}
+.marker.selected{outline:3px solid #d5c8ff;outline-offset:3px;z-index:3}
+.canvas-hint{color:#a9a6ba;font-size:12px;margin:9px 0 0}
+.conflict-bar{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12px;border:1px solid #2b4c42;background:#142622;color:#7cf7c4}
+.conflict-bar.warn{border-color:#665124;background:#2a2213;color:#ffd166}
+
+.edit-side{display:flex;flex-direction:column;gap:8px;background:#141520;border:1px solid #2c2d3d;border-radius:10px;padding:12px}
+.edit-side label{color:#babacc;display:block;font-size:12px;margin:2px 0 0}
+.edit-side select,.edit-side input,.edit-side textarea{width:100%;background:#20212e;color:#eee;border:1px solid #3a3b4a;border-radius:7px;padding:7px 9px;font-size:12px}
+.edit-side input:disabled,.edit-side select:disabled{opacity:.45}
+.key-capture{width:100%;background:#26233a;border:1px solid #594b88;border-radius:7px;padding:7px 10px;color:#efeaff;font-weight:650;font-size:12px;text-align:center}
+.key-capture.listening{background:#4f3c8c;border-color:#d8cbff;color:#fff}
+.binding-list{border:1px solid #343546;border-radius:8px;overflow:auto;max-height:135px;min-height:54px;background:#1a1b27}
+.binding-row{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid #2b2c3b;color:#dedce9;padding:7px 10px;font-size:12px}
+.binding-row.selected{background:#433567;color:#fff}
+.empty-list{padding:12px;color:#9a9bad;font-size:12px}
+.aim-content{padding:10px 22px 16px;overflow:auto}
+.aim-content .field{grid-template-columns:165px 1fr;margin:9px 0}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#302b43;border:1px solid #51496b;color:#e9e2ff;padding:10px 18px;border-radius:9px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+@media(max-width:960px){
+  .header{flex-wrap:wrap}.dock{order:3;width:100%}.brand{margin-right:auto}.dock-spacer,.power{display:none}
+  .edit-body{grid-template-columns:1fr}.field,.aim-content .field{grid-template-columns:1fr;gap:5px}.settings-nav{width:120px}
+}
+.window-controls{display:flex;gap:3px;flex:none}.window-controls button{border:0;background:transparent;color:#a5b8d4;width:28px;height:30px;border-radius:5px}.window-controls button:hover{background:#263e60}.marker.pending{min-width:112px;border:2px dashed #60a5fa;background:#10213b;font-size:12px;color:white;pointer-events:none}
+body.preview-fullscreen .header,body.preview-fullscreen .preview-banner{display:none}body.preview-fullscreen .shell{min-height:100vh}
+@media(max-width:800px){.header{flex-wrap:nowrap;padding:8px;gap:7px}.header .dock{order:initial;width:auto;flex:1;min-width:0}.brand{display:none}.window-controls button{width:22px}.logo{width:26px;height:26px}}
+.header{height:36px;min-height:36px;padding:1px 10px;gap:8px;background:#090c12}
+.header .logo{display:none}.brand strong{font-size:12px;letter-spacing:1px;color:#60a5fa}
+.dock{padding:0 4px;gap:4px;border:0;border-radius:0;background:transparent;box-shadow:none}
+.dock button{padding:2px 3px;font-size:16px;border-radius:4px;width:30px;height:28px}.dock .dock-icon{margin:0}.dock .dock-icon{font-size:12px}
+.window-controls button{height:28px!important;min-height:0!important;padding:2px 8px!important}
+.toolbar-menu{position:absolute;top:75px;right:160px;z-index:9;background:#141923;border:1px solid #303d51;border-radius:8px;padding:6px;box-shadow:0 12px 32px #0009;min-width:210px}
+.toolbar-menu[hidden]{display:none}.toolbar-menu button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:10px;border-radius:5px}.toolbar-menu button:hover{background:#263449}
+.boot-spinner{width:24px;height:24px;margin:20px auto;border:3px solid #26364c;border-top-color:#60a5fa;border-radius:50%;animation:bootSpin 1.1s linear infinite}@keyframes bootSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.boot-spinner{animation:none}}
+</style>
+</head>
 <body>
 <div class="preview-banner"><b>INTERACTIVE UI PREVIEW</b> · Visual mockup only — Android and emulator controls are not connected.</div>
 <div class="shell">
-<header class="header"><div class="logo">N</div><div class="brand"><strong>NEXUS</strong></div><div class="dock-spacer"></div>
-<nav class="dock" aria-label="Player tools">
-<button id="openSettings"><span class="dock-icon">⚙</span>Settings</button>
-<button data-demo="Install APK"><span class="dock-icon">＋</span>Install APK</button>
-<button id="openKeys"><span class="dock-icon">⌨</span>Keymap</button>
-<button data-demo="Mouse lock"><span class="dock-icon">◎</span>Lock</button>
-<button class="unavailable" data-demo="Volume (not available yet)"><span class="dock-icon">♪</span>Volume</button>
-<button data-demo="Full screen"><span class="dock-icon">⛶</span>Full screen</button>
-<button id="openAimDock"><span class="dock-icon">⌖</span>Aim &amp; fire</button>
-<button class="unavailable" data-demo="RAM cleanup (not available yet)"><span class="dock-icon">✦</span>RAM</button>
-</nav><div class="dock-spacer"></div><div class="power"><button class="quiet" data-demo="Shutdown">Stop</button><button class="primary" data-demo="Retry startup">Retry</button></div></header>
-<div class="work"><main class="player"><div class="player-content"><div class="center-logo">N</div><span class="kicker">Project Nexus</span><h1>Your world, ready to play.</h1><p>Your Android display will appear here when the player starts.<br>The system image is prepared separately by the developer.</p></div></main></div></div>
-<div class="overlay" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle"><div class="dialog"><div class="dialog-header"><div><h2 id="settingsTitle">Settings</h2><div class="dialog-sub">Make your workspace feel right.</div></div><div class="grow"></div><button class="close" aria-label="Close settings" data-close>×</button></div><div class="dialog-body"><nav class="settings-nav"><button class="active" data-page="performance">Performance</button><button data-page="display">Display</button><button data-page="graphics">Graphics</button><button data-page="device">Device</button><button data-page="preferences">Preferences</button></nav><section class="settings-main" id="settingsPage"></section></div><div class="dialog-footer"><button class="quiet" data-close>Cancel</button><button class="primary" data-save>Save changes</button></div></div></div>
-<div class="overlay" id="keysOverlay" role="dialog" aria-modal="true" aria-labelledby="keyTitle"><div class="dialog key-dialog">
- <div class="dialog-header"><div><h2 id="keyTitle">Keymap editor</h2><div class="dialog-sub">Explore the controls · <strong>preview only, not connected to Android</strong></div></div><div class="grow"></div><button class="close" data-close aria-label="Close keymap">×</button></div>
- <div class="key-scroll"><div class="edit-body"><div><div class="demo-canvas" id="demoCanvas" aria-label="Preview keymap canvas"></div><p class="canvas-hint">Click the image to add the selected key. Drag a marker to reposition it.</p><div class="note">One marker holds a touch. Multiple markers for the same key play in sequence. Repeat loops while held.</div></div>
- <div class="edit-side"><button class="quiet" id="openAim">⌖ &nbsp;Configure aim &amp; fire…</button><label for="keySelect">Key to place</label><select id="keySelect"></select><label for="modeSelect">Action</label><select id="modeSelect"><option value="hold">Hold / tap sequence</option><option value="repeat">Repeat while held</option></select><label for="repeatDelay">Repeat delay (ms)</label><input id="repeatDelay" type="number" min="100" max="5000" step="50" value="250" disabled><label>Placed markers</label><div class="binding-list" id="bindingList" aria-label="Placed markers"></div><button class="quiet" id="removeMarker" disabled>Remove selected</button><p class="dialog-sub">Optional multi-touch sends separate contacts for different keys, aim and fire on supported guests. Guest support is unverified.</p></div></div>
- <div class="future"><strong>Not available yet</strong><p>WASD joystick / D-pad, ADS, MOBA controls and a full macro recorder are not implemented in the player.</p></div></div>
- <div class="dialog-footer"><button class="quiet" data-close>Cancel</button><button class="primary" data-save>Save keymap</button></div></div></div>
-<div class="overlay" id="aimOverlay" role="dialog" aria-modal="true" aria-labelledby="aimTitle"><div class="dialog aim-dialog"><div class="dialog-header"><div><h2 id="aimTitle">Experimental aim &amp; fire</h2><div class="dialog-sub">Preview only · values are not saved</div></div><div class="grow"></div><button class="close" data-close aria-label="Close aim settings">×</button></div><div class="aim-content"><p class="dialog-sub">Positions are percentages of the guest display. Configure the camera area, fire button and sensitivity.</p>
- <label class="field">Camera area X <input type="number" min="10" max="90" value="50"></label><label class="field">Camera area Y <input type="number" min="10" max="90" value="50"></label><label class="field">Fire button X <input type="number" min="0" max="100" value="80"></label><label class="field">Fire button Y <input type="number" min="0" max="100" value="75"></label><label class="field">Sensitivity <input type="number" min="0.1" max="5" step="0.1" value="1"></label>
- <div class="note">In the player: arm Aim &amp; fire, focus Android and press F8. Press F8 again to release. Guest compatibility is unverified.</div></div><div class="dialog-footer"><button class="quiet" data-close>Cancel</button><button class="primary" data-save>Save aim settings</button></div></div></div>
+  <header class="header">
+    <div class="logo">N</div>
+    <div class="brand"><strong>NEXUS</strong></div>
+    <div class="dock-spacer"></div>
+    <nav class="dock" aria-label="Player tools">
+      <button data-demo="Android Back (ADB)" title="Back" aria-label="Back">◁</button>
+      <button data-demo="Android Home (ADB)" title="Home" aria-label="Home">⌂</button>
+      <button data-demo="Android Recent apps (ADB)" title="Recent apps" aria-label="Recent apps">▢</button>
+      <button id="toggleFullscreen"><span class="dock-icon">⛶</span>Full screen</button>
+      <button id="keymapMenuButton" title="Keymap controls" aria-label="Keymap controls">⌨</button>
+      <button id="volumeMenuButton" title="Volume" aria-label="Volume">♫</button>
+      <button id="cleanMemoryPreview" title="Clean background memory" aria-label="Clean background memory">♻</button>
+      <button data-demo="Install APK"><span class="dock-icon">＋</span>Install APK</button>
+      <button id="openSettings"><span class="dock-icon">⚙</span>Settings</button>
+    </nav>
+    <div class="dock-spacer"></div>
+    <div class="window-controls" aria-label="Window controls">
+      <button data-demo="Minimize window" aria-label="Minimize">−</button>
+      <button id="previewMaximize" aria-label="Maximize">□</button>
+      <button data-demo="Close window" aria-label="Close">×</button>
+    </div>
+  </header>
+  <div id="keymapToolbarMenu" class="toolbar-menu" hidden>
+    <button id="openKeys">⌨ Open Keymap Studio</button>
+    <button id="toggleHints" aria-pressed="true" class="active-toggle">👁 Show keymap hints</button>
+    <button data-demo="Mouse lock">◎ Lock mouse</button>
+  </div>
+  <div id="volumeToolbarMenu" class="toolbar-menu" hidden>
+    <button data-demo="Volume up (ADB)">＋ Volume up</button>
+    <button data-demo="Volume down (ADB)">− Volume down</button>
+    <button data-demo="Toggle mute (ADB)">♫ Toggle mute</button>
+  </div>
+  <div class="work">
+    <main class="player" id="playerStage">
+      <div class="stage-overlay" id="stageOverlay" aria-label="On-screen keymap hints"></div>
+      <div class="player-content">
+        <div class="center-logo">N</div>
+        <span class="kicker">Project Nexus</span>
+        <h1>Loading your Android</h1>
+        <div class="boot-spinner" aria-label="Boot animation preview"></div>
+        <p>The desktop player starts the developer-prepared Android disk automatically, with your own persistent data layer. This is a boot-screen UI demo—not a connected guest. Use <b>Keymap</b> to explore controls.</p>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Settings Dialog -->
+<div class="overlay" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="dialog">
+    <div class="dialog-header">
+      <div><h2 id="settingsTitle">Settings</h2><div class="dialog-sub">Make your workspace feel right.</div></div>
+      <div class="grow"></div>
+      <button class="close" aria-label="Close settings" data-close>×</button>
+    </div>
+    <div class="dialog-body">
+      <nav class="settings-nav">
+        <button class="active" data-page="performance">Performance</button>
+        <button data-page="display">Display</button>
+        <button data-page="graphics">Graphics</button>
+        <button data-page="device">Device</button>
+        <button data-page="audio">Audio</button>
+        <button data-page="input">Input</button>
+        <button data-page="preferences">Preferences</button>
+        <button data-page="diagnostics">Diagnostics</button>
+      </nav>
+      <section class="settings-main" id="settingsPage"></section>
+    </div>
+    <div class="dialog-footer">
+      <div class="footer-actions">
+        <button class="quiet" data-close>Cancel</button>
+        <button class="primary" data-save>Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Keymap Studio Dialog -->
+<div class="overlay" id="keysOverlay" role="dialog" aria-modal="true" aria-labelledby="keyTitle">
+  <div class="dialog key-dialog">
+    <div class="dialog-header">
+      <div>
+        <h2 id="keyTitle">Nexus Keymap Studio</h2>
+        <div class="dialog-sub">Multi-scheme controls · <strong>preview only, not connected to Android</strong></div>
+      </div>
+      <div class="grow"></div>
+      <button class="close" data-close aria-label="Close keymap">×</button>
+    </div>
+    <div class="studio-toolbar">
+      <label for="presetSelect">Template:</label>
+      <select id="presetSelect" aria-label="Control scheme template">
+        <option value="custom">Custom Starter</option>
+        <option value="fps">Battle Royale / FPS Pro</option>
+        <option value="moba">MOBA 5v5 Arena</option>
+        <option value="arpg">Action RPG Combat</option>
+        <option value="blank">Blank Canvas</option>
+      </select>
+      <button class="quiet" id="undoBtn" disabled>↶ Undo</button>
+      <button class="quiet" id="redoBtn" disabled>↷ Redo</button>
+      <label class="check" style="margin:0"><input type="checkbox" id="snapGrid"> Snap grid</label>
+      <label for="overlayOpacity" style="margin-left:auto">Hint opacity:</label>
+      <input id="overlayOpacity" type="range" min="0" max="100" value="72" style="width:88px">
+      <span id="opacityLabel">72%</span>
+      <button class="quiet" id="exportJsonBtn">Export JSON</button>
+    </div>
+    <div class="palette-bar" role="toolbar" aria-label="Add controls">
+      <button class="tool-pill" data-tool="select">↖ Select / Drag</button>
+      <button class="tool-pill active" data-tool="tap">● Tap / Burst / Repeat</button>
+      <button class="tool-pill" data-tool="dpad">✥ WASD D-Pad</button>
+      <button class="tool-pill" data-tool="swipe">↝ Swipe</button>
+      <button class="tool-pill" data-tool="zoom">⤢ Pinch Zoom</button>
+      <button class="tool-pill" data-tool="moba">⚡ MOBA Skill</button>
+      <button class="tool-pill" data-tool="script">⌘ Macro Script</button>
+      <button class="quiet" id="openAim" style="margin-left:auto">⌖ Configure aim &amp; fire…</button>
+    </div>
+    <div class="key-scroll">
+      <div class="edit-body">
+        <div>
+          <div class="demo-canvas" id="demoCanvas" aria-label="Preview keymap canvas">
+            <svg class="canvas-svg" id="canvasSvg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+            <div id="canvasNodes"></div>
+          </div>
+          <p class="canvas-hint">Click an empty HUD spot, then press a keyboard key or mouse button to bind it. Escape cancels. Drag existing markers to reposition them; other tools remain available above.</p>
+          <div class="conflict-bar" id="conflictBar">✓ Zero key conflicts across active scheme controls.</div>
+        </div>
+        <div class="edit-side">
+          <label>Placed controls (<span id="controlCount">0</span>)</label>
+          <div class="binding-list" id="bindingList" aria-label="Placed markers"></div>
+          <button class="quiet" id="removeMarker" disabled>Remove selected</button>
+
+          <div id="tapInspector">
+            <label for="keySelect">Key to place / bind</label>
+            <select id="keySelect"></select>
+            <button type="button" class="key-capture" id="captureKeyBtn">Click &amp; press any key / mouse…</button>
+            <label for="modeSelect">Action</label>
+            <select id="modeSelect">
+              <option value="hold">Hold / tap sequence</option>
+              <option value="repeat">Repeat while held (Turbo)</option>
+              <option value="burst">Burst N taps on press</option>
+            </select>
+            <label for="repeatDelay">Repeat / burst interval (ms)</label>
+            <input id="repeatDelay" type="number" min="25" max="5000" step="25" value="250" disabled>
+            <label for="burstCount">Burst count</label>
+            <input id="burstCount" type="number" min="2" max="50" step="1" value="3" disabled>
+          </div>
+
+          <div id="scriptInspector" style="display:none">
+            <label for="scriptText">Macro commands (tap / wait / swipe / multipress)</label>
+            <textarea id="scriptText" rows="4">tap 80 75 50
+wait 80
+tap 85 60 50</textarea>
+            <div class="dialog-sub" id="scriptStatus">✓ Valid macro (3 steps)</div>
+          </div>
+
+          <p class="dialog-sub">Multi-touch mode dispatches up to 10 concurrent virtio touchscreen slots (WASD + Aim + Fire + ADS + Pinch Zoom). Guest support remains unverified.</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <span class="dialog-sub">Rust-validated v3 JSON profiles remain backward-compatible with v1/v2.</span>
+      <div class="footer-actions">
+        <button class="quiet" data-close>Cancel</button>
+        <button class="primary" data-save>Save keymap</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Aim, Shoot, ADS & Free-Look Dialog -->
+<div class="overlay" id="aimOverlay" role="dialog" aria-modal="true" aria-labelledby="aimTitle">
+  <div class="dialog aim-dialog">
+    <div class="dialog-header">
+      <div><h2 id="aimTitle">Aim, Pan, Shoot &amp; ADS</h2><div class="dialog-sub">Preview only · values are not persisted to disk</div></div>
+      <div class="grow"></div>
+      <button class="close" data-close aria-label="Close aim settings">×</button>
+    </div>
+    <div class="aim-content">
+      <label class="check"><input type="checkbox" id="aimEnabledCheck" checked> Include Aim &amp; Shoot in active scheme</label>
+      <label class="field">Start / Stop key <select id="aimToggleKey"><option>F8</option><option>F1</option><option>`</option></select></label>
+      <label class="field">Hold for free cursor <select id="aimSuspendKey"><option>Tab</option><option>Disabled</option><option>Ctrl</option></select></label>
+      <label class="field">Camera area X <input id="aimAnchorX" type="number" min="10" max="90" value="56"></label>
+      <label class="field">Camera area Y <input id="aimAnchorY" type="number" min="10" max="90" value="48"></label>
+      <label class="field">Sensitivity <input id="aimSensX" type="number" min="0.05" max="10" step="0.05" value="1.15"></label>
+      <label class="field">Sensitivity Y <input id="aimSensY" type="number" min="0.05" max="10" step="0.05" value="0.95"></label>
+      <label class="field">Fire button X <input id="aimFireX" type="number" min="0" max="100" value="83"></label>
+      <label class="field">Fire button Y <input id="aimFireY" type="number" min="0" max="100" value="73"></label>
+      <label class="check"><input type="checkbox" id="aimAdsCheck" checked> Right-Click ADS Scope (91%, 56%)</label>
+      <label class="check"><input type="checkbox" id="aimFreeLookCheck" checked> Alt Free-Look Eye Camera (77%, 25%)</label>
+      <label class="check"><input type="checkbox" id="aimCrosshairCheck" checked> Show on-screen crosshair reticle</label>
+      <div class="note">In the Windows player: arm Aim &amp; fire, focus Android and press F8 (hold Tab to temporarily free the cursor for looting). Guest compatibility is unverified.</div>
+    </div>
+    <div class="dialog-footer">
+      <div class="footer-actions">
+        <button class="quiet" data-close>Cancel</button>
+        <button class="primary" id="saveAimBtn" data-save>Save aim settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" role="status" id="toast"></div>
+
 <script>
-const $=s=>document.querySelector(s); const pages={performance:`<h3>Performance</h3><p class="desc">Choose how much of your PC the virtual machine can use.</p><label class="field">CPU cores <input type="number" value="4" min="1" max="64"></label><label class="field">Memory <select><option>4096 MB</option><option>2048 MB</option><option>8192 MB</option></select></label><div class="note">Changes take effect the next time you start the player.</div>`,display:`<h3>Display</h3><p class="desc">Window and cursor preferences. Guest display controls require Android integration.</p><div class="field">Resolution <div class="disabled">Managed by Android · not available yet</div></div><div class="field">Pixel density <div class="disabled">Managed by Android · not available yet</div></div><label class="check"><input type="checkbox" disabled> Show FPS at bottom left <span class="badge">NOT AVAILABLE YET</span></label><label class="check"><input type="checkbox" checked> Show host mouse cursor</label><div class="note">Live game FPS measurement is not available yet.</div>`,graphics:`<h3>Graphics</h3><p class="desc">The current player uses QEMU's compatibility display.</p><div class="field">Renderer <div class="disabled">Standard VGA · compatibility</div></div><div class="field">GPU acceleration <div class="disabled">Not available in this build</div></div><div class="note">No GPU passthrough, DirectX acceleration or FPS limiter is configured.</div>`,device:`<h3>Device</h3><p class="desc">Device profiles require support from the Android system image.</p><div class="field">Phone profile <div class="disabled">Not available in this build</div></div>`,preferences:`<h3>Preferences</h3><p class="desc">Startup and debugging options.</p><div class="note">The prepared Android system starts automatically when the player opens.</div><label class="check"><input type="checkbox"> Experimental multi-touch keymapping</label><p class="dialog-sub">Restart required. Guest support is unverified.</p><label class="check"><input type="checkbox"> Enable local ADB forwarding</label><label class="field">Local ADB port <input type="number" value="5555"></label><div class="note">Local forwarding does not enable ADB inside Android.</div>`};
-function toast(s){let t=$('#toast');t.textContent=s;t.classList.add('show');clearTimeout(window.tid);window.tid=setTimeout(()=>t.classList.remove('show'),2600)}
-function showPage(p){$('#settingsPage').innerHTML=pages[p];document.querySelectorAll('[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===p))}showPage('performance');document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>showPage(b.dataset.page)));
-$('#openAim').onclick=()=>$('#aimOverlay').classList.add('open');$('#openAimDock').onclick=()=>$('#aimOverlay').classList.add('open');$('#openSettings').onclick=()=>$('#settingsOverlay').classList.add('open');$('#openKeys').onclick=()=>$('#keysOverlay').classList.add('open');document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('.overlay').classList.remove('open'));document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{b.closest('.overlay').classList.remove('open');toast('Preview only — no settings were saved')});document.querySelectorAll('[data-demo]').forEach(b=>b.onclick=()=>toast(b.dataset.demo+' is not connected in this preview'));
-// In-memory demo state only; no game, input injection or persistent settings.
-const keySelect=$('#keySelect'), mode=$('#modeSelect'), delay=$('#repeatDelay'), canvas=$('#demoCanvas');
-for(const key of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ...'0123456789', 'Space']){ const option=document.createElement('option'); option.textContent=key; keySelect.appendChild(option); }
-keySelect.value='W';
-let markers=[{key:'W',x:29,y:54,repeat:false,delay:250},{key:'A',x:73,y:62,repeat:false,delay:250}], selected=-1, dragging=-1;
-function renderMarkers(){
- canvas.replaceChildren(); const list=$('#bindingList'); list.replaceChildren();
- markers.forEach((m,i)=>{
-  const node=document.createElement('button'); node.className='marker'+(i===selected?' selected':''); node.style.left=m.x+'%'; node.style.top=m.y+'%'; node.textContent=m.key==='Space'?'SP':m.key; node.setAttribute('aria-label',`Marker ${i+1}: ${m.key}`); node.dataset.index=i; canvas.appendChild(node);
-  const row=document.createElement('button'); row.className='binding-row'+(i===selected?' selected':''); row.textContent=`${m.key} ${m.repeat?'↻ ':''} · ${Math.round(m.x)}%, ${Math.round(m.y)}%`; row.onclick=()=>{selected=i;renderMarkers()}; list.appendChild(row);
- });
- if(!markers.length){const empty=document.createElement('div');empty.className='empty-list';empty.textContent='No markers yet';list.appendChild(empty)}
- $('#removeMarker').disabled=selected<0 || selected>=markers.length;
+// One persistent preview: reload this tab when its UI or assets change.
+(async function watchPreview() {
+  let revision;
+  async function check() {
+    try {
+      const response = await fetch('/preview-revision', {cache: 'no-store'});
+      if (response.ok) {
+        const next = await response.text();
+        if (revision && revision !== next) { location.reload(); return; }
+        revision = next;
+      }
+    } catch (_) { /* Keep the preview usable during a server restart. */ }
+    setTimeout(check, 2000);
+  }
+  check();
+})();
+
+const $ = s => document.querySelector(s);
+// Preview a drop without reading or uploading its contents.
+document.addEventListener('dragover', event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); });
+document.addEventListener('drop', event => {
+  if (!event.dataTransfer.files.length) return;
+  event.preventDefault();
+  const files = event.dataTransfer.files;
+  toast(files.length === 1 && /\.apk$/i.test(files[0].name) && files[0].size > 0
+    ? 'Preview only: desktop asks for confirmation before installing this APK. No file uploaded.'
+    : 'Drop exactly one non-empty APK file. No file uploaded.');
+});
+document.querySelectorAll('.dock button').forEach(button => {
+  const name = button.textContent.trim();
+  button.title = button.title || name; button.setAttribute('aria-label', button.getAttribute('aria-label') || name);
+  const icon = button.querySelector('.dock-icon');
+  if (icon) button.replaceChildren(icon);
+});
+const pages = {
+  input: `<h3>Input performance</h3><p class="desc">Desktop options apply after Save and reactivating aim. Preview only.</p><label class="field">Aim mouse input <select id="mouseInputPreview"><option>Compatibility cursor deltas</option><option>Experimental relative raw mouse</option></select></label><label class="field">Aim movement batching <select id="aimBatchPreview"><option>16 ms · compatibility</option><option>8 ms · lower batch delay</option><option>4 ms · more host work</option></select></label><div class="note">Relative raw mouse uses device counts rather than cursor-position deltas. Retune X/Y sensitivity as needed. Absolute devices are not supported in raw mode. Smaller intervals may increase CPU and monitor traffic. No game FPS or end-to-end latency measurement is available.</div><div class="note">Desktop: Settings → Game settings. Input packet counts, movement batches, and largest observed host batch wait are available in Diagnostics. These are not gameplay FPS.</div>`,
+  audio: `<h3>Audio output</h3><p class="desc">Automatic guest sound through Intel HDA and Windows DirectSound.</p><div class="field">Playback <div class="disabled">Windows default playback device · automatic</div></div><div class="note">Desktop sound is enabled by default without an on/off switch. Android needs a compatible HDA driver. Microphone capture and per-device routing are not implemented. This browser demo does not play guest audio.</div>`,
+  diagnostics: `<h3>Diagnostics</h3><p class="desc">Package checks and bounded current-session events in the desktop player.</p><div class="note">Browser demo only — this page cannot inspect your PC, installed files or Android guest.</div><pre style="white-space:pre-wrap;background:#10131c;padding:16px;border-radius:8px">Engine: not connected (browser preview)
+QMP monitor: not connected
+Android display: not connected
+ADB authorization: not tested
+Graphics backend: QEMU standard VGA (desktop)
+GPU acceleration: not implemented
+
+Desktop report checks:
+• QEMU and qemu-img executables
+• Required BIOS / VGA / APIC ROMs
+• Android base disk and UEFI firmware pair
+• ADB executable availability
+• Configured CPU, RAM and acceleration mode
+• Timestamped session events and QEMU errors</pre><div class="note">Desktop: Settings → Diagnostics → Refresh diagnostics / Copy report and session log. Reports may include local paths and usernames: review before sharing.</div>`,
+  performance: `<h3>Performance</h3><div class="note">Nexus embeds its own source-built QEMU derivative. Windows runtime branding is now NexusEngine.exe / Nexus Engine with a Nexus N icon; QEMU attribution remains in the package. The release LTO/O3 engine candidate passed Windows build, bundled-engine and packaging tests. A five-sample 500-million-step TCG comparison was effectively equal (0.695 s baseline / 0.692 s candidate). Player ZIP size fell from about 108 MB to 83 MB. No meaningful CPU speedup, Android FPS improvement or fastest-engine claim is established. A native virtio-serial v1 bridge is now under development for matched images: boot status, navigation, volume and shutdown, with a no-ADB guest test gate. Guest service startup and Windows transport still need verification; APK, app events, geometry and engine FPS are not implemented by v1. The latest monitoring update reuses ADB connections, backs off failed retries, and avoids activity/FPS dumps during boot; that reduces requested work but does not fix TCG or guest graphics.</div><p class="desc">Choose resources and guest telemetry.</p><label class="check"><input type="checkbox"> Show live display FPS</label><label class="check"><input type="checkbox" checked> Hide guest display until Android boot completes</label><div class="note">Desktop implementation: draggable display/compositor FPS badge (not game FPS), N/A on missing data. Boot hiding, FPS and per-app keymap switching require authorized local ADB forwarding. These preview controls do not connect to Android or change desktop settings. Boot hiding defaults to ON for new settings (saved OFF preferences remain OFF). It does not skip setup or speed up boot. Close now requests Android shutdown and waits for engine exit; after 45 seconds it offers Wait, Keep open, or explicit Force stop—never an automatic kill. Desktop now reveals the guest and warns after three minutes without Android confirmation; a missing ADB reply must not cause an endless loading screen.</div><label class="check"><input type="checkbox" id="autoResourcesPreview"> Automatic CPU and memory allocation</label><div class="note">Desktop automatic allocation: half the CPU threads (up to 8), about one quarter of physical RAM (512–8192 MB). Existing manual settings are preserved. Not a measured fastest-game preset. Image Studio now auto-sizes installer and verification VMs too, unless launch resources were supplied explicitly. Each launch saves a local JSON host/driver and configuration report beside the disk; this browser preview does not collect your PC hardware.</div><label class="field">CPU cores <input type="number" value="4" min="1" max="64"></label><label class="field">Memory <select><option>4096 MB</option><option>2048 MB</option><option>8192 MB</option></select></label><div class="note">Changes take effect the next time you start the player.</div>`,
+  display: `<h3>Display</h3><p class="desc">Resolution and pixel density for Android. Interactive UI preview only.</p><label class="field">Resolution <select id="guestResolution"><option>Android default</option><option>1280x720</option><option>1600x900</option><option>1920x1080</option><option>720x1280</option><option>1080x1920</option></select></label><label class="field">Pixel density (DPI) <select id="guestDensity"><option>Android default</option><option>160 DPI</option><option>200 DPI</option><option>240 DPI</option><option>280 DPI</option><option>320 DPI</option><option>400 DPI</option><option>480 DPI</option></select></label><button class="primary" id="applyGuestDisplay">Apply to running Android</button><div class="note" id="displayPreviewStatus">Desktop build requires ADB platform-tools, local forwarding and authorized TCP debugging. Changes apply immediately, independently of Save. Select Android default in both fields to reset.</div><label class="check"><input type="checkbox" checked> Show host mouse cursor</label><div class="note">This preview cannot change a real guest. Display controls do not add GPU acceleration.</div>`,
+  graphics: `<h3>Graphics</h3><p class="desc">The current player uses QEMU's compatibility display.</p><div class="field">Host GPU preference <div class="disabled">Automatic / Windows-managed window</div></div><div class="note">Desktop detects installed adapters with DXGI and reports their names and memory capacities. Android GPU rendering/selection is not implemented; no integrated or dedicated GPU is activated for Android by this preference.</div><label class="field">Display device <select id="graphicsPreview"><option>Use prepared image selection</option><option>Standard VGA · compatibility</option><option>VirtIO VGA · experimental</option><option>OpenGL / VirGL · backend under validation</option></select></label><div class="note">Desktop: restart required. VirtIO is an alternative display device requiring guest virtio-gpu/DRM support, not host GPU acceleration. Test it on the retained disk through Image Studio Resume, without temporary nomodeset boot edits. Browser selection does not change a real VM.</div><div class="field">GPU acceleration <div class="disabled">Not available in this build</div></div><div class="note">OpenGL/VirGL is wired to a real GL device and SDL context. Windows build tests passed; a Linux guest reported OpenGL ES 3.2 via VirGL using host software LLVMpipe. Repeat boot and screenshot validation are not yet passing reliably; Windows Android rendering remains unverified. DirectX and Vulkan guest backends remain unavailable. This preview does not render Android. A separate GitHub investigation now collects real Bliss live-boot serial logs and screenshots for Standard and VirtIO displays. It is not yet a verified Android image or a Windows graphics fix. CI reached Android boot completion with VirtIO, but captured a Setup Wizard llvmpipe crash; boot completion alone is not accepted as a usable desktop. Phase 1 now tests explicit CPU-feature and DRM/GBM compatibility profiles on GitHub; no profile is promoted to Player defaults until verified. An experimental CI builder now prepares a standalone UEFI guest disk and attempts disk-only boot; CI has now passed disk-only boot and shown a readable Android setup screen on Linux TCG. Windows, repeat boot and persistence remain unverified; an experimental guest download is now retained on GitHub with firmware and a diagnostic launcher. It is not certified for Windows or gaming.</div>`,
+  device: `<h3>Device</h3><p class="desc">Device profiles require support from the Android system image.</p><div class="field">Phone profile <div class="disabled">Not available in this build</div></div>`,
+  preferences: `<h3>Preferences</h3><div class="note">Desktop keymap libraries are now isolated per detected Android package. A new app gets an empty map; held inputs are released at app changes. Existing global schemes are preserved, not automatically applied to every app. ADB detection polls every two seconds; this is not instant switching.</div><p class="desc">Startup and debugging options.</p><div class="note">The prepared Android system starts automatically when the player opens.</div><label class="check"><input type="checkbox" checked> Experimental multi-touch keymapping</label><p class="dialog-sub">Enables 10-slot virtio touchscreen for concurrent WASD D-pad, Pinch Zoom, Aim, Fire &amp; ADS. Restart required; guest support is unverified.</p><label class="check"><input type="checkbox"> Enable local ADB forwarding</label><label class="field">Local ADB port <input type="number" value="5555"></label><div class="note">Local forwarding does not enable ADB inside Android.</div>`
+};
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window.tid);
+  window.tid = setTimeout(() => t.classList.remove('show'), 2600);
 }
-function updateMode(){const repeat=mode.value==='repeat'; delay.disabled=!repeat; for(const m of markers)if(m.key===keySelect.value){m.repeat=repeat;m.delay=Number(delay.value)} renderMarkers()}
-function syncMode(){const m=markers.find(m=>m.key===keySelect.value); mode.value=m?.repeat?'repeat':'hold';delay.value=m?.delay??250;delay.disabled=mode.value!=='repeat'}
-keySelect.onchange=syncMode; mode.onchange=updateMode; delay.onchange=()=>{delay.value=Math.min(5000,Math.max(100,Number(delay.value)||250));updateMode()};
-$('#removeMarker').onclick=()=>{if(selected>=0)markers.splice(selected,1);selected=-1;renderMarkers()};
-function position(e){const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100)),y:Math.max(0,Math.min(100,(e.clientY-r.top)/r.height*100))}}
-canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;const marker=e.target.closest('.marker');if(marker){dragging=Number(marker.dataset.index);selected=dragging}else{const p=position(e);markers.push({key:keySelect.value,...p,repeat:mode.value==='repeat',delay:Number(delay.value)});selected=markers.length-1;dragging=selected}canvas.setPointerCapture(e.pointerId);renderMarkers();e.preventDefault()});
-canvas.addEventListener('pointermove',e=>{if(dragging<0)return;Object.assign(markers[dragging],position(e));renderMarkers()});
-canvas.addEventListener('pointerup',()=>{dragging=-1});canvas.addEventListener('pointercancel',()=>{dragging=-1});
-renderMarkers();syncMode();
-document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){const opened=document.querySelectorAll('.overlay.open');if(opened.length)opened[opened.length-1].classList.remove('open')}});
-</script></body></html>
+
+function showPage(p) {
+  $('#settingsPage').innerHTML = pages[p];
+  if (p === 'performance') $('#autoResourcesPreview').onchange = event => {
+    document.querySelectorAll('#settingsPage .field input, #settingsPage .field select').forEach(control => control.disabled = event.target.checked);
+  };
+  if (p === 'display') $('#applyGuestDisplay').onclick = () => {
+    $('#displayPreviewStatus').textContent = 'Preview only: ' + $('#guestResolution').value + ' / ' + $('#guestDensity').value + '. No Android VM is connected; no changes were applied.';
+  };
+  document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === p));
+}
+showPage('performance');
+document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
+
+$('#openAim').onclick = () => $('#aimOverlay').classList.add('open');
+$('#keymapMenuButton').onclick = () => { $('#keymapToolbarMenu').hidden = !$('#keymapToolbarMenu').hidden; $('#volumeToolbarMenu').hidden = true; };
+$('#volumeMenuButton').onclick = () => { $('#volumeToolbarMenu').hidden = !$('#volumeToolbarMenu').hidden; $('#keymapToolbarMenu').hidden = true; };
+document.addEventListener('click', e => { if (!e.target.closest('.toolbar-menu') && !e.target.closest('#keymapMenuButton, #volumeMenuButton')) document.querySelectorAll('.toolbar-menu').forEach(m => m.hidden = true); });
+$('#cleanMemoryPreview').onclick = () => toast('Preview only: desktop asks permission to stop eligible Android background processes and trim owned working sets. No RAM was cleared.');
+$('#openSettings').onclick = () => $('#settingsOverlay').classList.add('open');
+$('#openKeys').onclick = () => $('#keysOverlay').classList.add('open');
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.overlay').classList.remove('open'));
+document.querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
+  if (b.id === 'saveAimBtn') {
+    state.aim.enabled = $('#aimEnabledCheck').checked;
+    state.aim.anchorX = Number($('#aimAnchorX').value) || 56;
+    state.aim.anchorY = Number($('#aimAnchorY').value) || 48;
+    state.aim.fireX = Number($('#aimFireX').value) || 83;
+    state.aim.fireY = Number($('#aimFireY').value) || 73;
+    state.aim.ads = $('#aimAdsCheck').checked;
+    state.aim.freeLook = $('#aimFreeLookCheck').checked;
+    state.aim.crosshair = $('#aimCrosshairCheck').checked;
+    renderAll();
+  }
+  b.closest('.overlay').classList.remove('open');
+  toast('Preview only — no settings were saved');
+});
+document.querySelectorAll('[data-demo]').forEach(b => b.onclick = () => toast(b.dataset.demo + ' is not connected in this preview'));
+
+const ALL_KEYS = [
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  ...'0123456789',
+  'Space', 'Shift', 'Ctrl', 'Alt', 'Tab', 'Enter',
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F8',
+  'Up', 'Down', 'Left', 'Right',
+  'Right Click', 'Middle Click', 'Mouse 4', 'Wheel Up', 'Wheel Down'
+];
+const keySelect = $('#keySelect');
+for (const k of ALL_KEYS) {
+  const opt = document.createElement('option');
+  opt.textContent = k;
+  keySelect.appendChild(opt);
+}
+keySelect.value = 'F';
+
+let activeTool = 'tap';
+let hintsVisible = true;
+let snapToGrid = false;
+let listeningForKey = false;
+let pendingBinding = null;
+function commitPending(key) {
+  if (!pendingBinding) return;
+  pushUndo();
+  const m = modeSelect.value;
+  state.controls.push({type:'tap',key,x:pendingBinding.x,y:pendingBinding.y,mode:m,delay:Number(delayInput.value)||250,burst:m==='burst'?(Number(burstInput.value)||3):1});
+  selectedId = state.controls.length-1; pendingBinding=null; syncInspector(); renderAll();
+}
+function togglePreviewFullscreen(){document.body.classList.toggle('preview-fullscreen');}
+$('#toggleFullscreen').onclick=togglePreviewFullscreen;
+$('#previewMaximize').onclick=()=>toast('Preview only — native player supports maximize and restore.');
+let undoStack = [], redoStack = [];
+let selectedId = -1, draggingInfo = null;
+
+function cloneState(s) { return JSON.parse(JSON.stringify(s)); }
+
+let state = {
+  opacity: 72,
+  controls: [
+    { type: 'dpad', keys: ['W','A','S','D'], sprint: 'Shift', x: 18, y: 74, radius: 11 },
+    { type: 'tap', key: 'Space', x: 91, y: 74, mode: 'hold', delay: 250, burst: 1 },
+    { type: 'tap', key: 'R', x: 75, y: 84, mode: 'hold', delay: 250, burst: 1 }
+  ],
+  aim: { enabled: false, toggleKey: 'F8', anchorX: 56, anchorY: 48, fireX: 83, fireY: 73, ads: true, adsX: 91, adsY: 56, freeLook: true, freeLookX: 77, freeLookY: 25, crosshair: true }
+};
+
+function pushUndo() {
+  undoStack.push(cloneState(state));
+  if (undoStack.length > 30) undoStack.shift();
+  redoStack = [];
+  $('#undoBtn').disabled = !undoStack.length;
+  $('#redoBtn').disabled = true;
+}
+
+$('#undoBtn').onclick = () => {
+  if (!undoStack.length) return;
+  redoStack.push(cloneState(state));
+  state = undoStack.pop();
+  selectedId = -1;
+  $('#undoBtn').disabled = !undoStack.length;
+  $('#redoBtn').disabled = !redoStack.length;
+  renderAll();
+};
+$('#redoBtn').onclick = () => {
+  if (!redoStack.length) return;
+  undoStack.push(cloneState(state));
+  state = redoStack.pop();
+  selectedId = -1;
+  $('#undoBtn').disabled = !undoStack.length;
+  $('#redoBtn').disabled = !redoStack.length;
+  renderAll();
+};
+
+$('#snapGrid').onchange = e => {
+  snapToGrid = e.target.checked;
+  $('#demoCanvas').classList.toggle('grid-on', snapToGrid);
+};
+$('#overlayOpacity').oninput = e => {
+  state.opacity = Number(e.target.value);
+  $('#opacityLabel').textContent = state.opacity + '%';
+  renderStageHints();
+};
+$('#toggleHints').onclick = () => {
+  hintsVisible = !hintsVisible;
+  $('#toggleHints').classList.toggle('active-toggle', hintsVisible);
+  $('#toggleHints').setAttribute('aria-pressed', String(hintsVisible));
+  renderStageHints();
+};
+
+document.querySelectorAll('[data-tool]').forEach(btn => {
+  btn.onclick = () => {
+    activeTool = btn.dataset.tool;
+    document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b === btn));
+  };
+});
+
+$('#presetSelect').onchange = e => {
+  pushUndo();
+  const v = e.target.value;
+  if (v === 'fps') {
+    state.controls = [
+      { type: 'dpad', keys: ['W','A','S','D'], sprint: 'Shift', x: 18, y: 74, radius: 11 },
+      { type: 'tap', key: 'Space', x: 92, y: 74, mode: 'hold', delay: 250, burst: 1 },
+      { type: 'tap', key: 'C', x: 86, y: 88, mode: 'hold', delay: 250, burst: 1 },
+      { type: 'tap', key: 'R', x: 75, y: 84, mode: 'hold', delay: 250, burst: 1 },
+      { type: 'tap', key: 'F', x: 69, y: 60, mode: 'hold', delay: 250, burst: 1 }
+    ];
+    state.aim = { enabled: true, toggleKey: 'F8', anchorX: 56, anchorY: 48, fireX: 83, fireY: 73, ads: true, adsX: 91, adsY: 56, freeLook: true, freeLookX: 77, freeLookY: 25, crosshair: true };
+  } else if (v === 'moba') {
+    state.controls = [
+      { type: 'dpad', keys: ['W','A','S','D'], sprint: '', x: 17, y: 76, radius: 11 },
+      { type: 'moba', key: 'Q', x: 74, y: 84, radius: 11 },
+      { type: 'moba', key: 'E', x: 81, y: 69, radius: 11 },
+      { type: 'moba', key: 'R', x: 91, y: 60, radius: 11 },
+      { type: 'tap', key: 'Right Click', x: 89, y: 83, mode: 'hold', delay: 250, burst: 1 }
+    ];
+    state.aim.enabled = false;
+  } else if (v === 'arpg') {
+    state.controls = [
+      { type: 'dpad', keys: ['W','A','S','D'], sprint: '', x: 18, y: 75, radius: 10 },
+      { type: 'swipe', key: 'Shift', x: 86, y: 82, x2: 95, y2: 70 },
+      { type: 'zoom', key: 'Wheel Up', keyOut: 'Wheel Down', x: 50, y: 50 },
+      { type: 'script', key: 'X', x: 76, y: 85, script: 'tap 88 80 45\nwait 60\ntap 81 68 65' },
+      { type: 'tap', key: 'J', x: 88, y: 80, mode: 'repeat', delay: 90, burst: 1 }
+    ];
+    state.aim.enabled = false;
+  } else if (v === 'blank') {
+    state.controls = [];
+    state.aim.enabled = false;
+  }
+  selectedId = -1;
+  renderAll();
+};
+
+$('#exportJsonBtn').onclick = () => {
+  toast('Exported v3 JSON profile (' + state.controls.length + ' controls) — preview mode');
+};
+
+function shortBadge(k) {
+  const map = { 'Space':'SP', 'Shift':'SHF', 'Ctrl':'CTL', 'Alt':'ALT', 'Right Click':'RMB', 'Middle Click':'MMB', 'Mouse 4':'M4', 'Wheel Up':'MW↑', 'Wheel Down':'MW↓', 'Up':'↑', 'Down':'↓', 'Left':'←', 'Right':'→', 'Enter':'ENT', 'Tab':'TAB' };
+  return map[k] || k;
+}
+
+function validateScriptText(txt) {
+  const lines = txt.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  if (!lines.length) return { ok: false, msg: '⚠ Script requires at least 1 command' };
+  for (let i = 0; i < lines.length; i++) {
+    const p = lines[i].split(/\s+/);
+    const cmd = p[0].toLowerCase();
+    if (!['tap','wait','swipe','down','move','up','multipress'].includes(cmd))
+      return { ok: false, msg: `⚠ Line ${i+1}: unknown command '${p[0]}'` };
+  }
+  return { ok: true, msg: `✓ Valid macro (${lines.length} steps)` };
+}
+
+function detectConflicts() {
+  const owners = new Map();
+  const add = (k, label) => {
+    if (!k) return;
+    if (!owners.has(k)) owners.set(k, new Set());
+    owners.get(k).add(label);
+  };
+  state.controls.forEach((c, idx) => {
+    if (c.type === 'tap') add(c.key, 'Tap');
+    else if (c.type === 'dpad') c.keys.forEach(k => add(k, 'D-Pad'));
+    else if (c.type === 'swipe') add(c.key, 'Swipe #' + (idx+1));
+    else if (c.type === 'moba') add(c.key, 'MOBA #' + (idx+1));
+    else if (c.type === 'script') add(c.key, 'Macro #' + (idx+1));
+  });
+  if (state.aim.enabled) {
+    add(state.aim.toggleKey, 'Aim Toggle');
+    if (state.aim.ads) add('Right Click', 'Aim ADS');
+  }
+  const list = [];
+  for (const [k, set] of owners.entries()) {
+    if (set.size > 1) list.push(`${k} (${[...set].join(' + ')})`);
+  }
+  return list;
+}
+
+function renderStageHints() {
+  const root = $('#stageOverlay');
+  root.replaceChildren();
+  if (hintsVisible && state.opacity > 0) {
+    const wrap = document.createElement('div');
+    wrap.style.opacity = String(state.opacity / 100);
+    for (const c of state.controls) {
+      if (c.type === 'dpad') {
+        const ring = document.createElement('div');
+        ring.className = 'hint-ring';
+        ring.style.left = c.x + '%'; ring.style.top = c.y + '%';
+        ring.style.width = '88px'; ring.style.height = '88px';
+        wrap.appendChild(ring);
+        const pill = document.createElement('div');
+        pill.className = 'hint-pill';
+        pill.style.left = c.x + '%'; pill.style.top = c.y + '%';
+        pill.textContent = c.keys.join('');
+        wrap.appendChild(pill);
+      } else {
+        const pill = document.createElement('div');
+        pill.className = 'hint-pill';
+        pill.style.left = c.x + '%'; pill.style.top = c.y + '%';
+        let label = shortBadge(c.key);
+        if (c.type === 'tap' && c.mode === 'repeat') label += '↻';
+        if (c.type === 'tap' && c.mode === 'burst') label += '×' + c.burst;
+        if (c.type === 'swipe') label = '↝ ' + label;
+        if (c.type === 'zoom') label = '⤢ MW';
+        if (c.type === 'moba') label = '⚡' + label;
+        if (c.type === 'script') label = '⌘ ' + label;
+        pill.textContent = label;
+        wrap.appendChild(pill);
+      }
+    }
+    root.appendChild(wrap);
+  }
+  if (state.aim.enabled && state.aim.crosshair) {
+    const ch = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    ch.setAttribute('class', 'stage-crosshair');
+    ch.setAttribute('viewBox', '0 0 28 28');
+    ch.innerHTML = `<line x1="2" y1="14" x2="10" y2="14" stroke="#7cf7c4" stroke-width="2"/><line x1="18" y1="14" x2="26" y2="14" stroke="#7cf7c4" stroke-width="2"/><line x1="14" y1="2" x2="14" y2="10" stroke="#7cf7c4" stroke-width="2"/><line x1="14" y1="18" x2="14" y2="26" stroke="#7cf7c4" stroke-width="2"/><circle cx="14" cy="14" r="2" fill="#7cf7c4"/>`;
+    root.appendChild(ch);
+  }
+}
+
+function renderAll() {
+  const nodes = $('#canvasNodes'), svg = $('#canvasSvg'), list = $('#bindingList');
+  nodes.replaceChildren(); svg.replaceChildren(); list.replaceChildren();
+  if(pendingBinding){const pending=document.createElement('div');pending.className='marker pending';pending.textContent='Press a key…';pending.style.left=pendingBinding.x+'%';pending.style.top=pendingBinding.y+'%';nodes.appendChild(pending);}
+
+  // Draw swipe & sequential lines
+  const tapGroups = new Map();
+  state.controls.forEach(c => {
+    if (c.type === 'tap') {
+      if (!tapGroups.has(c.key)) tapGroups.set(c.key, []);
+      tapGroups.get(c.key).push(c);
+    } else if (c.type === 'swipe') {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', c.x); line.setAttribute('y1', c.y);
+      line.setAttribute('x2', c.x2); line.setAttribute('y2', c.y2);
+      line.setAttribute('stroke', '#57d9ff'); line.setAttribute('stroke-width', '0.6');
+      svg.appendChild(line);
+    }
+  });
+  for (const pts of tapGroups.values()) {
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', pts[i].x); line.setAttribute('y1', pts[i].y);
+      line.setAttribute('x2', pts[i+1].x); line.setAttribute('y2', pts[i+1].y);
+      line.setAttribute('stroke', '#9d86ff'); line.setAttribute('stroke-dasharray', '1.2 1.2');
+      line.setAttribute('stroke-width', '0.45');
+      svg.appendChild(line);
+    }
+  }
+
+  state.controls.forEach((c, i) => {
+    const node = document.createElement('button');
+    node.type = 'button';
+    let cls = 'marker';
+    let label = '', rowText = '';
+    if (c.type === 'tap') {
+      const suffix = c.mode === 'repeat' ? ' ↻' : (c.mode === 'burst' ? ` ×${c.burst}` : '');
+      label = shortBadge(c.key) + (c.mode === 'repeat' ? '↻' : (c.mode === 'burst' ? `×${c.burst}` : ''));
+      rowText = `${c.key}${suffix} · ${Math.round(c.x)}%, ${Math.round(c.y)}%`;
+    } else if (c.type === 'dpad') {
+      cls += ' dpad';
+      label = `✥ ${c.keys.join('')}`;
+      rowText = `✥ D-Pad (${c.keys.join('/')}) · ${Math.round(c.x)}%, ${Math.round(c.y)}%`;
+    } else if (c.type === 'swipe') {
+      cls += ' swipe-start';
+      label = '↝ ' + shortBadge(c.key);
+      rowText = `↝ Swipe ${c.key} · ${Math.round(c.x)}%,${Math.round(c.y)}% → ${Math.round(c.x2)}%,${Math.round(c.y2)}%`;
+      const endNode = document.createElement('button');
+      endNode.type = 'button';
+      endNode.className = 'marker swipe-end' + (i === selectedId ? ' selected' : '');
+      endNode.style.left = c.x2 + '%'; endNode.style.top = c.y2 + '%';
+      endNode.dataset.index = i; endNode.dataset.handle = 'end';
+      endNode.setAttribute('aria-label', `Swipe ${i+1} end`);
+      nodes.appendChild(endNode);
+    } else if (c.type === 'zoom') {
+      cls += ' zoom';
+      label = '⤢ Zoom';
+      rowText = `⤢ Pinch Zoom (${c.key} / ${c.keyOut}) · ${Math.round(c.x)}%, ${Math.round(c.y)}%`;
+    } else if (c.type === 'moba') {
+      cls += ' moba';
+      label = '⚡' + shortBadge(c.key);
+      rowText = `⚡ MOBA Skill ${c.key} · ${Math.round(c.x)}%, ${Math.round(c.y)}%`;
+    } else if (c.type === 'script') {
+      cls += ' script';
+      label = '⌘' + shortBadge(c.key);
+      rowText = `⌘ Macro ${c.key} · ${Math.round(c.x)}%, ${Math.round(c.y)}%`;
+    }
+    if (i === selectedId) cls += ' selected';
+    node.className = cls;
+    node.style.left = c.x + '%'; node.style.top = c.y + '%';
+    node.textContent = label;
+    node.dataset.index = i;
+    node.setAttribute('aria-label', `Control ${i+1}: ${rowText}`);
+    nodes.appendChild(node);
+
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'binding-row' + (i === selectedId ? ' selected' : '');
+    row.textContent = rowText;
+    row.onclick = () => { selectedId = i; syncInspector(); renderAll(); };
+    list.appendChild(row);
+  });
+
+  if (state.aim.enabled) {
+    const a = state.aim;
+    const mk = (x, y, txt, cls) => {
+      const b = document.createElement('div');
+      b.className = 'marker ' + cls;
+      b.style.left = x + '%'; b.style.top = y + '%';
+      b.textContent = txt;
+      nodes.appendChild(b);
+    };
+    mk(a.anchorX, a.anchorY, '⌖' + a.toggleKey, 'aim');
+    mk(a.fireX, a.fireY, 'LMB', 'aim-sub');
+    if (a.ads) mk(a.adsX, a.adsY, 'RMB', 'aim-sub');
+  }
+
+  $('#controlCount').textContent = String(state.controls.length);
+  if (!state.controls.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-list';
+    empty.textContent = 'No controls placed yet';
+    list.appendChild(empty);
+  }
+  $('#removeMarker').disabled = selectedId < 0 || selectedId >= state.controls.length;
+
+  const conflicts = detectConflicts();
+  const bar = $('#conflictBar');
+  bar.classList.toggle('warn', conflicts.length > 0);
+  bar.textContent = conflicts.length
+    ? '⚠ Key overlap: ' + conflicts.join(' · ')
+    : '✓ Zero key conflicts across active scheme controls.';
+
+  renderStageHints();
+}
+
+const modeSelect = $('#modeSelect'), delayInput = $('#repeatDelay'), burstInput = $('#burstCount');
+
+function syncInspector() {
+  const c = state.controls[selectedId];
+  const isScript = c?.type === 'script';
+  $('#scriptInspector').style.display = isScript ? 'block' : 'none';
+  if (isScript) {
+    $('#scriptText').value = c.script;
+    $('#scriptStatus').textContent = validateScriptText(c.script).msg;
+  }
+  if (c && c.key && [...keySelect.options].some(o => o.value === c.key)) {
+    keySelect.value = c.key;
+  }
+  const tapSample = (c?.type === 'tap') ? c : state.controls.find(x => x.type === 'tap' && x.key === keySelect.value);
+  const m = tapSample?.mode || 'hold';
+  modeSelect.value = m;
+  delayInput.value = tapSample?.delay ?? 250;
+  burstInput.value = Math.max(2, tapSample?.burst ?? 3);
+  delayInput.disabled = (m === 'hold');
+  burstInput.disabled = (m !== 'burst');
+}
+
+function applyTapSettings() {
+  const m = modeSelect.value;
+  delayInput.disabled = (m === 'hold');
+  burstInput.disabled = (m !== 'burst');
+  const d = Math.min(5000, Math.max(25, Number(delayInput.value) || 250));
+  const b = m === 'burst' ? Math.min(50, Math.max(2, Number(burstInput.value) || 3)) : 1;
+  delayInput.value = d;
+  for (const item of state.controls) {
+    if (item.type === 'tap' && item.key === keySelect.value) {
+      item.mode = m; item.delay = d; item.burst = b;
+    }
+  }
+  renderAll();
+}
+
+keySelect.onchange = () => {
+  const c = state.controls[selectedId];
+  if (c && c.type !== 'dpad') { pushUndo(); c.key = keySelect.value; }
+  syncInspector();
+  renderAll();
+};
+modeSelect.onchange = () => { pushUndo(); applyTapSettings(); };
+delayInput.onchange = () => { pushUndo(); applyTapSettings(); };
+burstInput.onchange = () => { pushUndo(); applyTapSettings(); };
+$('#scriptText').oninput = e => {
+  const c = state.controls[selectedId];
+  const res = validateScriptText(e.target.value);
+  $('#scriptStatus').textContent = res.msg;
+  if (c && c.type === 'script') c.script = e.target.value;
+};
+
+$('#captureKeyBtn').onclick = () => {
+  listeningForKey = !listeningForKey;
+  $('#captureKeyBtn').classList.toggle('listening', listeningForKey);
+  $('#captureKeyBtn').textContent = listeningForKey ? 'Press any key or right-click…' : 'Click & press any key / mouse…';
+};
+window.addEventListener('keydown', e => {
+  if(pendingBinding){
+    e.preventDefault();e.stopPropagation();
+    if(e.key==='Escape'){pendingBinding=null;renderAll();return;}
+    if(e.key==='F11'||e.key==='Meta'||e.repeat)return;
+    const names={' ':'Space','Control':'Ctrl','ArrowUp':'Up','ArrowDown':'Down','ArrowLeft':'Left','ArrowRight':'Right'};
+    commitPending(names[e.key]||(e.key.length===1?e.key.toUpperCase():e.key));return;
+  }
+  if(e.key==='F11'){e.preventDefault();togglePreviewFullscreen();return;}
+
+  if (listeningForKey) {
+    e.preventDefault();
+    if (e.key !== 'Escape') {
+      let name = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if (name === ' ') name = 'Space';
+      if (name === 'Control') name = 'Ctrl';
+      if (name === 'ArrowUp') name = 'Up';
+      if (name === 'ArrowDown') name = 'Down';
+      if (name === 'ArrowLeft') name = 'Left';
+      if (name === 'ArrowRight') name = 'Right';
+      if (![...keySelect.options].some(o => o.value === name)) {
+        const opt = document.createElement('option'); opt.textContent = name; keySelect.appendChild(opt);
+      }
+      keySelect.value = name;
+      const c = state.controls[selectedId];
+      if (c && c.type !== 'dpad') { pushUndo(); c.key = name; }
+      renderAll();
+    }
+    listeningForKey = false;
+    $('#captureKeyBtn').classList.remove('listening');
+    $('#captureKeyBtn').textContent = 'Click & press any key / mouse…';
+    return;
+  }
+  if (e.key === 'Escape') {
+    const opened = document.querySelectorAll('.overlay.open');
+    if (opened.length) opened[opened.length - 1].classList.remove('open');
+  }
+});
+
+$('#removeMarker').onclick = () => {
+  if (selectedId >= 0 && selectedId < state.controls.length) {
+    pushUndo();
+    state.controls.splice(selectedId, 1);
+    selectedId = -1;
+    syncInspector();
+    renderAll();
+  }
+};
+
+const canvas = $('#demoCanvas');
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  let x = Math.max(0, Math.min(100, (e.clientX - r.left) / r.width * 100));
+  let y = Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100));
+  if (snapToGrid) { x = Math.round(x / 5) * 5; y = Math.round(y / 5) * 5; }
+  return { x, y };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if(pendingBinding){e.preventDefault();commitPending(({0:'Left Click',1:'Middle Click',2:'Right Click',3:'Mouse 4',4:'Mouse 5'})[e.button]||'Mouse 4');return;}
+  if (e.button !== 0) return;
+  if(!e.target.closest('.marker[data-index]') && (activeTool==='tap'||activeTool==='select')){
+    pendingBinding=canvasPos(e);renderAll();e.preventDefault();return;
+  }
+  const hit = e.target.closest('.marker[data-index]');
+  if (hit) {
+    pushUndo();
+    selectedId = Number(hit.dataset.index);
+    draggingInfo = { index: selectedId, handle: hit.dataset.handle || 'main' };
+  } else if (activeTool !== 'select') {
+    pushUndo();
+    const p = canvasPos(e);
+    const k = keySelect.value;
+    if (activeTool === 'tap') {
+      const m = modeSelect.value;
+      state.controls.push({ type: 'tap', key: k, x: p.x, y: p.y, mode: m, delay: Number(delayInput.value) || 250, burst: m === 'burst' ? (Number(burstInput.value) || 3) : 1 });
+    } else if (activeTool === 'dpad') {
+      state.controls.push({ type: 'dpad', keys: ['W','A','S','D'], sprint: 'Shift', x: p.x, y: p.y, radius: 11 });
+    } else if (activeTool === 'swipe') {
+      state.controls.push({ type: 'swipe', key: k, x: p.x, y: p.y, x2: Math.min(96, p.x + 12), y2: Math.max(4, p.y - 12) });
+    } else if (activeTool === 'zoom') {
+      state.controls.push({ type: 'zoom', key: 'Wheel Up', keyOut: 'Wheel Down', x: p.x, y: p.y });
+    } else if (activeTool === 'moba') {
+      state.controls.push({ type: 'moba', key: k, x: p.x, y: p.y, radius: 11 });
+    } else if (activeTool === 'script') {
+      state.controls.push({ type: 'script', key: k, x: p.x, y: p.y, script: `tap ${Math.round(p.x)} ${Math.round(p.y)} 50\nwait 80` });
+    }
+    selectedId = state.controls.length - 1;
+    draggingInfo = { index: selectedId, handle: activeTool === 'swipe' ? 'end' : 'main' };
+  } else {
+    selectedId = -1;
+    draggingInfo = null;
+  }
+  canvas.setPointerCapture(e.pointerId);
+  syncInspector();
+  renderAll();
+  e.preventDefault();
+});
+
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('wheel',e=>{if(pendingBinding){e.preventDefault();commitPending(e.deltaY<0?'Wheel Up':'Wheel Down');}},{passive:false});
+canvas.addEventListener('pointermove', e => {
+  if (!draggingInfo) return;
+  const c = state.controls[draggingInfo.index];
+  if (!c) return;
+  const p = canvasPos(e);
+  if (draggingInfo.handle === 'end' && c.type === 'swipe') { c.x2 = p.x; c.y2 = p.y; }
+  else { c.x = p.x; c.y = p.y; }
+  renderAll();
+});
+canvas.addEventListener('pointerup', () => { draggingInfo = null; });
+canvas.addEventListener('pointercancel', () => { draggingInfo = null; });
+document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); }));
+
+syncInspector();
+renderAll();
+</script>
+</body>
+</html>

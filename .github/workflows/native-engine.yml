@@ -1,0 +1,94 @@
+name: Independent Rust engine foundation
+on:
+  push:
+    paths:
+      - 'rust/nexus-engine/**'
+      - 'tests/native_engine_cli_test.py'
+      - 'tests/native_android*'
+      - 'tests/native_graphics_checkpoint.py'
+      - 'guest-tools/nexus-guest/agent.c'
+      - 'tests/guest_bridge_tests.py'
+      - 'tests/native_guest_integration_tests.py'
+      - 'tests/whp_sdk_abi.cpp'
+      - 'tests/build_native_engine.py'
+      - '.github/workflows/native-engine.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  foundation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Check Rust hypervisor ABI against Windows SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = & cl.exe /nologo /EHsc /std:c++17 /c tests/whp_sdk_abi.cpp /Fowhp-sdk-abi.obj 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($code -ne 0) {
+            $output | Select-Object -Last 8 | ForEach-Object { Write-Output "::error::$_" }
+            exit $code
+          }
+      - name: Test library and build independent engine (zero QEMU dependencies)
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Native Windows software window lifecycle smoke
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import subprocess
+          for repetition in range(3):
+              p=subprocess.run(['rust/nexus-engine/target/release/nexus-engine.exe','player-window-smoke'],capture_output=True,text=True,timeout=20)
+              print(p.stdout,flush=True)
+              if p.returncode:
+                  print('::error::'+p.stderr[-3000:].replace('\n','%0A'),flush=True)
+                  raise SystemExit(p.returncode)
+          print('::notice::NATIVE_WINDOW: three create/software-present/close cycles PASS; no Android, input or GPU success claimed')
+      - name: Direct3D host shader and synchronized readback (hardware or explicitly labeled WARP)
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import subprocess
+          subprocess.run(['python','tests/native_graphics_checkpoint.py','rust/nexus-engine/target/release/nexus-engine.exe'],check=True)
+      - name: Guest bridge parser and explicit COM2 production build (not Android execution)
+        if: runner.os == 'Linux'
+        run: |
+          python tests/guest_bridge_tests.py
+          python tests/native_guest_integration_tests.py
+      - name: Android manifest and read-only boot-contract host tests
+        run: python tests/native_android_tools_tests.py
+      - name: Independent CLI / disk-format reference checks
+        run: |
+          set -o pipefail
+          exe=rust/nexus-engine/target/release/nexus-engine
+          if [ "$RUNNER_OS" = Windows ]; then exe="${exe}.exe"; fi
+          if ! python tests/native_engine_cli_test.py "$exe" 2>&1 | tee native-engine-cli.log; then
+            tail -8 native-engine-cli.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          "$exe" capabilities
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-engine-foundation-${{ matrix.os }}
+          path: |
+            native-engine*.log
+            native-engine-graphics.json
+            rust/nexus-engine/target/release/nexus-engine
+            rust/nexus-engine/target/release/nexus-engine.exe
+            docs/native-engine-roadmap.md
+            docs/zlag-image-format.md

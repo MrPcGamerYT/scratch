@@ -3,7 +3,7 @@
 #include <QObject>
 #include <QTimer>
 
-// QEMU's tablet is one pointer, so same-key markers are clicked in sequence.
+// Same-key markers execute sequentially, optionally bursting N times or repeating while held.
 class ClickSequence : public QObject {
     Q_OBJECT
 public:
@@ -15,6 +15,7 @@ public:
 signals:
     void pointerDown(double x, double y);
     void pointerUp();
+    void finished();
 private:
     void step();
     void reset();
@@ -22,6 +23,7 @@ private:
     QList<KeyBinding> points;
     int activeKey = 0;
     int index = 0;
+    int remainingCycles = 1;
     bool physicallyHeld = false;
     bool pointerHeld = false;
     bool simpleHold = false;

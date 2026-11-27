@@ -18,6 +18,8 @@ public:
     void touchDown(int slot, double x, double y);
     void touchMove(int slot, double x, double y);
     void touchUp(int slot);
+    void releaseAllInputs();
+    const QSet<int> &activeTouchSlots() const { return touches; }
     static QJsonArray touchEvents(const QString &type, int slot, double x, double y, bool firstOrLast);
     static QJsonArray moveEvents(double x, double y);
     static QJsonArray pointerEvents(double x, double y, bool down);
@@ -31,5 +33,6 @@ private:
     QProcess *process;
     QByteArray buffer;
     QSet<int> touches;
+    bool pointerPressed = false;
     bool ready = false;
 };

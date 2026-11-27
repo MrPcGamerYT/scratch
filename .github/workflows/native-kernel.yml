@@ -1,0 +1,163 @@
+name: Native Linux kernel entry checkpoint
+on:
+  push:
+    paths:
+      - '.github/workflows/native-kernel.yml'
+      - 'tests/native_kernel_checkpoint.py'
+      - 'tests/native_initramfs.py'
+      - 'tests/native_initramfs_tests.py'
+      - 'tests/native_display_checkpoint.py'
+      - 'rust/nexus-engine/src/framebuffer.rs'
+      - 'rust/nexus-engine/src/kernel.rs'
+      - 'rust/nexus-engine/src/uart.rs'
+      - 'rust/nexus-engine/src/ata.rs'
+      - 'rust/nexus-engine/src/overlay.rs'
+      - 'rust/nexus-engine/src/guest_memory.rs'
+      - 'rust/nexus-engine/src/virtqueue.rs'
+      - 'rust/nexus-engine/src/virtio_block.rs'
+      - 'rust/nexus-engine/src/virtio_mmio.rs'
+      - 'rust/nexus-engine/src/pit.rs'
+      - 'rust/nexus-engine/src/pit0.rs'
+      - 'rust/nexus-engine/src/whp.rs'
+      - 'rust/nexus-engine/src/whp_mmio.rs'
+      - 'rust/nexus-engine/src/pic.rs'
+      - 'rust/nexus-engine/src/rtc.rs'
+      - 'rust/nexus-engine/src/platform.rs'
+      - 'rust/nexus-engine/src/pci.rs'
+      - 'rust/nexus-engine/src/timing.rs'
+  workflow_dispatch:
+    inputs:
+      kernel_run:
+        description: 'Reuse native-test-linux-kernel artifact from this run (optional)'
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  kernel:
+    if: ${{ inputs.kernel_run == '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ffc253263a1375a65fa6c9f62a893e9767fbebfa
+          path: kernel-source
+      - run: sudo apt-get update && sudo apt-get install -y build-essential flex bison bc libelf-dev libssl-dev e2fsprogs
+      - name: Build pinned tiny x86-64 Linux kernel, not an Android image
+        shell: bash
+        run: |
+          set -o pipefail
+          cd kernel-source
+          make tinyconfig
+          scripts/config -e 64BIT -e PRINTK -e TTY -e EARLY_PRINTK -e SERIAL_8250 -e SERIAL_8250_CONSOLE -e BINFMT_ELF -e BLK_DEV_INITRD -e RD_GZIP -e DEVTMPFS -e PROC_FS -e SYSFS -e DEBUG_KERNEL -e BLOCK -e PARTITION_ADVANCED -e MSDOS_PARTITION -e VIRTIO_MENU -e VIRTIO -e VIRTIO_MMIO -e VIRTIO_MMIO_CMDLINE_DEVICES -e VIRTIO_BLK -e EXT4_FS -e FB -e FB_SIMPLE -e SYSFB_SIMPLEFB -d RANDOMIZE_BASE -d SMP -d HYPERV -d PARAVIRT -d X86_5LEVEL
+          make olddefconfig
+          for setting in BLOCK MSDOS_PARTITION VIRTIO VIRTIO_MMIO VIRTIO_MMIO_CMDLINE_DEVICES VIRTIO_BLK EXT4_FS FB FB_SIMPLE SYSFB_SIMPLEFB; do
+            grep -q "CONFIG_${setting}=y" .config || { echo "Missing $setting"; exit 1; }
+          done
+          if ! make -j4 bzImage 2>&1 | tee ../kernel-build.log; then
+            tail -8 ../kernel-build.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          mkdir -p ../kernel-artifact
+          cp arch/x86/boot/bzImage ../kernel-artifact/
+          cp .config ../kernel-artifact/kernel.config
+          cp COPYING ../kernel-artifact/
+          echo 'Linux v6.6 source: https://github.com/torvalds/linux/tree/ffc253263a1375a65fa6c9f62a893e9767fbebfa; tinyconfig + explicit flags in native-kernel.yml. TEST KERNEL ONLY; no Android certification.' > ../kernel-artifact/SOURCE.txt
+          cd ../kernel-artifact
+          truncate -s 32M filesystem.ext4
+          mkfs.ext4 -F -b 4096 -L NEXUSTEST -O ^64bit,^metadata_csum_seed,^orphan_file filesystem.ext4
+          e2fsck -fn filesystem.ext4
+          sha256sum bzImage filesystem.ext4 > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-test-linux-kernel
+          path: kernel-artifact/
+  early-entry:
+    needs: kernel
+    if: ${{ always() && (needs.kernel.result == 'success' || inputs.kernel_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-test-linux-kernel
+          path: kernel-artifact
+          run-id: ${{ inputs.kernel_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Check diagnostic fixture structure and read-only persistence oracle
+        shell: python
+        run: |
+          import runpy
+          import sys
+          sys.path.insert(0,'tests')
+          runpy.run_path('tests/native_initramfs_tests.py',run_name='__main__')
+      - name: Build independent native engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Real Linux PID1 checkpoint — NOT Android or a full Linux distribution
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_kernel_checkpoint.py',run_name='__main__')
+      - name: Verify private COM2 native bridge exact guest query round trip
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_device_checkpoint.py',run_name='__main__')
+      - name: Verify guest fbdev writes against exact host framebuffer capture
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_display_checkpoint.py',run_name='__main__')
+      - name: Verify ext4 clean and unclean-VM persistence evidence
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          config=Path('kernel-artifact/kernel.config').read_text()
+          if 'CONFIG_EXT4_FS=y' not in config:
+              print('::notice::Legacy kernel regression only; no ext4 acceptance claim')
+          else:
+              clean=json.loads(Path('filesystem-checkpoint.json').read_text())
+              recovery=json.loads(Path('filesystem-unclean-checkpoint.json').read_text())
+              assert clean['verified'] and recovery['verified']
+              assert len(clean['samples'])==3 and len(recovery['samples'])==2
+              assert recovery['samples'][1]['journal_recovery_observed']
+              for sample in clean['samples']+recovery['samples']:
+                  assert sample['engine_exit']==0 and sample['marker_seen'] and sample['base_unchanged']
+                  assert sample['metrics']['irq5_injections']>0
+                  assert sample['metrics']['android_home_ready_ms'] is None
+                  assert sample['metrics']['total_boot_verified'] is False
+              print('::notice::EXT4_ACCEPTANCE='+json.dumps({'commit':os.environ['GITHUB_SHA'],'clean_three_boots':True,'unclean_vm_journal_replay':True,'base_unchanged':True,'source_ext4_sha256':clean['source_ext4_sha256'],'android_ready':False}))
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-kernel-entry-evidence
+          path: |
+            kernel-serial*.log
+            kernel-serial*.timing.json
+            diagnostic-initramfs.cpio
+            filesystem*-initramfs*.cpio
+            filesystem*-checkpoint.json
+            native-device-checkpoint.json
+            device-bridge-*.log
+            device-bridge-*.timing.json
+            device-bridge-initramfs.cpio
+            display-checkpoint.json
+            display-*.ppm
+            display-serial*.log
+            display-serial*.timing.json
+            display-initramfs.cpio
+            boot-timing-summary.json
+            kernel-checkpoint.txt
+            native-engine-*.log
+            kernel-artifact/SHA256SUMS.txt
+            kernel-artifact/kernel.config

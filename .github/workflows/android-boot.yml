@@ -1,0 +1,93 @@
+name: Real Bliss Android boot investigation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - tests/android_boot_probe.py
+      - .github/workflows/android-boot.yml
+jobs:
+  android:
+    name: Bliss 16.9.7 / ${{ matrix.profile }} / Linux TCG
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {graphics: virtio, profile: virgl}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-system-gui adb p7zip-full xvfb xauth mesa-utils
+      - name: Probe parser unit tests
+        run: python3 tests/android_probe_tests.py
+      - uses: actions/cache/restore@v4
+        id: iso-cache
+        with:
+          path: bliss.iso
+          key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
+      - name: Download exact diagnostic fixture
+        id: fixture
+        run: |
+          mkdir -p evidence fixture
+          if [ ! -f bliss.iso ]; then
+            curl --fail --location --retry 2 --retry-max-time 600 --connect-timeout 30 --max-time 600 \
+            'https://downloads.sourceforge.net/project/blissos-x86/Official/BlissOS16/Gapps/Generic/Bliss-v16.9.7-x86_64-OFFICIAL-gapps-20241011.iso' -o bliss.iso
+          fi
+          # Fingerprint of the user's tested ISO, not an independently verified publisher signature.
+          echo '17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751  bliss.iso' | tee evidence/fixture.sha256
+          sha256sum -c evidence/fixture.sha256
+          7z l bliss.iso > evidence/iso-files.txt
+          7z x bliss.iso -ofixture > evidence/extraction.txt
+      - uses: actions/cache/save@v4
+        if: ${{ always() && steps.fixture.outcome == 'success' && steps.iso-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: bliss.iso
+          key: bliss-1697-17137711fb42236640ac6fe4421fcb3bd15710065fcf75c20807c018f42e3751
+      - name: Probe actual Android boot (not firmware smoke test)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run -a python3 tests/android_boot_probe.py --iso bliss.iso --tree fixture --graphics '${{ matrix.graphics }}' --profile '${{ matrix.profile }}' --output evidence --timeout 720
+      - name: Expose diagnostic summary through GitHub checks
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import json
+          result = Path('evidence/result.json')
+          if result.exists():
+              data = json.loads(result.read_text())
+              print('::notice title=Android probe result::' + json.dumps(data).replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          for config in sorted(Path('fixture').rglob('*.cfg')) + sorted(Path('fixture').rglob('menu.lst')):
+              text = config.read_text(errors='replace')[:18000]
+              print('::notice title=ISO boot recipe::' + (str(config) + '\n' + text).replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          PYCODE
+      - name: Convert screenshots for inspection
+        if: always()
+        run: |
+          python3 -m pip install Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import base64
+          for image in Path('evidence').glob('*.ppm'):
+              Image.open(image).save(image.with_suffix('.png'))
+              image.unlink()
+          serial = Path('evidence/serial.log')
+          if serial.exists():
+              tail = serial.read_text(errors='replace')[-22000:]
+              print('::notice title=Guest serial tail::' + tail.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
+          screenshots = sorted(Path('evidence').glob('screen-*.png'))
+          if screenshots:
+              thumbnail = Image.open(screenshots[-1])
+              thumbnail.thumbnail((640, 480))
+              thumbnail.save('evidence/last-screen.jpg', quality=65)
+              print('::notice title=Last screenshot JPEG base64::' + base64.b64encode(Path('evidence/last-screen.jpg').read_bytes()).decode())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bliss-${{ matrix.profile }}-evidence
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 7

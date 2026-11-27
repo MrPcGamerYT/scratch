@@ -1,0 +1,11 @@
+Linux version 6.6.0+ (runner@runnervm0j63q) (gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #1 Thu Nov 26 02:44:24 UTC 2026
+Command line: earlyprintk=serial,ttyS0,115200,keep earlycon=uart8250,io,0x3f8,115200n8 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1
+BIOS-provided physical RAM map:
+BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+BIOS-e820: [mem 0x000000000009fc00-0x00000000000fffff] reserved
+BIOS-e820: [mem 0x0000000000100000-0x000000000fffffff] usable
+printk: console [earlyser0] enabled
+earlycon: uart8250 at I/O port 0x3f8 (options '115200n8')
+printk: Too late to register bootconsole uart8250
+NX (Execute Disable) protection: active
+APIC: Static calls initialized

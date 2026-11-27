@@ -1,0 +1,113 @@
+"""Independent reference checks, NOT Android/GPU certification."""
+import hashlib
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import tempfile
+import zlib
+
+exe=str(Path(sys.argv[1]).resolve())
+def run(*args,ok=True):
+    p=subprocess.run([exe,*map(str,args)],capture_output=True,text=True,timeout=20)
+    assert (p.returncode==0)==ok,(args,p.returncode,p.stdout,p.stderr)
+    return p
+with tempfile.TemporaryDirectory() as folder:
+    root=Path(folder); raw=root/'stopped.img'; target=root/'gustimg.zlag'
+    payload=bytes(range(256))*8192;raw.write_bytes(payload)
+    before=hashlib.sha256(raw.read_bytes()).hexdigest()
+    run('import-raw',raw,target)
+    content=target.read_bytes(); header=content[:64]
+    assert header[:8]==b'ZLAGIMG\0'
+    assert struct.unpack_from('<IIIIQI',header,8)==(1,64,512,0,len(payload),zlib.crc32(payload))
+    assert struct.unpack_from('<I',header,60)[0]==zlib.crc32(header[:60])
+    assert content[64:]==payload
+    run('verify',target);run('import-raw',raw,target,ok=False)
+    assert target.read_bytes()==content
+    assert hashlib.sha256(raw.read_bytes()).hexdigest()==before
+    broken=bytearray(content);broken[-1]^=1;target.write_bytes(broken);run('verify',target,ok=False)
+    run('boot',target,ok=False)
+    # Option rejection precedes input file IO and any WHP setup on both platforms.
+    for options,message in [(['--framebuffer='],'Invalid/duplicate framebuffer'),
+                            (['--framebuffer=a.ppm','--framebuffer=b.ppm'],'Invalid/duplicate framebuffer'),
+                            (['--ram-mib=256','--ram-mib=512'],'Duplicate RAM'),
+                            (['--ram-mib=4096'],'128..3072'),
+                            (['--ram-mib=-1'],'unsigned decimal'),
+                            (['--cpus=0'],'1..8'),
+                            (['--cpus=9'],'1..8'),
+                            (['--cpus=-1'],'Invalid/duplicate CPU'),
+                            (['--cpus=2','--cpus=4'],'Invalid/duplicate CPU'),
+                            (['--cpus=2'],'requires --apic-probe'),
+                            (['--test-dma-failure=bad'],'must be error or panic'),
+                            (['--test-dma-failure=error'],'requires APIC disk-create'),
+                            (['--test-dma-failure=error','--test-dma-failure=panic'],'Duplicate DMA failure')]:
+        failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0',*options,ok=False)
+        assert message in failure.stderr,failure.stderr
+    failure=run('boot-kernel','absent-kernel','absent-log','console=ttyS0','--bridge-apk-smoke=absent.apk',ok=False)
+    assert 'APK smoke requires probe-android-observe-create' in failure.stderr
+    failure=run('probe-android-init-open','absent-kernel','absent-log','console=ttyS0','absent-initrd','absent-base','existing.cow','--bridge-apk-smoke=absent.apk',ok=False)
+    assert 'new disposable COW overlay' in failure.stderr
+    text=run('capabilities').stdout
+    assert 'QEMU dependency: none' in text and 'NOT IMPLEMENTED' in text
+    # DLL/API availability differs across hosted runners. Report it honestly.
+    p=subprocess.run([exe,'whp-probe'],capture_output=True,text=True,timeout=20)
+    observation=f'WHP probe observation, NOT a CPU-execution test: exit={p.returncode}; '+(p.stdout+p.stderr).strip()
+    print('::notice::'+observation.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+    if sys.platform=='win32':
+        assert p.returncode==0,'Windows hypervisor unavailable: real CPU gate cannot pass'
+        for _ in range(3):
+            run('cpu-smoke'); run('io-smoke'); run('cancel-smoke'); run('transition-smoke'); run('protection-smoke')
+            priority=run('smp-smoke')
+            assert 'NATIVE_CR8_TPR_OK masked_irr=1 premature_delivery=0 delivered_after_lower=1 tpr_read=47 cr8_read=5' in priority.stdout,priority.stdout
+            assert priority.stdout.count('NATIVE_AP_RESET_OK restarts=3 starts=4 stops=4 stale_lapic=0 duplicate_sipi_ignored=true active_reset=true')==16,priority.stdout
+            run('protected-smoke'); run('long-smoke'); run('kernel-contract-smoke'); run('timer-irq-smoke'); run('mmio-smoke')
+        print('::notice::PASS: real WHP MMIO reads/writes in protected32 and long64, feature negotiation/reset/RO write ignore, forced instruction fetch through nonidentity guest paging, guest-notified write/flush/read DMA, used-ring/status and IRQ latch/ACK, COW reopen persistence/base integrity; three repetitions; protected32 external IRQ5 handler captures status, ACKs device, EOIs PIC and IRETD restores stack; fixture-seeded rings, not Linux discovery',flush=True)
+        print('::notice::PASS: PIT0 elapsed-clock one-shot -> latched PIC IRQ0 -> external WHP interrupt -> HLT wake -> guest EOI/IRETD, exact RAM counter and restored stack, three repetitions; no Android boot claim',flush=True)
+        print('::notice::PASS: direct WHP real-mode guest store/load/HLT executed three times, AX/RAM=0x5a17; no QEMU, no Android/GPU certification',flush=True)
+        print('::notice::PASS: synthetic Linux loading contract executed through WHP: ESI boot_params, E820 count, command line, kernel entry and initramfs contents, three repetitions; NOT a Linux kernel boot',flush=True)
+        print('::notice::PASS: seeded 32-bit protected and 64-bit long-mode execution, nonidentity virtual-to-physical paging alias, guest INT 80h/IRETQ, restored stack, and absent-PTE triple-fault refusal; three repetitions, not Linux/Android boot or boot-speed measurement',flush=True)
+        print('::notice::PASS: guest-driven real16 -> protected32 -> long64 transition with GDT, CR0/CR3/CR4/EFER and nonidentity paging store/load, three independent partitions',flush=True)
+        print('::notice::PASS: guest unmapped-read and write-protected-page faults delivered to guest handler, CR2/error code, unchanged protected RAM, two IRETQ recoveries and restored stack; three repetitions',flush=True)
+        print('::notice::PASS: 144 guest-driven active AP INIT resets in 48 dual-VP cycles: fresh SIPI startup, LAPIC TPR/SVR/IRR/ISR cleared, duplicate SIPI ignored, target restarted while spinning with IF=0; same production worker used by Linux; not OS hotplug certification',flush=True)
+        print('::notice::PASS: three actual long64 MOV CR8/TPR alias cycles: low TPR bits preserved, masked self-IPI in IRR without early handler, delivery after lowering CR8, MMIO TPR reflected in MOV-from-CR8; not runtime reset certification',flush=True)
+        print('::notice::PASS: 48 two-vCPU cycles: guest MP table discovery/checksums/CPU enumeration and actual controller identity, guest INIT/SIPI and AP protected-mode entry, virtual CPUID topology, self/physical/flat-logical fixed IPIs, TPR masking and IF deferral, one-shot/periodic timer IRQs waking HLT with guest masking/stop, IOAPIC held-level IRQ reassertion after EOI and guest route masking, real platform PIT and COM1 IOAPIC IRQs/device ACK, guest interrupt counters/EOIs/IRETD and both restored stacks; not production OS SMP or OS IOAPIC certification',flush=True)
+        ata_raw=root/'ata-fixture.raw';ata_image=root/'ata-fixture.zlag'
+        ata_payload=bytes((n*17+n//512)%251 for n in range(2048))
+        ata_raw.write_bytes(ata_payload);run('import-raw',ata_raw,ata_image)
+        ata_sha=hashlib.sha256(ata_image.read_bytes()).hexdigest()
+        for _ in range(3):run('ata-pio-smoke',ata_image)
+        assert hashlib.sha256(ata_image.read_bytes()).hexdigest()==ata_sha
+        assert ata_raw.read_bytes()==ata_payload
+        for index in range(3):
+            cow=root/f'ata-{index}.cow';run('ata-cow-smoke',ata_image,cow)
+            assert cow.exists() and cow.stat().st_size==64+536
+            run('ata-cow-smoke',ata_image,cow,ok=False)
+        assert hashlib.sha256(ata_image.read_bytes()).hexdigest()==ata_sha
+        print('::notice::PASS: real guest ATA write -> sync/flush -> exact guest readback -> device teardown -> separate persistent overlay reopen, three repetitions; base SHA unchanged, existing overlay never overwritten; not Android boot',flush=True)
+        bad_ata=root/'corrupt-ata.zlag';bad_bytes=bytearray(ata_image.read_bytes());bad_bytes[-1]^=1;bad_ata.write_bytes(bad_bytes)
+        failure=run('ata-pio-smoke',bad_ata,ok=False)
+        assert 'checksum mismatch' in failure.stderr,failure.stderr
+        print('::notice::PASS: verified ZLAG -> virtual ATA IDENTIFY/LBA28 PIO -> actual guest RAM exact sector comparison, guest write-command ABRT, source SHA unchanged, three repetitions; corrupt images refused; read-only/polled device only, not Android boot',flush=True)
+        sector=bytearray(512); code=bytearray([0xba,0xe9,0])
+        for byte in b'NEXUS-ZLAG-BOOT':code.extend([0xb0,byte,0xee])
+        code.append(0xf4);sector[:len(code)]=code;sector[510:]=b'\x55\xaa'
+        boot_raw=root/'boot-test.raw'; boot_image=root/'boot-test.zlag'
+        boot_raw.write_bytes(sector);run('import-raw',boot_raw,boot_image)
+        boot_before=hashlib.sha256(boot_image.read_bytes()).hexdigest()
+        for _ in range(3):
+            output=run('boot-test-sector',boot_image).stdout
+            assert '0000:7c00' in output and 'NEXUS-ZLAG-BOOT' in output,output
+        assert hashlib.sha256(boot_image.read_bytes()).hexdigest()==boot_before
+        invalid_raw=root/'unsigned.raw';invalid_image=root/'unsigned.zlag'
+        invalid_raw.write_bytes(bytes(512));run('import-raw',invalid_raw,invalid_image)
+        failure=run('boot-test-sector',invalid_image,ok=False)
+        assert '55AA' in failure.stderr,failure.stderr
+        damaged=bytearray(boot_image.read_bytes());damaged[100]^=1;boot_image.write_bytes(damaged)
+        failure=run('boot-test-sector',boot_image,ok=False)
+        assert 'checksum mismatch' in failure.stderr,failure.stderr
+        print('::notice::PASS: real ZLAG file -> verified first-sector loader -> direct WHP execution at 0000:7c00 -> NEXUS-ZLAG-BOOT debug output -> HLT, three repetitions; source SHA unchanged, invalid signature/corruption refused; not Android boot',flush=True)
+        print('::notice::PASS: private scalar I/O, AL/AX/EAX preservation, unsupported/string rejection, exit-budget rejection, infinite-loop cancellation and same-vCPU restart, three repetitions',flush=True)
+    else:
+        run('ata-pio-smoke',target,ok=False)
+        for cmd in ['cpu-smoke','io-smoke','cancel-smoke','protected-smoke','long-smoke','kernel-contract-smoke','timer-irq-smoke','mmio-smoke']: run(cmd,ok=False)
+print('PASS: independent ZLAG CRC/header/payload reference, source preservation, no overwrite, corruption refusal, boot refusal and capability disclosure',flush=True)

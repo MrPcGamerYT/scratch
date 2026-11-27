@@ -21,16 +21,24 @@ set(NEXUS_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/cargo/x86_64-pc-windows-msvc/rel
 add_custom_command(OUTPUT "${NEXUS_RUST_LIB}"
     COMMAND "${CARGO_EXECUTABLE}" build --locked --release --target x86_64-pc-windows-msvc
             --manifest-path "${NEXUS_RUST_DIR}/Cargo.toml" --target-dir "${CMAKE_CURRENT_BINARY_DIR}/cargo"
-    DEPENDS "${NEXUS_RUST_DIR}/Cargo.toml" "${NEXUS_RUST_DIR}/Cargo.lock" "${NEXUS_RUST_DIR}/src/lib.rs"
+    DEPENDS "${NEXUS_RUST_DIR}/Cargo.toml" "${NEXUS_RUST_DIR}/Cargo.lock" "${NEXUS_RUST_DIR}/src/lib.rs" "${NEXUS_RUST_DIR}/src/runtime.rs"
     VERBATIM)
 add_custom_target(nexus_rust_build DEPENDS "${NEXUS_RUST_LIB}")
 add_library(nexus_rust STATIC IMPORTED GLOBAL)
 set_target_properties(nexus_rust PROPERTIES IMPORTED_LOCATION "${NEXUS_RUST_LIB}")
 add_dependencies(nexus_rust nexus_rust_build)
 
-add_library(nexus_controls STATIC src/keymap.cpp src/keymap.h src/qmp.cpp src/qmp.h src/clicksequence.cpp src/clicksequence.h src/multisequence.cpp src/multisequence.h src/manageddisk.cpp src/manageddisk.h src/aimmodel.cpp src/aimmodel.h)
+add_library(nexus_controls STATIC
+    src/keymap.cpp src/keymap.h
+    src/qmp.cpp src/qmp.h
+    src/clicksequence.cpp src/clicksequence.h
+    src/multisequence.cpp src/multisequence.h
+    src/keymapengine.cpp src/keymapengine.h
+    src/manageddisk.cpp src/manageddisk.h
+    src/aimmodel.cpp src/aimmodel.h
+)
 add_dependencies(nexus_controls nexus_rust_build)
-target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32)
+target_link_libraries(nexus_controls PUBLIC Qt6::Core nexus_rust ws2_32 userenv bcrypt ntdll advapi32 synchronization)
 target_include_directories(nexus_controls PUBLIC src)
 
 add_library(nexus_download STATIC src/imagedownload.cpp src/imagedownload.h)
@@ -39,8 +47,10 @@ target_include_directories(nexus_download PUBLIC src)
 
 qt_add_executable(ProjectNexus WIN32
     src/main.cpp
+    src/windowchrome.cpp src/windowchrome.h
     src/mainwindow.cpp
     src/mainwindow.h
+    src/hostgraphics.cpp src/hostgraphics.h
     src/settingsdialog.cpp
     src/settingsdialog.h
     src/emulatorview.cpp
@@ -49,28 +59,68 @@ qt_add_executable(ProjectNexus WIN32
     src/inputmapper.h
     src/mouselock.cpp
     src/mouselock.h
+    src/rawmouse.cpp
+    src/rawmouse.h
     src/aimcontroller.cpp
     src/aimcontroller.h
     src/aimsettings.cpp
     src/aimsettings.h
     src/keymapdialog.cpp
     src/keymapdialog.h
+    src/keymapoverlay.cpp
+    src/keymapoverlay.h
 )
-qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png)
-target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets nexus_controls user32)
+qt_add_resources(ProjectNexus "assets" PREFIX "/" FILES assets/nexus-wallpaper.png assets/nexus-engine.png)
+target_link_libraries(ProjectNexus PRIVATE Qt6::Widgets Qt6::Network nexus_controls user32 shell32 dxgi)
+
+qt_add_executable(NexusImageStudio WIN32 src/imagestudio.cpp src/windowchrome.cpp src/windowchrome.h)
+target_link_libraries(NexusImageStudio PRIVATE Qt6::Widgets)
+
+configure_file(packaging/nexus.rc.in "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc" @ONLY)
+target_sources(ProjectNexus PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc")
+target_sources(NexusImageStudio PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nexus.rc")
+qt_add_resources(NexusImageStudio "studio_assets" PREFIX "/" FILES assets/nexus-engine.png)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(native_bridge_tests tests/native_bridge_tests.cpp)
+    target_include_directories(native_bridge_tests PRIVATE src)
+    target_link_libraries(native_bridge_tests PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME native_bridge_tests COMMAND native_bridge_tests)
+    add_executable(vmplan_tests tests/vmplan_tests.cpp)
+    target_link_libraries(vmplan_tests PRIVATE nexus_controls)
+    add_test(NAME vmplan_tests COMMAND vmplan_tests)
     add_executable(download_tests tests/download_tests.cpp)
     target_link_libraries(download_tests PRIVATE nexus_download)
     add_test(NAME download_tests COMMAND download_tests)
     add_executable(keymap_tests tests/keymap_tests.cpp)
     target_link_libraries(keymap_tests PRIVATE nexus_controls)
     add_test(NAME keymap_tests COMMAND keymap_tests)
+    add_executable(rawmouse_tests tests/rawmouse_tests.cpp src/rawmouse.cpp src/rawmouse.h)
+    target_include_directories(rawmouse_tests PRIVATE src)
+    target_link_libraries(rawmouse_tests PRIVATE user32)
+    add_test(NAME rawmouse_tests COMMAND rawmouse_tests)
     add_executable(aimmodel_tests tests/aimmodel_tests.cpp)
     target_link_libraries(aimmodel_tests PRIVATE nexus_controls)
     add_test(NAME aimmodel_tests COMMAND aimmodel_tests)
     add_executable(managed_disk_tests tests/managed_disk_tests.cpp)
     target_link_libraries(managed_disk_tests PRIVATE nexus_controls)
+    add_test(NAME managed_disk_tests COMMAND managed_disk_tests)
+    add_executable(keymap_ui_tests tests/keymap_ui_tests.cpp src/keymapdialog.cpp src/keymapdialog.h src/aimsettings.cpp src/aimsettings.h)
+    target_link_libraries(keymap_ui_tests PRIVATE Qt6::Widgets nexus_controls)
+    add_test(NAME keymap_ui_tests COMMAND keymap_ui_tests)
+    set_tests_properties(keymap_ui_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_executable(studiobrowse_tests tests/studiobrowse_tests.cpp src/windowchrome.cpp src/windowchrome.h src/studiobrowse.h)
+    target_include_directories(studiobrowse_tests PRIVATE src)
+    target_link_libraries(studiobrowse_tests PRIVATE Qt6::Widgets)
+    add_test(NAME studiobrowse_tests COMMAND studiobrowse_tests)
+    set_tests_properties(studiobrowse_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
+    add_executable(settings_tests tests/settings_tests.cpp src/hostgraphics.cpp src/hostgraphics.h src/settingsdialog.cpp src/settingsdialog.h src/windowchrome.cpp src/windowchrome.h)
+    target_include_directories(settings_tests PRIVATE src)
+    target_link_libraries(settings_tests PRIVATE Qt6::Widgets nexus_controls dxgi)
+    add_test(NAME settings_tests COMMAND settings_tests)
+    set_tests_properties(settings_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME image_studio_ui_tests COMMAND NexusImageStudio --smoke-test)
+    set_tests_properties(image_studio_ui_tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_executable(qemu_stub tests/qemu_stub.cpp)
 endif()

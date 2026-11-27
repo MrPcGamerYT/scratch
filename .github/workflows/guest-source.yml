@@ -1,0 +1,44 @@
+name: Discover official Android 11 guest sources
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/guest-source.yml
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Read official project release metadata without running downloads
+        run: |
+          mkdir -p evidence
+          python3 - <<'PY'
+          import urllib.request, pathlib, xml.etree.ElementTree as ET, json
+          records = []
+          for path in ['/Official/BlissOS14', '/Official/BlissOS14/FOSS', '/Official/BlissOS14/Generic']:
+              url = 'https://sourceforge.net/projects/blissos-x86/rss?path=' + path
+              try:
+                  request = urllib.request.Request(url, headers={'User-Agent':'Nexus-guest-source-inspection/1.0'})
+                  data = urllib.request.urlopen(request, timeout=35).read()
+                  root = ET.fromstring(data)
+                  for item in root.findall('./channel/item'):
+                      record = {key:item.findtext(key) for key in ['title','link','pubDate','description']}
+                      if record not in records:
+                          records.append(record)
+              except Exception as error:
+                  print('::warning::' + url + ': ' + str(error))
+          text = json.dumps(records, indent=2)
+          pathlib.Path('evidence/official-sources.json').write_text(text)
+          for i in range(0,len(text),3000):
+              print('::notice title=Official source candidates::' + text[i:i+3000].replace('%','%25').replace('\n','%0A'))
+          if not records:
+              raise SystemExit('No verified official candidates found; refusing guessed ISO URLs or third-party images.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-android11-source-evidence
+          path: evidence/
+          retention-days: 7

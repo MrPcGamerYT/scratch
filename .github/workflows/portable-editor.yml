@@ -1,0 +1,114 @@
+name: Portable Windows 10 guest editor
+on:
+  push:
+    paths:
+      - '.github/workflows/portable-editor.yml'
+      - 'image-studio-tools/portable/**'
+      - 'image-studio-tools/portable_workspace.py'
+      - 'tests/portable*'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  appliance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y debootstrap qemu-system-x86 qemu-utils squashfs-tools e2fsprogs
+      - run: python3 tests/portable_workspace_test.py && python3 tests/boot_branding_test.py
+      - name: Build bundled Linux maintenance appliance
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! bash image-studio-tools/portable/build_appliance.sh 2>&1 | tee build-appliance.log; then
+            tail -30 build-appliance.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+      - name: Real isolated VM nested-image editing test
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! python3 -u tests/portable_appliance_test.py 2>&1 | tee test-output.log; then
+            tail -25 test-output.log | while IFS= read -r line; do echo "::error::$line"; done
+            if [ -f appliance-test.log ]; then tail -25 appliance-test.log | while IFS= read -r line; do echo "::error::$line"; done; fi
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-editor-linux-evidence
+          path: appliance-test.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-editor-appliance
+          path: appliance/
+  windows:
+    needs: appliance
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-editor-appliance
+          path: portable/appliance
+      - uses: actions/download-artifact@v4
+        with:
+          name: QEMU-source-build
+          run-id: 45652854267
+          github-token: ${{ github.token }}
+          path: engine
+      - name: Assemble fully bundled Windows runtime
+        shell: pwsh
+        run: |
+          Get-ChildItem engine -Recurse -Filter NexusEngine.exe | Select-Object -ExpandProperty FullName
+          $engine = Get-ChildItem engine -Recurse -Filter NexusEngine.exe | Select-Object -First 1
+          $qemu = Split-Path (Split-Path $engine.FullName)
+          Copy-Item -Recurse $qemu portable/qemu
+          Invoke-WebRequest https://raw.githubusercontent.com/qemu/qemu/698104725efad4b29079d857dfdebbd804e34c99/pc-bios/kvmvapic.bin -OutFile portable/qemu/share/qemu/kvmvapic.bin
+          Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip -OutFile python.zip
+          Expand-Archive python.zip portable/python
+          foreach ($rom in @('linuxboot_dma.bin','linuxboot.bin')) {
+            Invoke-WebRequest "https://raw.githubusercontent.com/qemu/qemu/698104725efad4b29079d857dfdebbd804e34c99/pc-bios/$rom" -OutFile "portable/qemu/share/qemu/$rom"
+          }
+          Copy-Item image-studio-tools/portable/editor_host.py,image-studio-tools/portable/editor.html portable/
+          Copy-Item image-studio-tools/portable/Start-Nexus-Editor.cmd portable/
+          Copy-Item image-studio-tools/portable/README.txt portable/
+          Copy-Item packaging/THIRD-PARTY.md portable/
+          & portable/python/python.exe -c "import pathlib; compile(pathlib.Path('portable/editor_host.py').read_text(), 'editor_host.py', 'exec'); print('Bundled Python imports OK')"
+          & portable/qemu/bin/qemu-img.exe --version
+          & portable/qemu/bin/NexusEngine.exe --version
+      - name: Test exact bundled Windows engine boot and API
+        shell: pwsh
+        run: |
+          $output = & portable/python/python.exe tests/portable_windows_test.py 2>&1
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Output $_ }
+          if ($code -ne 0) {
+            $output | Select-Object -Last 8 | ForEach-Object { Write-Output "::error::$_" }
+            if (Test-Path windows-appliance-test.log) {
+              Get-Content windows-appliance-test.log -Tail 8 | ForEach-Object { Write-Output "::error::$_" }
+            }
+            exit $code
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-editor-windows-evidence
+          path: windows-appliance-test.log
+      - name: ZIP64 package and full CRC / SHA verification
+        shell: pwsh
+        run: |
+          python -c "import runpy; build_archive=runpy.run_path('packaging/package_release.py')['build_archive']; build_archive('portable','downloads/Nexus-Portable-Guest-Editor-Win10.zip',['Start-Nexus-Editor.cmd','python/python.exe','qemu/bin/NexusEngine.exe','qemu/bin/qemu-img.exe','appliance/vmlinuz','appliance/initrd','editor_host.py','editor.html'])"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nexus-Portable-Guest-Editor-Win10
+          path: downloads/*
+      - name: Publish verified preview
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "portable-editor-${GITHUB_RUN_ID}" downloads/* --title 'Nexus Portable Guest Editor — Windows 10 Preview' --notes 'Self-contained preview: bundled Python, QEMU and isolated Linux maintenance appliance. Tests cover real Linux nested squashfs/ext4 editing and bundled Windows TCG maintenance boot. Not yet an Android launcher/boot compatibility certification. Existing Image Studio ISO installer remains separate. Extract the complete ZIP, run Start-Nexus-Editor.cmd, and always edit a new copy.' --prerelease
