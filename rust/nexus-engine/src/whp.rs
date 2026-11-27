@@ -469,6 +469,14 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
+                    // Drain COM1 UART output even during bridge IO phases so
+                    // guest serial markers (e.g. NEXUS_HOME_READY) reach BootTrace.
+                    if !platform.uart.output.is_empty() {
+                        let drained=std::mem::take(&mut platform.uart.output);
+                        serial.write_all(&drained).map_err(|e|e.to_string())?;
+                        trace.observe_serial(&drained,elapsed_ms());
+                        if drained.contains(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
+                    }
                     if let Some(bridge)=&mut platform.bridge {
                         bridge.tick()?;
                         if matches!(goal,RunGoal::NativeBridge|RunGoal::NativeApk)&&bridge.client.complete() {
