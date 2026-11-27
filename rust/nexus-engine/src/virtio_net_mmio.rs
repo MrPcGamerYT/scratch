@@ -174,7 +174,7 @@ mod tests {
         let _=m;
     }
     fn push_avail(m:&mut GuestMemory<'_>,avail:u64,head:u16) {
-        m.write(avail,&1u16.to_le_bytes()).unwrap();
+        m.write(avail,&0u16.to_le_bytes()).unwrap();
         m.write(avail+2,&1u16.to_le_bytes()).unwrap();
         m.write(avail+4,&head.to_le_bytes()).unwrap();
     }

@@ -124,7 +124,7 @@ mod tests {
         SplitQueue::new(m,size,desc,avail,used).unwrap()
     }
     fn push_avail(m:&mut GuestMemory<'_>,avail:u64,head:u16) {
-        m.write(avail,&1u16.to_le_bytes()).unwrap();
+        m.write(avail,&0u16.to_le_bytes()).unwrap();
         m.write(avail+2,&1u16.to_le_bytes()).unwrap();
         m.write(avail+4,&head.to_le_bytes()).unwrap();
     }
@@ -133,7 +133,7 @@ mod tests {
         let mut m=memory(0x2000);
         // descriptor table at 0x1000, avail at 0x1200, used at 0x1400
         let desc_base=0x1000u64;
-        m.write(desc_base,&desc(0x800,HDR_LEN as u32+4,false,1)).unwrap();
+        m.write(desc_base,&desc(0x800,HDR_LEN as u32+5,false,1)).unwrap();
         m.write(desc_base+16,&desc(0x900,1,true,0)).unwrap();
         // packet at 0x800: 12-byte header + "HELLO"
         let mut packet=vec![0u8;HDR_LEN+5];
