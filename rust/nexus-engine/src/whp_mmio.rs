@@ -407,7 +407,7 @@ pub fn net_mmio_smoke()->Result<(),String> {
             if tx_status!=0 {return Err("Net MMIO TX completion status not success".into());}
             // Verify RX completion: RX buffer contains the loopback frame.
             let rx=unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20800),17)};
-            if &rx[..12]!=&header||&rx[12..]!=b"NEXUS" {return Err("Net MMIO RX loopback frame data mismatch".into());}
+            if rx[..12]!=header||&rx[12..]!=b"NEXUS" {return Err("Net MMIO RX loopback frame data mismatch".into());}
             // Verify used-ring indices advanced.
             let tx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20200),2)}.try_into().unwrap());
             let rx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20700),2)}.try_into().unwrap());
