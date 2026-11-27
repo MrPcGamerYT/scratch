@@ -275,7 +275,7 @@ static int serve_loop(int input, int output, int testing, pid_t *worker, int *wo
                         setpgid(*worker,*worker); close(ends[1]);
                         *workfd=ends[0]; fcntl(*workfd,F_SETFL,O_NONBLOCK);
                         worker_started=time(NULL); worker_used=0;
-                        worker_limit=key && !strcmp(key,"PROVISION_HOME") ? 300 : (key && !strcmp(key,"APK_INSTALL") ? 180 : (key && !strcmp(key,"CHECK_HOME") ? 300 : 130));
+                        worker_limit=key && !strcmp(key,"PROVISION_HOME") ? 400 : (key && !strcmp(key,"APK_INSTALL") ? 180 : (key && (!strcmp(key,"CHECK_HOME") || !strcmp(key,"VERIFY_TEST_APK")) ? 300 : 130));
                     }
                 } else if (reply(output,"NEXUS 1 ERROR UNSUPPORTED\n")) return -1;
             }
