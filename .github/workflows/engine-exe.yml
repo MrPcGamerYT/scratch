@@ -45,7 +45,15 @@ jobs:
           if proc3.stderr.strip(): print(proc3.stderr.strip())
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nNET-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc3.returncode, proc3.stdout, proc3.stderr))
-          sys.exit(proc3.returncode)
+          if proc3.returncode: sys.exit(proc3.returncode)
+          # Run the in-process VirtIO-MMIO audio device smoke.
+          proc4=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc4.stdout.strip(): print(proc4.stdout.strip())
+          if proc4.stderr.strip(): print(proc4.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nAUDIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc4.returncode, proc4.stdout, proc4.stderr))
+          sys.exit(proc4.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash

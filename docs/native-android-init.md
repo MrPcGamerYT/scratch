@@ -492,6 +492,20 @@ modes. Exposed as the `net-mmio-smoke` CLI command and added to the
 `net-mmio-smoke` OK (real WHP emulator path), `physical-check` valid, artifact
 uploaded.
 
+**Boot-plan activation (completed).** The `Net` variant and `LiveNet` are no
+longer dead code: `KernelPlan` gains a `net_probe:bool` field (default false),
+a `with_net_probe()` builder, and validation that refuses it under the APIC
+profile (single-vCPU platform path only). Both `boot_kernel` and
+`boot_kernel_disk` construct a `LiveNet` (net `MmioContext` + `Emulator` +
+`Loopback` backend) when `plan.net_probe` is set and pass it to
+`run_platform`. A guest OS with a VirtIO-net driver can now negotiate and use
+the device in a live boot.
+
+**Confirmed (activated gate).** Run **46044273923** (commit 0607618) succeeded —
+the full gate with the net device activated in the boot plan: tests (incl. the
+new `net_probe` validation test), clippy clean, release build, `net-smoke` OK,
+`net-mmio-smoke` OK, `physical-check` valid, artifact uploaded.
+
 **Still open (honest).** The device model and platform wiring are verified;
 activation by a boot plan (a `net_probe`/`net_device` plan flag that constructs
 `LiveNet` and passes it to `run_platform`) and a guest OS that actually
