@@ -116,12 +116,15 @@ impl NetMmio {
             }
             let queue=self.queue_mut().active.as_mut().ok_or("Missing active queue")?;
             let mut done=Vec::new();
+            let mut notify=false;
             for _ in 0..budget {
                 let Some(completion)=virtio_net::process_one(m,queue,backend,rx)? else {break;};
-                if completion.notify {self.interrupt|=1;}
+                if completion.notify {notify=true;}
                 done.push(completion);
             }
-            self.pending=queue.peek(m)?.is_some();
+            let still_pending=queue.peek(m)?.is_some();
+            if notify {self.interrupt|=1;}
+            self.pending=still_pending;
             Ok(done)
         })();
         if result.is_err() {self.status|=NEEDS_RESET;self.interrupt|=2;self.pending=false;}
@@ -141,7 +144,7 @@ mod tests {
         let mut raw=[0;16];
         raw[..8].copy_from_slice(&address.to_le_bytes());
         raw[8..12].copy_from_slice(&length.to_le_bytes());
-        let flags=u16::from(if writable {2} else {0});
+        let flags=if writable {2u16} else {0};
         raw[12..14].copy_from_slice(&flags.to_le_bytes());
         raw
     }
@@ -239,6 +242,7 @@ mod tests {
 /// the loopback backend, then deliver it back through the RX queue. No WHP or guest
 /// CPU required; exercises the full register model + executor end to end.
 pub fn net_smoke()->Result<(),String> {
+    use crate::guest_memory::RamRegion;
     let ram=Box::leak(Box::new(vec![0u8;0x4000]));
     let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).map_err(|e|e.to_string())?;
     let mut device=NetMmio::new();
