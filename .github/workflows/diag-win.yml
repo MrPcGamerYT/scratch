@@ -1,0 +1,48 @@
+name: Diagnostic Windows cargo build
+on:
+  push:
+    branches:
+      - arena/b4ea6e6d-scratch
+    paths:
+      - '.github/workflows/diag-win.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Capture Windows cargo build output
+        shell: bash
+        run: |
+          {
+            echo "=== cargo test ==="
+            cargo test --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets
+            echo "TEST_EXIT=$?"
+            echo "=== cargo clippy ==="
+            cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings
+            echo "CLIPPY_EXIT=$?"
+            echo "=== cargo build --release ==="
+            cargo build --locked --release --manifest-path rust/nexus-engine/Cargo.toml
+            echo "BUILD_EXIT=$?"
+          } > /tmp/win-build.txt 2>&1
+      - name: Commit Windows build output to branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p .ci-diag
+          cp /tmp/win-build.txt .ci-diag/win-build.txt
+          git config user.email "ci@nexus.local"
+          git config user.name "Nexus CI diagnostic"
+          git add .ci-diag/win-build.txt
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: diagnostic windows cargo build output [skip ci]"
+            git push
+          fi
