@@ -338,8 +338,8 @@ pub fn net_mmio_smoke()->Result<(),String> {
         let write=|code:&mut Vec<u8>,offset:u32,value:u32| {
             code.push(0xb8);code.extend_from_slice(&value.to_le_bytes());if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((MMIO_NET_BASE as u32)+offset).to_le_bytes());
         };
-        // Read device identity.
-        for (index,offset) in [0,4,8,0x34].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
+        // Read device identity: device ID (0), version (4), vendor ID (0xc), queue num (0x34).
+        for (index,offset) in [0,4,0xc,0x34].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
         // Negotiate: ACK, DRIVER, features (F_MAC low, VERSION_1 high), FEATURES_OK, DRIVER_OK.
         for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,1),(0x24,1),(0x20,1),(0x70,11),(0x70,15)] {write(&mut code,offset,value);}
         load(&mut code,0x70,4,0x1b010); // status after DRIVER_OK.
