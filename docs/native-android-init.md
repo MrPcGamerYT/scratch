@@ -123,3 +123,29 @@ and APK install/verify/uninstall completing. This is diagnostic stability, not
 usable-Home certification. The approximately 100-second launch target, input
 responsiveness, rendered-Home verification, ANR fixes, acceleration, and
 physical Win10 remain unproven.
+
+## Fix 2: Host-measured launch-to-Home time (completed)
+
+The engine previously hardcoded `android_home_ready_ms: null` and never measured
+when Home became ready. Fix:
+
+1. **Engine records Home-ready time from bridge completion.** When the native
+   bridge reports `NEXUS 1 RESULT VERIFY_TEST_APK OK` (i.e. the guest Home
+   diagnostic has completed), `run_platform` in `whp.rs` sets
+   `trace.android_home_ready_ms = Some(elapsed_ms())`. This is host-monotonic
+   time from engine start, not guest wall clock.
+2. **BootTrace JSON emits the measured value.** `timing.rs` `json()` now
+   outputs the actual `android_home_ready_ms` and computes `target_met`
+   (whether the value is <= 100000ms).
+3. **Diagnostic gate records but does not assert the 100s target.** The APK
+   diagnostic includes APK install/verify which adds ~236s of overhead; the
+   100s target applies to the real product launch without APK install. The
+   diagnostic asserts the value is recorded (not null) and prints it as a
+   notice for measurement.
+
+**Confirmed:** Two consecutive successful runs (45946926613, 45947469955) with
+BlissLauncher resumed, clean crash capture, non-blank scanout, and
+`android_home_ready_ms` recorded. The 100s launch-to-Home target itself is not
+asserted in the diagnostic because the APK install step is test overhead, not
+product launch. This is measurement infrastructure, not a usable-Home
+certification.
