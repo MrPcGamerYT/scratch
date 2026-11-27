@@ -29,12 +29,16 @@ class HomeEvidenceTests(unittest.TestCase):
             self.assertEqual(p.stdout,'com.android.launcher3/com.bliss.launcher.BlissLauncher')
 
     def test_process_ready_and_keyevent_failure_are_distinct(self):
-        text=self.sample()
-        text=text.replace('NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_PROCESS_READY 1\nNEXUS_HOME_RECENTS_KEY_FAILED\nNEXUS_HOME_HOME_KEY_FAILED\n')
+        text=('NEXUS_HOME_SELECTED com.android.launcher3/com.bliss.launcher.BlissLauncher\n'
+              'NEXUS_HOME_PROCESS_READY 1\nNEXUS_HOME_PID_BEFORE 1234\n'
+              'NEXUS_HOME_RECENTS_BEGIN\nNEXUS_HOME_RECENTS_KEY_FAILED\nNEXUS_HOME_RECENTS_END\n'
+              'NEXUS_HOME_HOME_KEY_FAILED\nNEXUS_HOME_PID_AFTER 1234\nNEXUS_HOME_PROCESS_RETAINED\n'
+              'NEXUS_HOME_ACTIVITY_STATE_BEGIN\nmResumedActivity: com.android.launcher3/com.bliss.launcher.BlissLauncher\nNEXUS_HOME_ACTIVITY_STATE_END\n'
+              'NEXUS_HOME_CRASH_LOG_BEGIN\n\nNEXUS_HOME_CRASH_LOG_END\n')
         d=home_evidence(text)
         self.assertTrue(d['launcher_process_ready'])
         self.assertFalse(d['keyevent_commands_completed'])
-        self.assertFalse(d['launcher_process_retained'])
+        self.assertTrue(d['launcher_process_retained'])
         # keyevent failure must not look like a clean pass
         self.assertFalse(d['android_home_verified'])
 
