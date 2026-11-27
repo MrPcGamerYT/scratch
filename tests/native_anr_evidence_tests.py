@@ -46,6 +46,20 @@ NEXUS_PACKAGE_INVENTORY_END
     assert e['package_count']==3
     assert 'package:com.android.launcher3' in e['packages']
 
+def test_slim_disabled_count_parsed():
+    serial='''NEXUS_SLIM_BEGIN
+NEXUS_SLIM_DISABLED 5
+NEXUS_SLIM_END
+'''
+    e=anr_evidence(serial)
+    assert e['slim_ran'] is True
+    assert e['slim_disabled']==5
+
+def test_slim_not_run_defaults_zero():
+    e=anr_evidence('no slim markers')
+    assert e['slim_ran'] is False
+    assert e['slim_disabled']==0
+
 if __name__=='__main__':
     for name,fn in sorted(globals().items()):
         if name.startswith('test_') and callable(fn):

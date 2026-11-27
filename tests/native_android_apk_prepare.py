@@ -48,6 +48,25 @@ pm uninstall org.nexus.smoke || { echo NEXUS_APK_CHECK_UNINSTALL_FAILED; exit 1;
 packages=$(pm list packages org.nexus.smoke)
 if printf '%s\\n' "$packages" | grep -Fx 'package:org.nexus.smoke'; then echo NEXUS_APK_CHECK_STILL_PRESENT; exit 1; fi
 echo NEXUS_ANDROID_REAL_APK_UNINSTALLED
+echo NEXUS_SLIM_BEGIN
+# Safe slimming: disable bloatware packages not needed for a launcher-only
+# experience. Use pm disable (not uninstall) so the system can re-enable if
+# needed. Only disable packages that are definitely not required for Home.
+slim_count=0
+for pkg in com.android.chrome com.google.android.gm com.google.android.apps.maps \
+           com.google.android.apps.photos com.google.android.youtube \
+           com.android.email com.android.mms com.android.soundrecorder \
+           com.android.calculator2 com.android.deskclock com.android.spiral \
+           com.android.browser com.google.android.apps.books \
+           com.google.android.apps.movies com.google.android.apps.music \
+           com.google.android.dialer com.google.android.apps.photos.lite \
+           com.android.vending; do
+    if pm list packages "$pkg" | grep -q "package:$pkg"; then
+        pm disable --user 0 "$pkg" 2>/dev/null && slim_count=$((slim_count+1))
+    fi
+done
+echo "NEXUS_SLIM_DISABLED $slim_count"
+echo NEXUS_SLIM_END
 echo NEXUS_ANR_BASELINE_BEGIN
 if ! timeout 15 dumpsys activity lastanr; then echo NEXUS_ANR_BASELINE_UNAVAILABLE; fi
 echo NEXUS_ANR_BASELINE_END
