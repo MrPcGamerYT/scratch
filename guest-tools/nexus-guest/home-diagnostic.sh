@@ -23,7 +23,22 @@ if [ -n "$component" ]; then
 else
     echo NEXUS_HOME_NO_CANDIDATE
 fi
-sleep 10
+sleep 3
+before=$(pidof "${component%%/*}")
+echo "NEXUS_HOME_PID_BEFORE $before"
+echo NEXUS_HOME_RECENTS_BEGIN
+if timeout 10 input keyevent 187; then echo NEXUS_HOME_RECENTS_KEY_SENT; fi
+sleep 2
+timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity'
+echo NEXUS_HOME_RECENTS_END
+if timeout 10 input keyevent 3; then echo NEXUS_HOME_HOME_KEY_SENT; fi
+sleep 8
+after=$(pidof "${component%%/*}")
+echo "NEXUS_HOME_PID_AFTER $after"
+if [ -n "$before" ] && [ "$before" = "$after" ]; then echo NEXUS_HOME_PROCESS_RETAINED; fi
+echo NEXUS_HOME_FRAME_STATS_BEGIN
+timeout 10 dumpsys gfxinfo "${component%%/*}" | head -n 65
+echo NEXUS_HOME_FRAME_STATS_END
 echo NEXUS_HOME_ACTIVITY_STATE_BEGIN
 timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity|Hist #0|mFocusedApp'
 echo NEXUS_HOME_ACTIVITY_STATE_END

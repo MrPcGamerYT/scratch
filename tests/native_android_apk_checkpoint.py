@@ -44,7 +44,11 @@ def main():
     capture=Path('native-apk-software.ppm')
     result['scanout']=scanout_evidence(capture.read_bytes()) if capture.exists() and capture.stat().st_size else None
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
-    print('::notice::ANDROID_SCANOUT_EVIDENCE='+json.dumps(result['scanout']),flush=True)
+    summary=dict(result['scanout'] or {})
+    preview=summary.pop('preview_png_base64','')
+    print('::notice::ANDROID_SCANOUT_EVIDENCE='+json.dumps(summary),flush=True)
+    for offset in range(0,len(preview),2800):
+        print(f'::notice::ANDROID_SCANOUT_PREVIEW_{offset}='+preview[offset:offset+2800],flush=True)
     diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
     critical='\n'.join(line for line in serial.splitlines() if any(k in line for k in ['clocksource','tsc:','TSC','NEXUS_','Abort message','SurfaceFlinger','F DEBUG','signal 6','nexus-native','nexus-apk','avc: denied']))
     print('::notice::ANDROID_CLOCK_DIAGNOSTICS='+json.dumps(result['guest_clock_diagnostics']),flush=True)
@@ -59,6 +63,7 @@ def main():
     assert 'NEXUS_ANDROID_REAL_APK_PRESENT' in serial and 'NEXUS_ANDROID_REAL_APK_UNINSTALLED' in serial
     home=result['home_activity_evidence']
     assert home['home_activity_resumed'] and home['crash_capture_complete'],home
+    assert home['keyevent_commands_completed'] and home['launcher_process_retained'],home
     assert not home['frame_duration_abort_observed'] and not home['captured_native_crash'],home
     assert metrics['total_boot_verified'] is False and metrics['android_home_ready_ms'] is None
     result['android_apk_verified']=True;Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))

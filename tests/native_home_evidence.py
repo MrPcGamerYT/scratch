@@ -16,4 +16,6 @@ def home_evidence(serial):
             'crash_capture_complete':'NEXUS_HOME_CRASH_LOG_BEGIN' in serial and 'NEXUS_HOME_CRASH_LOG_END' in serial,
             'frame_duration_abort_observed':'Impossible totalDuration' in serial,
             'captured_native_crash':bool(re.search(r'Fatal signal|Abort message:|>>> .* <<<',crash)),
+            'keyevent_commands_completed':all(marker in serial for marker in ['NEXUS_HOME_RECENTS_KEY_SENT','NEXUS_HOME_HOME_KEY_SENT']),
+            'launcher_process_retained':'NEXUS_HOME_PROCESS_RETAINED' in serial,
             'android_home_verified':False,'rendered_home_verified':False,'input_responsiveness_verified':False}
