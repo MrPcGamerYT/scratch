@@ -333,3 +333,69 @@ and `apk` jobs. The Windows build passes `cargo test` (144 passed, 0 failed),
 `cargo clippy -- -D warnings` (clean), and `cargo build --release`; the
 Android APK checkpoint assertions held (bridge APK install/verify/uninstall
 OK, renderer=software recorded, Home rendered). Fix 7 is verified.
+
+## Fix 8 — Physical Windows host run: OS identity, WHP capability, real vCPU execution
+
+**Problem.** The native engine's WHP path (`whp.rs`) has only ever been
+exercised on the `windows-2022` **CI runner**, which is a Windows *Server*
+host inside a hosted hypervisor. No code path has ever produced
+machine-verifiable evidence of the real host OS identity or of a physical
+Windows 10/11 client running WHP. The README explicitly warned the physical
+Bliss OS install/boot path is unverified. Fix 8 adds a self-contained
+`physical-check` command that captures **OS identity + WHP capability + a real
+guest vCPU execution** as a JSON evidence file, plus a fail-closed Python
+verifier, so a physical run can be proven rather than asserted.
+
+**Design.** `physical-check` records **actual** outcomes, not assumed ones:
+
+1. **`whp.rs` `HostOs` + `host_os()`.** New `pub struct HostOs
+   {major,minor,build,platform,product_type}` with `is_windows_client()`
+   (`major==10 && product_type==1`, i.e. `VER_NT_WORKSTATION`; Windows 11
+   still reports major 10, so this covers both) and `display()`. On Windows
+   the real version is read via `RtlGetVersion` from `ntdll` (always returns
+   the true installed version, unlike `GetVersionEx`, which is affected by
+   the executable's compatibility manifest). A `#[repr(C)] OsVersionInfoExW`
+   matches the native struct layout; a non-Windows stub returns an error.
+   Re-exported at the `whp` module top level behind `#[cfg(windows)]`.
+2. **`main.rs` `physical-check` command.** Queries `host_os()`, then runs
+   `whp::probe()` (WHP partition lifecycle) and `whp::cpu_smoke()` (real
+   guest vCPU execution). It always writes `native-win10-physical.json`
+   with the real `whp_capability_present`, `whp_partition_lifecycle`,
+   `guest_vcpu_executed` and `verdict` values (plus `whp_detail` on failure),
+   and prints `NATIVE_WIN10_PHYSICAL_JSON=...`. It exits nonzero only when
+   the WHP/vCPU gate fails — but the JSON is written first so a host lacking
+   nested virtualization still produces inspectable evidence.
+3. **`tests/native_win10_physical_check.py` verifier.** Fail-closed JSON
+   contract check. Default mode validates the schema + host OS identity
+   (CI-safe: passes even when WHP is absent, e.g. a nested-virt VM). Strict
+   physical gate: `--require-win10` (Windows 10/11 client workstation) and
+   `--require-whp` (WHP capability + partition lifecycle + real vCPU
+   execution all present). The `boundary` field records that this verifies
+   WHP/vCPU only — NOT Android boot, GPU acceleration, networking/audio, or
+   usable Home.
+4. **`native-apk.yml` apk job.** A new `Physical Windows host evidence` step
+   runs `physical-check` on the Windows runner and validates the evidence
+   JSON structurally (default mode). The strict `--require-win10 --require-whp`
+   gate is intentionally **not** applied here: the `windows-2022` runner is a
+   Windows *Server* host (product type 3), not a Windows 10 client
+   workstation, and lacks the physical-run conditions. The strict gate is for
+   a real physical Windows 10/11 x64 host.
+
+**Confirmed (mechanism verified).** Run 46013798340 (commit a753896)
+succeeded with both `assets` and `apk` jobs. The Rust changes compile cleanly
+on Linux (`assets`: `cargo build --release --locked`) and on Windows (`apk`:
+`cargo test` + `cargo clippy -- -D warnings` + `cargo build --release`), and
+the `physical-check` command runs on the real Windows runner emitting
+schema-valid evidence JSON (structural verifier passed). An earlier run
+46012901809 failed in the **unchanged** `assets` job in ~4 minutes — too fast
+to reach the `cargo build` step near the end (~14 min in the green run) —
+confirmed a flake; the re-run succeeded.
+
+**Still open (honest).** The strict physical gate
+(`--require-win10 --require-whp`) has **not** been satisfied: no physical
+Windows 10/11 x64 client host with WHP/nested virtualization has run
+`physical-check` yet. The CI runner proves the mechanism compiles, runs, and
+emits valid evidence on a real Windows host, but it is a Windows *Server*
+inside a hosted hypervisor — not the physical Windows 10 target. Running the
+strict gate on a physical machine is the remaining step to close Fix 8
+fully; the command and verifier are in place to do so.
