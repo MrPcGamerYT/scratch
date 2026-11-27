@@ -392,7 +392,7 @@ pub fn net_mmio_smoke()->Result<(),String> {
             if timed_out {return Err("Net MMIO fixture deadline exceeded".into());}result?;
             // Verify register reads.
             let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),32)};
-            for (n,expected) in [0x74726976u32,2,0x5358454e,2,15].into_iter().enumerate() {
+            for (n,expected) in [0x74726976u32,2,0x5358454e,256,15].into_iter().enumerate() {
                 let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("Net MMIO register {n} mismatch 0x{actual:x}"));}
             }
             // Verify interrupt was asserted and cleared by ACK.
