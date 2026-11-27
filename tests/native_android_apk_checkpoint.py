@@ -46,6 +46,7 @@ def main():
     Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
     print('::notice::ANDROID_CLOCK_DIAGNOSTICS='+json.dumps(result['guest_clock_diagnostics']),flush=True)
     print('::notice::ANDROID_HOME_ACTIVITY_EVIDENCE='+json.dumps(result['home_activity_evidence']),flush=True)
+    print('::notice::ANDROID_HOME_PROCESS_EVIDENCE='+json.dumps({k:result['home_activity_evidence'][k] for k in ['selected_component','launcher_pid_before','launcher_pid_after','launcher_process_retained','launcher_reported_frames']}),flush=True)
     summary=dict(result['scanout'] or {})
     preview=summary.pop('preview_png_base64','')
     print('::notice::ANDROID_SCANOUT_EVIDENCE='+json.dumps(summary),flush=True)
