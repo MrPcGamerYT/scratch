@@ -1,0 +1,109 @@
+    Checking nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
+error: function `SetBkColor` is never used
+   --> src\player.rs:247:12
+    |
+247 |         fn SetBkColor(dc:Handle,color:u32)->u32;
+    |            ^^^^^^^^^^
+    |
+    = note: `-D dead-code` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: returning the result of a `let` binding from a block
+   --> src\player.rs:163:9
+    |
+162 |         let new=!self.fullscreen.swap(!self.fullscreen.load(Ordering::Acquire),Ordering::AcqRel);
+    |         ----------------------------------------------------------------------------------------- unnecessary `let` binding
+163 |         new
+    |         ^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_and_return
+    = note: `-D clippy::let-and-return` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::let_and_return)]`
+help: return the expression directly
+    |
+162 ~         
+163 ~         !self.fullscreen.swap(!self.fullscreen.load(Ordering::Acquire),Ordering::AcqRel)
+    |
+
+error: returning the result of a `let` binding from a block
+   --> src\player.rs:168:9
+    |
+167 |         let idx=self.keymap_selector.fetch_add(1,Ordering::AcqRel);
+    |         ----------------------------------------------------------- unnecessary `let` binding
+168 |         idx
+    |         ^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_and_return
+help: return the expression directly
+    |
+167 ~         
+168 ~         self.keymap_selector.fetch_add(1,Ordering::AcqRel)
+    |
+
+error: casting integer literal to `isize` is unnecessary
+   --> src\player.rs:267:24
+    |
+267 |             let x=(l & 0xffff as isize) as i32;
+    |                        ^^^^^^^^^^^^^^^ help: try: `0xffff_isize`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#unnecessary_cast
+    = note: `-D clippy::unnecessary-cast` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unnecessary_cast)]`
+
+error: this let-binding has unit value
+   --> src\player.rs:280:29
+    |
+280 | ...                   let _=shared_push("NEXUS 1 APK_INSTALL");
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_unit_value
+    = note: `-D clippy::let-unit-value` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::let_unit_value)]`
+help: omit the `let` binding
+    |
+280 -                             let _=shared_push("NEXUS 1 APK_INSTALL");
+280 +                             shared_push("NEXUS 1 APK_INSTALL");
+    |
+
+error: this let-binding has unit value
+   --> src\player.rs:282:29
+    |
+282 | ...                   let _=shared_push("NEXUS 1 QUERY_APP");
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_unit_value
+help: omit the `let` binding
+    |
+282 -                             let _=shared_push("NEXUS 1 QUERY_APP");
+282 +                             shared_push("NEXUS 1 QUERY_APP");
+    |
+
+error: this let-binding has unit value
+   --> src\player.rs:284:29
+    |
+284 | ...                   let _=shared_push(cmd);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_unit_value
+help: omit the `let` binding
+    |
+284 -                             let _=shared_push(cmd);
+284 +                             shared_push(cmd);
+    |
+
+error: this let-binding has unit value
+   --> src\player.rs:293:56
+    |
+293 |             if let Some(cmd)=shared_translate_key(vk) {let _=shared_push(&cmd);}
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#let_unit_value
+help: omit the `let` binding
+    |
+293 -             if let Some(cmd)=shared_translate_key(vk) {let _=shared_push(&cmd);}
+293 +             if let Some(cmd)=shared_translate_key(vk) {shared_push(&cmd);}
+    |
+
+error: could not compile `nexus-engine` (lib) due to 8 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `nexus-engine` (lib test) due to 8 previous errors
