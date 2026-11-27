@@ -18,7 +18,9 @@ mod windows {
     use std::ffi::c_void;
     include!("whp_mmio.rs");
     include!("whp_smp.rs");
-    #[repr(C)] struct OsVersionInfoExW {dwOSVersionInfoSize:u32,dwMajorVersion:u32,dwMinorVersion:u32,dwBuildNumber:u32,dwPlatformId:u32,szCSDVersion:[u16;128],wServicePackMajor:u16,wServicePackMinor:u16,wSuiteMask:u16,wProductType:u8,wReserved:u8}
+    // Field names mirror the Windows OSVERSIONINFOEXW ABI exactly (repr(C) FFI),
+    // so they must not be renamed to snake_case.
+    #[repr(C)] #[allow(non_snake_case)] struct OsVersionInfoExW {dwOSVersionInfoSize:u32,dwMajorVersion:u32,dwMinorVersion:u32,dwBuildNumber:u32,dwPlatformId:u32,szCSDVersion:[u16;128],wServicePackMajor:u16,wServicePackMinor:u16,wSuiteMask:u16,wProductType:u8,wReserved:u8}
     #[link(name="ntdll")] extern "system" {fn RtlGetVersion(info:*mut OsVersionInfoExW)->i32;}
     /// Query the real host OS version/build/product type via `RtlGetVersion`.
     pub fn host_os()->Result<crate::whp::HostOs,String> {

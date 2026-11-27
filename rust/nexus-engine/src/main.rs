@@ -153,7 +153,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let whp_detail=format!("{:?}/{:?}",probe.as_ref().err().map(|e|e.as_str()),cpu.as_ref().err().map(|e|e.as_str()));
             let verdict=if whp_ok {"pass"} else {"fail"};
             let evidence=format!("{{\"schema\":1,\"host_os\":{},\"whp_capability_present\":{},\"whp_partition_lifecycle\":\"{}\",\"guest_vcpu_executed\":{},\"verdict\":\"{}\",\"boundary\":\"Physical Windows host WHP partition lifecycle and real vCPU execution verified; NOT Android boot, NOT GPU acceleration, NOT networking/audio, NOT usable Home\",\"whp_detail\":\"{}\"}}",
-                os_json,whp_ok,if probe.is_ok(){"ok"}else{"failed"},whp_ok,verdict,whp_detail.replace('"',''));
+                os_json,whp_ok,if probe.is_ok(){"ok"}else{"failed"},whp_ok,verdict,whp_detail.replace("\"",""));
             println!("NATIVE_WIN10_PHYSICAL_JSON={evidence}");
             std::fs::write("native-win10-physical.json",&evidence).map_err(|e|e.to_string())?;
             if whp_ok {
