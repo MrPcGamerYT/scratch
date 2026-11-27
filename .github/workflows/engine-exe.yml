@@ -6,13 +6,15 @@ on:
       - '.github/workflows/engine-exe.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   exe:
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Build release engine (no test/clippy gate — stable exe for physical-check testing)
         shell: python
@@ -25,7 +27,22 @@ jobs:
                               capture_output=True,text=True)
           if proc.stdout: print(proc.stdout)
           if proc.stderr: print(proc.stderr)
+          # Always persist the full build output so a failure is readable via the
+          # Contents API (CI log download is unreliable on this runner).
+          with open('.ci-diag-build.txt','w') as f:
+              f.write('RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc.returncode, proc.stdout, proc.stderr))
           sys.exit(proc.returncode)
+      - name: Persist build diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p .ci-diag
+          cp .ci-diag-build.txt .ci-diag/build-error.txt 2>/dev/null || true
+          git config user.email "ci@nexus.local"
+          git config user.name "Nexus CI"
+          git add .ci-diag
+          git commit -q -m "ci-diag: engine-exe build failure output" || true
+          git push -q origin HEAD:${{ github.ref }} || true
       - name: Run physical-check on this Windows host (informational; strict gate is physical)
         shell: python
         run: |
