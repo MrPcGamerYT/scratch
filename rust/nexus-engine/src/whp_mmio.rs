@@ -239,7 +239,7 @@ pub fn mmio_smoke()->Result<(),String> {
                             // Emulator returned and sole vCPU is stopped. No callback/RAM borrow is live.
                             let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
                             let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
-                            let done=ctx.device.service(&mut memory,&mut backend,8)?;
+                            let done=if let MmioDevice::Block(device)=&mut ctx.device {device.service(&mut memory,&mut backend,8)?} else {return Err("MMIO smoke context is not a block device".into())};
                             if done.iter().any(|c|c.status!=0) {return Err("Live MMIO block request failed".into());}
                             serviced+=done.len();
                         }
