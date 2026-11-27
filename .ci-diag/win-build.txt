@@ -1,0 +1,37 @@
+=== cargo test ===
+   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
+warning: function `SetBkColor` is never used
+   --> src\player.rs:240:12
+    |
+240 |         fn SetBkColor(dc:Handle,color:u32)->u32;
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nexus-engine` (lib) generated 1 warning (1 duplicate)
+error: linking with `link.exe` failed: exit code: 1
+  |
+  = note: "C:\\Program Files\\Git\\usr\\bin\\link.exe" "/NOLOGO" "D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/6eeb0d3c744f3473\\out\\rustccgjOL7\\symbols.o" "<17 object files omitted>" "WinHvEmulation.lib" "WinHvPlatform.lib" "kernel32.lib" "winmm.lib" "user32.lib" "gdi32.lib" "kernel32.lib" "user32.lib" "d3d11.lib" "d3dcompiler.lib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libtest-*,libgetopts-*,librustc_std_workspace_std-*,libstd-*,libpanic_unwind-*,libcfg_if-*,libwindows_link-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "kernel32.lib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "synchronization.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/OUT:D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/6eeb0d3c744f3473\\out\\nexus_engine-6eeb0d3c744f3473.exe" "/OPT:REF,NOICF" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: /usr/bin/link: extra operand 'D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/6eeb0d3c744f3473\\out\\nexus_engine-6eeb0d3c744f3473.nexus_engine.ad0298b78ce26c8a-cgu.00.rcgu.o'
+          Try '/usr/bin/link --help' for more information.
+          
+
+note: `link.exe` returned an unexpected error
+
+note: the Visual Studio build tools may need to be repaired using the Visual Studio installer
+
+note: or a necessary component may be missing from the "C++ build tools" workload
+
+error: linking with `link.exe` failed: exit code: 1
+  |
+  = note: "C:\\Program Files\\Git\\usr\\bin\\link.exe" "/NOLOGO" "D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/2d847dd113b5de05\\out\\rustcLA2X9c\\symbols.o" "<2 object files omitted>" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libtest-*,libgetopts-*,librustc_std_workspace_std-*}.rlib" "D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine\\c41be1b31aa2e958\\out/libnexus_engine-c41be1b31aa2e958.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib/{libstd-*,libpanic_unwind-*,libcfg_if-*,libwindows_link-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libunwind-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "kernel32.lib" "WinHvEmulation.lib" "WinHvPlatform.lib" "kernel32.lib" "winmm.lib" "user32.lib" "gdi32.lib" "kernel32.lib" "user32.lib" "d3d11.lib" "d3dcompiler.lib" "kernel32.lib" "kernel32.lib" "ntdll.lib" "userenv.lib" "ws2_32.lib" "dbghelp.lib" "synchronization.lib" "/defaultlib:msvcrt" "/NXCOMPAT" "/OUT:D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/2d847dd113b5de05\\out\\nexus_engine-2d847dd113b5de05.exe" "/OPT:REF,NOICF" "/DEBUG" "/PDBALTPATH:%_PDB%" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\intrinsic.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\liballoc.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libcore.natvis" "/NATVIS:<sysroot>\\lib\\rustlib\\etc\\libstd.natvis"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: /usr/bin/link: extra operand 'D:\\a\\scratch\\scratch\\rust\\nexus-engine\\target\\debug\\build\\nexus-engine/2d847dd113b5de05\\out\\nexus_engine-2d847dd113b5de05.nexus_engine.9a22ba467f460b6b-cgu.0.rcgu.o'
+          Try '/usr/bin/link --help' for more information.
+          
+
+error: could not compile `nexus-engine` (bin "nexus-engine" test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+warning: `nexus-engine` (lib test) generated 1 warning
+error: could not compile `nexus-engine` (lib test) due to 1 previous error; 1 warning emitted
