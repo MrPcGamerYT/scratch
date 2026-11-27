@@ -1,0 +1,54 @@
+name: Build downloadable nexus-engine.exe
+on:
+  push:
+    paths:
+      - 'rust/nexus-engine/**'
+      - '.github/workflows/engine-exe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exe:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build release engine (no test/clippy gate — stable exe for physical-check testing)
+        shell: python
+        run: |
+          import subprocess,sys
+          # Build ONLY. tests/clippy run in native-apk.yml; here we want a reliable
+          # exe download for running `physical-check` on a real Windows 10/11 host.
+          proc=subprocess.run(['cargo','build','--release','--locked',
+                               '--manifest-path','rust/nexus-engine/Cargo.toml'],
+                              capture_output=True,text=True)
+          if proc.stdout: print(proc.stdout)
+          if proc.stderr: print(proc.stderr)
+          sys.exit(proc.returncode)
+      - name: Run physical-check on this Windows host (informational; strict gate is physical)
+        shell: python
+        run: |
+          import subprocess,os,sys
+          engine=os.path.join('rust','nexus-engine','target','release','nexus-engine')
+          proc=subprocess.run([engine,'physical-check'],capture_output=True,text=True,timeout=120)
+          if proc.stdout.strip(): print(proc.stdout.strip())
+          if proc.stderr.strip(): print(proc.stderr.strip())
+          # This Windows Server CI runner lacks nested virtualization, so the strict
+          # --require-whp gate is expected to fail here. We only record the evidence.
+          if not os.path.isfile('native-win10-physical.json'):
+              sys.exit('physical-check did not write native-win10-physical.json')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nexus-engine-exe
+          path: rust/nexus-engine/target/release/nexus-engine.exe
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nexus-engine-physical-evidence
+          path: native-win10-physical.json
+          if-no-files-found: ignore
+          retention-days: 14
