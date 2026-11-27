@@ -17,7 +17,9 @@ def home_evidence(serial):
     process=section('NEXUS_HOME_RECENTS_BEGIN','NEXUS_HOME_RECENTS_END')
     pid_before=re.search(r'^NEXUS_HOME_PID_BEFORE\\s+(\\d+)',process,re.M)
     pid_after=re.search(r'^NEXUS_HOME_PID_AFTER\\s+(\\d+)',process,re.M)
+    window_visible='NEXUS_HOME_WINDOW_VISIBLE' in serial
     return {'selected_component':component,'home_activity_resumed':resumed,
+            'window_visible':window_visible,
             'crash_capture_complete':'NEXUS_HOME_CRASH_LOG_BEGIN' in serial and 'NEXUS_HOME_CRASH_LOG_END' in serial,
             'frame_duration_abort_observed':'Impossible totalDuration' in serial,
             'captured_native_crash':bool(re.search(r'Fatal signal|Abort message:|>>> .* <<<',crash)),

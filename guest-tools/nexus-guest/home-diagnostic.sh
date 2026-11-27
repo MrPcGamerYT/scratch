@@ -45,12 +45,12 @@ done
 echo "NEXUS_HOME_PROCESS_READY $ready"
 before=$(find_pid)
 echo "NEXUS_HOME_PID_BEFORE $before"
-# Send keyevents with a single retry; keep total time bounded.
+# Send keyevents with retries; use full path and capture failure reason.
 send_keyevent() {
     local code="$1" label="$2"
-    if timeout 10 input keyevent "$code"; then
+    if timeout 10 /system/bin/input keyevent "$code" 2>&1; then
         echo "NEXUS_HOME_${label}_KEY_SENT"
-    elif timeout 10 input keyevent "$code"; then
+    elif timeout 10 /system/bin/input keyevent "$code" 2>&1; then
         echo "NEXUS_HOME_${label}_KEY_SENT_RETRY"
     else
         echo "NEXUS_HOME_${label}_KEY_FAILED"
@@ -73,7 +73,12 @@ echo NEXUS_HOME_ACTIVITY_STATE_BEGIN
 timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity|Hist #0|mFocusedApp'
 echo NEXUS_HOME_ACTIVITY_STATE_END
 echo NEXUS_HOME_WINDOW_STATE_BEGIN
-timeout 10 dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp|mHasSurface|isOnScreen|isVisible|mObscuringWindow'
+window_info=$(timeout 10 dumpsys window windows 2>/dev/null)
+printf '%s\n' "$window_info" | grep -E 'mCurrentFocus|mFocusedApp|mHasSurface|isOnScreen|isVisible|mObscuringWindow'
+# Verify the launcher window is visible on screen with a surface.
+if printf '%s\n' "$window_info" | grep -q "mCurrentFocus.*$package" && printf '%s\n' "$window_info" | grep -q 'mHasSurface.*true'; then
+    echo NEXUS_HOME_WINDOW_VISIBLE
+fi
 echo NEXUS_HOME_WINDOW_STATE_END
 echo NEXUS_HOME_CRASH_LOG_BEGIN
 timeout 10 logcat -b crash -d -t 150 -v threadtime

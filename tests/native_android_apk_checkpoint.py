@@ -64,6 +64,7 @@ def main():
     assert 'NEXUS_ANDROID_REAL_APK_PRESENT' in serial and 'NEXUS_ANDROID_REAL_APK_UNINSTALLED' in serial
     home=result['home_activity_evidence']
     assert home['home_activity_resumed'] and home['crash_capture_complete'],home
+    assert home['window_visible'],'Launcher window not visible on screen with surface'
     assert not home['frame_duration_abort_observed'] and not home['captured_native_crash'],home
     # PID retention and keyevent completion are reported diagnostics; input
     # injection can be flaky on CI and dumpsys may not always expose the PID.
