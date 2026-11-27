@@ -95,6 +95,21 @@ jobs:
         run: |
           import runpy
           runpy.run_path('tests/native_android_apk_checkpoint.py',run_name='__main__')
+      - name: Physical Windows host evidence (OS identity + WHP + real vCPU)
+        shell: python
+        run: |
+          import subprocess,sys,runpy,os
+          engine=os.path.join('rust','nexus-engine','target','release','nexus-engine')
+          proc=subprocess.run([engine,'physical-check'],capture_output=True,text=True,timeout=120)
+          if proc.stdout.strip(): print(proc.stdout.strip())
+          if proc.stderr.strip(): print(proc.stderr.strip())
+          # `physical-check` exits nonzero when the WHP/vCPU gate fails (e.g. a nested-virt
+          # CI VM). It always writes the evidence JSON first, so we still run the structural
+          # verifier and let THAT decide pass/fail. The strict --require-win10 --require-whp
+          # gate is applied on a physical Windows 10/11 host, not on this Windows Server runner.
+          if not os.path.isfile('native-win10-physical.json'):
+              sys.exit('physical-check did not write native-win10-physical.json')
+          runpy.run_path('tests/native_win10_physical_check.py',run_name='__main__')
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -103,6 +118,7 @@ jobs:
             native-apk-serial.log
             native-apk-serial.log.timing.json
             native-apk-checkpoint.json
+            native-win10-physical.json
             native-apk-artifact/*manifest.json
             native-apk-artifact/SHA256.json
             native-engine-*.log

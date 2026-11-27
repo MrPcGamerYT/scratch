@@ -1,10 +1,31 @@
 //! Direct Windows Hypervisor Platform API — no QEMU dependency.
 //! Bounded real-mode CPU/RAM, private port I/O and cancellation tests. No Android machine.
+
+/// Host OS identity captured by a physical-run check. `RtlGetVersion` always
+/// returns the real installed version (it is not affected by the executable's
+/// compatibility manifest, unlike `GetVersionEx`).
+#[derive(Clone,Copy,Debug)]
+pub struct HostOs {pub major:u32,pub minor:u32,pub build:u32,pub platform:u32,pub product_type:u8}
+impl HostOs {
+    /// True for a Windows 10/11 client workstation (product type 1 = VER_NT_WORKSTATION).
+    /// Windows 11 still reports major version 10, so this covers both.
+    pub fn is_windows_client(&self)->bool {self.major==10&&self.product_type==1}
+    pub fn display(&self)->String {format!("Windows {}.{} build {} (product type {})",self.major,self.minor,self.build,self.product_type)}
+}
+
 #[cfg(windows)]
 mod windows {
     use std::ffi::c_void;
     include!("whp_mmio.rs");
     include!("whp_smp.rs");
+    #[repr(C)] struct OsVersionInfoExW {dwOSVersionInfoSize:u32,dwMajorVersion:u32,dwMinorVersion:u32,dwBuildNumber:u32,dwPlatformId:u32,szCSDVersion:[u16;128],wServicePackMajor:u16,wServicePackMinor:u16,wSuiteMask:u16,wProductType:u8,wReserved:u8}
+    #[link(name="ntdll")] extern "system" {fn RtlGetVersion(info:*mut OsVersionInfoExW)->i32;}
+    /// Query the real host OS version/build/product type via `RtlGetVersion`.
+    pub fn host_os()->Result<crate::whp::HostOs,String> {
+        let mut info=OsVersionInfoExW{dwOSVersionInfoSize:std::mem::size_of::<OsVersionInfoExW>() as u32,dwMajorVersion:0,dwMinorVersion:0,dwBuildNumber:0,dwPlatformId:0,szCSDVersion:[0;128],wServicePackMajor:0,wServicePackMinor:0,wSuiteMask:0,wProductType:0,wReserved:0};
+        unsafe { if RtlGetVersion(&mut info)!=0 {return Err("RtlGetVersion failed".into());} }
+        Ok(crate::whp::HostOs{major:info.dwMajorVersion,minor:info.dwMinorVersion,build:info.dwBuildNumber,platform:info.dwPlatformId,product_type:info.wProductType})
+    }
     #[link(name = "WinHvPlatform")]
     extern "system" {
         fn WHvGetCapability(code:u32, buffer:*mut c_void, size:u32, written:*mut u32)->i32;
@@ -773,3 +794,8 @@ pub fn protection_smoke()->Result<(),String> {Err("Guest page protection executi
 pub use windows::smp_smoke;
 #[cfg(not(windows))]
 pub fn smp_smoke()->Result<(),String> {Err("SMP/APIC execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::host_os;
+#[cfg(not(windows))]
+pub fn host_os()->Result<crate::whp::HostOs,String> {Err("Host OS identity requires Windows".into())}
