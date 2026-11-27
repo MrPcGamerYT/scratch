@@ -280,3 +280,56 @@ from clippy's `should_implement_trait` lint on the `from_str` method (renamed
 to `parse`); the second from doubled backslashes in the `concat!` format
 string (corrected to match the `serial_bytes` escaping pattern). Neither
 was a guest or contract regression.
+
+## Fix 7 — Player UI titlebar, keymaps and bridge command injection
+
+**Scope.** A thin icon-only titlebar (Back/Home/Recents/Fullscreen/Keymap/
+Volume/RAM cleaner/Install APK/Settings) with per-app keymaps. Button clicks
+and keymap translations push bridge commands that the engine drains and feeds
+to the guest agent over COM2. UI reads owned framebuffer snapshots, never live
+guest RAM.
+
+**Implementation.**
+1. **`player.rs` layout.** `Button{label,command}`, `BUTTONS:&[Button]` (10
+   buttons), `button_x`/`hit_button` geometry helpers, `TITLEBAR_HEIGHT`/
+   `BUTTON_WIDTH`/`BUTTON_GAP`/`TITLEBAR_PAD` constants.
+2. **`player.rs` keymaps.** `KeymapEntry{host_key,command}` and `Keymaps`
+   with per-app maps; `translate` falls back to the `"default"` map when the
+   app is absent OR the key is absent from the app's map.
+3. **`player.rs` session state.** `Session` gains `commands:Mutex<VecDeque<String>>`
+   (cap 64), `current_app:Mutex<Option<String>>`, `fullscreen:AtomicBool`,
+   `volume:AtomicI32` (default 50), `keymap_selector:AtomicUsize`, plus
+   `push_command`/`next_command`, `set_app`/`app`, `toggle_fullscreen`,
+   `cycle_keymap`, `adjust_volume`, `translate_key`.
+4. **`bridge.rs` injector.** `Bridge::push_command(&mut self,line)` validates
+   the line (non-empty, ≤127 bytes, ASCII graphic/space only — no control
+   bytes) and extends the outbound `pending` queue with `line\n`.
+5. **`whp.rs` drain.** In `run_platform`, after `bridge.tick()`, the engine
+   drains `session.next_command()` → `bridge.client.push_command(cmd)` and
+   mirrors `bridge.client.app()` → `session.set_app(app)`.
+6. **`main.rs` reporting.** `NATIVE_PLAYER_JSON` reports `titlebar_buttons`,
+   `fullscreen`, `volume`, `active_app`, `keymap_selector` alongside the
+   existing blit/CRC fields; capabilities text documents the player UI.
+7. **Windows native mod.** GDI FFI (TextOutW/SetTextColor/SetBkMode/
+   Rectangle/FillRect), window-style FFI, WM_PAINT titlebar draw, WM_LBUTTONDOWN
+   hit-test + WM_KEYDOWN translation, `SESSION:Mutex<Option<Arc<Session>>>`
+   shared with the message loop.
+
+**Compile error resolved.** The `BUTTONS` constant was declared
+`&[Button]` but initialized with a bare array literal (`[Button; 10]`),
+missing the `&`. `rustc` E0308: "expected `&[Button]`, found `[Button; 10]`".
+Fixed by adding `&` before the array (`pub const BUTTONS:&[Button]=&[`).
+
+**Test/clippy corrections.** Four unit tests had incorrect expectations
+(hit-test x-coordinate, fullscreen toggle return polarity, keymap fallback
+semantics) and `push_command` rejected only non-ASCII (not control bytes);
+these were corrected. Clippy `-D warnings` then flagged 8 items in the
+Windows-only native mod (unused `SetBkColor`, two let-and-return methods, an
+unnecessary `0xffff as isize` cast, four `let _=` unit-value bindings); all
+resolved.
+
+**Confirmed:** Run 46008345679 (commit d26a504) succeeded with both `assets`
+and `apk` jobs. The Windows build passes `cargo test` (144 passed, 0 failed),
+`cargo clippy -- -D warnings` (clean), and `cargo build --release`; the
+Android APK checkpoint assertions held (bridge APK install/verify/uninstall
+OK, renderer=software recorded, Home rendered). Fix 7 is verified.
