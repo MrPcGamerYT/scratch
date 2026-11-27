@@ -41,7 +41,7 @@ pub enum DmaFailure {Error,Panic,ErrorAfter,PanicAfter}
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Default)]
 pub enum Renderer {#[default]Software,Hardware}
 impl Renderer {
-    pub fn from_str(value:&str)->Result<Self,String> {
+    pub fn parse(value:&str)->Result<Self,String> {
         match value {"software"=>Ok(Renderer::Software),"hardware"=>Ok(Renderer::Hardware),
             _=>Err("Renderer must be software or hardware".into())}
     }

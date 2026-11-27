@@ -27,7 +27,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
                 if ram_set {return Err("Duplicate RAM option".into());}
                 ram=nexus_engine::kernel::parse_ram_mib(value)?;ram_set=true;
             } else if let Some(value)=option.strip_prefix("--renderer=") {
-                let parsed=nexus_engine::kernel::Renderer::from_str(value)?;
+                let parsed=nexus_engine::kernel::Renderer::parse(value)?;
                 renderer=parsed;
             } else if let Some(value)=option.strip_prefix("--framebuffer=") {
                 if surface.is_some()||value.is_empty() {return Err("Invalid/duplicate framebuffer capture path".into());}
