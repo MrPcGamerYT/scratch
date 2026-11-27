@@ -22,7 +22,7 @@ def home_evidence(serial):
             'frame_duration_abort_observed':'Impossible totalDuration' in serial,
             'captured_native_crash':bool(re.search(r'Fatal signal|Abort message:|>>> .* <<<',crash)),
             'keyevent_commands_completed':all(marker in serial for marker in ['NEXUS_HOME_RECENTS_KEY_SENT','NEXUS_HOME_HOME_KEY_SENT']),
-            'keyevent_attempts_made':'NEXUS_HOME_RECENTS_KEY_FAILED' not in serial or 'NEXUS_HOME_HOME_KEY_FAILED' not in serial,
+            'keyevent_attempts_made':any(marker in serial for marker in ['NEXUS_HOME_RECENTS_KEY_SENT','NEXUS_HOME_RECENTS_KEY_SENT_RETRY','NEXUS_HOME_HOME_KEY_SENT','NEXUS_HOME_HOME_KEY_SENT_RETRY']),
             'launcher_process_ready':'NEXUS_HOME_PROCESS_READY 1' in serial,
             'launcher_pid_before':int(pid_before.group(1)) if pid_before else None,
             'launcher_pid_after':int(pid_after.group(1)) if pid_after else None,

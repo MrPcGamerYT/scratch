@@ -1,8 +1,15 @@
 #!/system/bin/sh
 # Disposable native-engine diagnostic image only. Never certifies usable Home.
 exec >/dev/ttyS0 2>&1
+# Wait for Android boot to complete before querying PackageManager.
+boot_ready=0
+for attempt in 1 2 3 4 5 6 7 8; do
+    if [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; then boot_ready=1; break; fi
+    sleep 3
+done
+echo "NEXUS_HOME_BOOT_READY $boot_ready"
 echo NEXUS_HOME_CANDIDATES_BEGIN
-candidates=$(timeout 10 cmd package query-activities --brief --components --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME)
+candidates=$(timeout 15 cmd package query-activities --brief --components --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME)
 printf '%s\n' "$candidates"
 echo NEXUS_HOME_CANDIDATES_END
 # Use only a component returned by PackageManager, not an invented package name.
