@@ -218,7 +218,7 @@ mod tests {
         raw
     }
     fn write(d:&mut AudioMmio,offset:u64,value:u32) {d.write(offset,4,value).unwrap();}
-    fn setup(d:&mut AudioMmio,m:&mut GuestMemory<'_>,sel:u32,size:u16,desc:u64,avail:u64,used:u64) {
+    fn setup(d:&mut AudioMmio,_m:&mut GuestMemory<'_>,sel:u32,size:u16,desc:u64,avail:u64,used:u64) {
         write(d,0x30,sel);write(d,0x38,size as u32);
         write(d,0x80,(desc&0xffffffff) as u32);write(d,0x84,(desc>>32) as u32);
         write(d,0x90,(avail&0xffffffff) as u32);write(d,0x94,(avail>>32) as u32);
@@ -233,7 +233,7 @@ mod tests {
 
     #[test] fn status_negotiation_requires_ack_driver_features_then_ok() {
         let mut d=AudioMmio::new();
-        assert!(d.write(0x70,4,3).is_err()); // DRIVER without ACK
+        assert!(d.write(0x70,4,2).is_err()); // DRIVER without ACK
         write(&mut d,0x70,1);write(&mut d,0x70,3);
         write(&mut d,0x24,0);write(&mut d,0x20,F_PCM as u32);
         write(&mut d,0x24,1);write(&mut d,0x20,(VERSION_1>>32) as u32);
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test] fn rx_notify_service_delivers_capture() {
-        let mut m=memory(0x2000);
+        let mut m=memory(0x4000);
         let mut d=AudioMmio::new();
         write(&mut d,0x70,1);write(&mut d,0x70,3);
         write(&mut d,0x24,0);write(&mut d,0x20,F_PCM as u32);
