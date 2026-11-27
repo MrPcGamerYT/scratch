@@ -396,11 +396,11 @@ pub fn net_mmio_smoke()->Result<(),String> {
                 let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("Net MMIO register {n} mismatch 0x{actual:x}"));}
             }
             // Verify interrupt was asserted and cleared by ACK.
-            let irq_before=u32::from_le_bytes(bytes[14*4..14*4+4].try_into().unwrap());
-            let irq_after=u32::from_le_bytes(bytes[16*4..16*4+4].try_into().unwrap());
+            let irq_before=u32::from_le_bytes(bytes[5*4..5*4+4].try_into().unwrap());
+            let irq_after=u32::from_le_bytes(bytes[6*4..6*4+4].try_into().unwrap());
             if irq_before==0||irq_after!=0 {return Err("Net MMIO interrupt status/ACK mismatch".into());}
             // Verify status after reset.
-            let status_reset=u32::from_le_bytes(bytes[18*4..18*4+4].try_into().unwrap());
+            let status_reset=u32::from_le_bytes(bytes[7*4..7*4+4].try_into().unwrap());
             if status_reset!=0 {return Err("Net MMIO status not cleared by reset".into());}
             // Verify TX completion: status descriptor written with 0.
             let tx_status=u32::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20400),4)}.try_into().unwrap());
