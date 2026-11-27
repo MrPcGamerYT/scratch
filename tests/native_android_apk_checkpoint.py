@@ -27,7 +27,7 @@ def main():
     exe=str(Path('rust/nexus-engine/target/release/nexus-engine.exe').resolve())
     log=Path('native-apk-serial.log')
     cmd='earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 androidboot.console=ttyS0 ignore_loglevel nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1 clocksource=tsc tsc=reliable root=/dev/ram0 ROOT=/dev/vda SRC=/android HWACCEL=0 virtio_mmio.device=4K@0xd0000000:5 rdinit=/init'
-    p=subprocess.run([exe,'probe-android-observe-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),str(root/'android-system.zlag'),'native-apk.cow','--ram-mib=2048','--framebuffer=native-apk-software.ppm',f'--bridge-apk-smoke={root/"smoke.apk"}'],capture_output=True,text=True,timeout=480)
+    p=subprocess.run([exe,'probe-android-observe-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),str(root/'android-system.zlag'),'native-apk.cow','--ram-mib=2048','--renderer=software','--framebuffer=native-apk-software.ppm',f'--bridge-apk-smoke={root/"smoke.apk"}'],capture_output=True,text=True,timeout=480)
     serial=log.read_text(errors='replace') if log.exists() else ''
     timing=Path(str(log)+'.timing.json');metrics=json.loads(timing.read_text()) if timing.exists() else {}
     result={'schema':1,'diagnostic_engine_deadline_ms':420000,'profile':'HWACCEL=0 software scanout with diagnostic TSC watchdog bypass; not accelerated graphics or general host clock certification','android_apk_verified':False,'step4_complete':False,'anr_fixed':False,'packages_removed':[],'anr_evidence':anr_evidence(serial),
@@ -77,6 +77,9 @@ def main():
     # The hard gate is: real launcher resumed + clean crash capture + non-blank scanout.
     assert result['scanout'] and result['scanout']['nonuniform'],result['scanout']
     assert metrics['total_boot_verified'] is False
+    # The renderer selection must govern execution and be recorded in the
+    # timing JSON. Software is the only implemented renderer path.
+    assert metrics.get('renderer')=='software','Engine did not record renderer=software from the --renderer selection'
     # Record the measured launch-to-Home time. The 100s target applies to the
     # real product launch (no APK install); the diagnostic includes APK
     # install/verify which adds significant time, so target_met is not asserted here.

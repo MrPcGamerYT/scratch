@@ -5,7 +5,7 @@ pub struct BootTrace {
     pub header_validated_ms:Option<u64>,pub vm_ready_ms:Option<u64>,pub vcpu_run_requested_ms:Option<u64>,
     pub android_init_second_stage_ms:Option<u64>,pub linux_banner_ms:Option<u64>,pub linux_userspace_ready_ms:Option<u64>,pub android_home_ready_ms:Option<u64>,pub stopped_ms:Option<u64>,pub exits:u64,pub pit_programs:u64,pub pit_accesses:u64,pub pic_accesses:u64,pub pic_initializations:u64,
     pub pit0_programs:u64,pub pit0_edges:u64,pub irq0_injections:u64,pub irq5_injections:u64,pub irq4_injections:u64,pub irq3_injections:u64,pub halt_waits:u64,
-    pub serial_bytes:u64,pub stop_reason:String,matched:usize,ready_matched:usize,android_matched:usize,home_ready_matched:usize,
+    pub serial_bytes:u64,pub stop_reason:String,pub renderer:String,matched:usize,ready_matched:usize,android_matched:usize,home_ready_matched:usize,
 }
 fn number(value:Option<u64>)->String {value.map_or("null".into(),|v|v.to_string())}
 fn quote(text:&str)->String {
@@ -14,7 +14,7 @@ fn quote(text:&str)->String {
     result.push('"');result
 }
 impl BootTrace {
-    pub fn after_header(elapsed_ms:u64)->Self {Self{header_validated_ms:Some(elapsed_ms),..Self::default()}}
+    pub fn after_header(elapsed_ms:u64)->Self {Self{header_validated_ms:Some(elapsed_ms),renderer:"software".into(),..Self::default()}}
 
     pub fn observe_serial(&mut self,bytes:&[u8],elapsed_ms:u64) {
         self.serial_bytes+=bytes.len() as u64;
@@ -50,10 +50,10 @@ impl BootTrace {
         format!(concat!("{{\n  \"schema\":1,\n  \"clock\":\"host_monotonic\",\n  \"origin\":\"engine_main_including_input_load\",\n",
             "  \"android_home_target_ms\":100000,\n  \"android_home_ready_ms\":{},\n  \"total_boot_verified\":false,\n  \"target_met\":{},\n",
             "  \"header_validated_ms\":{},\n  \"vm_ready_ms\":{},\n  \"vcpu_run_requested_ms\":{},\n  \"linux_banner_ms\":{},\n  \"linux_userspace_ready_ms\":{},\n  \"android_init_second_stage_ms\":{},\n  \"stopped_ms\":{},\n",
-            "  \"vcpu_exits\":{},\n  \"pit_channel2_programs\":{},\n  \"pit_accesses\":{},\n  \"pic_accesses\":{},\n  \"pic_initializations\":{},\n  \"pit0_programs\":{},\n  \"pit0_edges\":{},\n  \"irq0_injections\":{},\n  \"irq3_injections\":{},\n  \"irq4_injections\":{},\n  \"irq5_injections\":{},\n  \"halt_waits\":{},\n  \"serial_bytes\":{},\n  \"stop_reason\":{}\n}}\n"),
+            "  \"vcpu_exits\":{},\n  \"pit_channel2_programs\":{},\n  \"pit_accesses\":{},\n  \"pic_accesses\":{},\n  \"pic_initializations\":{},\n  \"pit0_programs\":{},\n  \"pit0_edges\":{},\n  \"irq0_injections\":{},\n  \"irq3_injections\":{},\n  \"irq4_injections\":{},\n  \"irq5_injections\":{},\n  \"halt_waits\":{},\n  \"serial_bytes\":{},\n  \"renderer\\":{},\\n  \\"stop_reason\":{}\n}}\n"),
             number(self.android_home_ready_ms),target_met.map_or("null".into(),|v|v.to_string()),
                         number(self.header_validated_ms),number(self.vm_ready_ms),number(self.vcpu_run_requested_ms),number(self.linux_banner_ms),number(self.linux_userspace_ready_ms),number(self.android_init_second_stage_ms),number(self.stopped_ms),
-            self.exits,self.pit_programs,self.pit_accesses,self.pic_accesses,self.pic_initializations,self.pit0_programs,self.pit0_edges,self.irq0_injections,self.irq3_injections,self.irq4_injections,self.irq5_injections,self.halt_waits,self.serial_bytes,quote(&self.stop_reason))
+            self.exits,self.pit_programs,self.pit_accesses,self.pic_accesses,self.pic_initializations,self.pit0_programs,self.pit0_edges,self.irq0_injections,self.irq3_injections,self.irq4_injections,self.irq5_injections,self.halt_waits,self.serial_bytes,quote(&self.renderer),quote(&self.stop_reason))
     }
 }
 #[cfg(test)]
@@ -101,5 +101,10 @@ mod tests {
         t.observe_serial(b"NEXUS_H",2);t.observe_serial(b"OME_RE",3);t.observe_serial(b"ADY",4);
         assert_eq!(t.android_home_ready_ms,Some(4));
         assert!(t.json().contains("\"android_home_ready_ms\":4"));
+    }
+    #[test] fn renderer_is_recorded_in_json() {
+        let t=BootTrace::after_header(1);
+        assert_eq!(t.renderer,"software");
+        assert!(t.json().contains("\"renderer\":\"software\""));
     }
 }

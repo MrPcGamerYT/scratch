@@ -33,10 +33,24 @@ pub fn read_input(path:&Path)->Result<Vec<u8>,String> {
 pub struct Region {pub address:usize,pub bytes:Vec<u8>}
 #[derive(Clone,Copy,Debug)]
 pub enum DmaFailure {Error,Panic,ErrorAfter,PanicAfter}
+/// Renderer selection that governs the scanout/present path.
+/// `Software` is the only implemented path (framebuffer capture + optional
+/// window player). `Hardware` is refused at plan validation: guest GPU
+/// acceleration is not implemented, so the selection must govern execution
+/// by rejecting the unsupported path rather than silently no-op'ing.
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Default)]
+pub enum Renderer {#[default]Software,Hardware}
+impl Renderer {
+    pub fn from_str(value:&str)->Result<Self,String> {
+        match value {"software"=>Ok(Renderer::Software),"hardware"=>Ok(Renderer::Hardware),
+            _=>Err("Renderer must be software or hardware".into())}
+    }
+    pub fn as_str(&self)->&'static str {match self {Renderer::Software=>"software",Renderer::Hardware=>"hardware"}}
+}
 #[derive(Debug)]
 pub struct KernelPlan {
     pub dma_failure:Option<DmaFailure>,pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
-    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub player:Option<std::sync::Arc<crate::player::Session>>,
+    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub player:Option<std::sync::Arc<crate::player::Session>>,pub renderer:Renderer,
 }
 impl KernelPlan {
     pub fn build(image:&[u8],initrd:Option<&[u8]>,command:&str,ram:usize)->Result<Self,String> {
@@ -90,7 +104,7 @@ impl KernelPlan {
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
             regions.push(Region{address:at,bytes:data.to_vec()});initrd_address=Some(at);
         }
-        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None};p.validate_regions()?;Ok(p)
+        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None,renderer:Renderer::Software};p.validate_regions()?;Ok(p)
     }
     /// Linux early TSC calibration handoff for vendors which don't consume CPUID15.
     /// Kernel versions lacking this parameter still need a verified clocksource gate.
@@ -117,6 +131,7 @@ impl KernelPlan {
     pub fn validate_regions(&self)->Result<(),String> {
         if self.dma_failure.is_some()&&(!self.apic_probe||self.cpu_count<2) {return Err("DMA failure injection requires SMP/APIC".into());}
         if !(1..=8).contains(&self.cpu_count)||(!self.apic_probe&&self.cpu_count!=1) {return Err("Multiple CPUs require the explicit APIC profile (1..8 CPUs)".into());}
+        if self.renderer==Renderer::Hardware {return Err("Hardware renderer is not implemented; guest GPU acceleration is unavailable, use software".into());}
         for (i,r) in self.regions.iter().enumerate() {
             let end=r.address.checked_add(r.bytes.len()).ok_or("Kernel region overflow")?;
             if r.bytes.is_empty()||end>self.ram_bytes {return Err("Kernel region outside RAM".into());}
@@ -141,6 +156,17 @@ pub fn contract_image()->Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn hardware_renderer_is_refused_at_validation() {
+        let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
+        assert_eq!(p.renderer,Renderer::Software);
+        p.renderer=Renderer::Hardware;
+        assert!(p.validate_regions().is_err(),"Hardware renderer must be refused");
+    }
+    #[test] fn software_renderer_validates() {
+        let p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
+        assert_eq!(p.renderer,Renderer::Software);
+        p.validate_regions().unwrap();
+    }
     #[test] fn clock_handoff_uses_actual_frequency_and_preserves_command_prefix() {
         let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
         assert_eq!(p.command_with_tsc_hz(2_600_123_000).unwrap(),b"nexus tsc_early_khz=2600123\0");
