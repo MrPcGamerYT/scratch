@@ -132,6 +132,80 @@ impl NetMmio {
     }
 }
 
+impl Default for NetMmio {fn default()->Self {Self::new()}}
+
+/// In-process VirtIO-MMIO net smoke: negotiate features, drive a TX frame through
+/// the loopback backend, then deliver it back through the RX queue. No WHP or guest
+/// CPU required; exercises the full register model + executor end to end.
+pub fn net_smoke()->Result<(),String> {
+    use crate::guest_memory::RamRegion;
+    let ram=Box::leak(Box::new(vec![0u8;0x4000]));
+    let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).map_err(|e|e.to_string())?;
+    let mut device=NetMmio::new();
+    device.write(0x70,4,ACK).map_err(|e|e.to_string())?;
+    device.write(0x70,4,ACK|DRIVER).map_err(|e|e.to_string())?;
+    device.write(0x24,4,0).map_err(|e|e.to_string())?;
+    device.write(0x20,4,F_MAC as u32).map_err(|e|e.to_string())?;
+    device.write(0x24,4,1).map_err(|e|e.to_string())?;
+    device.write(0x20,4,(VERSION_1>>32) as u32).map_err(|e|e.to_string())?;
+    device.write(0x70,4,ACK|DRIVER|FEATURES_OK).map_err(|e|e.to_string())?;
+    device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).map_err(|e|e.to_string())?;
+    let mut backend=virtio_net::Loopback::new();
+    // TX queue (sel=1): descriptor table 0x1000, avail 0x1200, used 0x1400.
+    let mut packet=vec![0u8;HDR_LEN+5];
+    packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
+    packet[HDR_LEN..].copy_from_slice(b"NEXUS");
+    let mut td=[0u8;16];
+    td[..8].copy_from_slice(&0x800u64.to_le_bytes());
+    td[8..12].copy_from_slice(&((HDR_LEN+5) as u32).to_le_bytes());
+    td[12..14].copy_from_slice(&1u16.to_le_bytes()); // read-only, NEXT
+    td[14..16].copy_from_slice(&1u16.to_le_bytes()); // next descriptor index
+    let mut ts=[0u8;16];
+    ts[..8].copy_from_slice(&0x900u64.to_le_bytes());
+    ts[8..12].copy_from_slice(&1u32.to_le_bytes());
+    ts[12..14].copy_from_slice(&2u16.to_le_bytes()); // writable status
+    m.write(0x1000,&td).map_err(|e|e.to_string())?;
+    m.write(0x1010,&ts).map_err(|e|e.to_string())?;
+    m.write(0x800,&packet).map_err(|e|e.to_string())?;
+    device.write(0x30,4,1).map_err(|e|e.to_string())?;
+    device.write(0x38,4,8).map_err(|e|e.to_string())?;
+    device.write(0x80,4,0x1000).map_err(|e|e.to_string())?;
+    device.write(0x90,4,0x1200).map_err(|e|e.to_string())?;
+    device.write(0xa0,4,0x1400).map_err(|e|e.to_string())?;
+    device.write(0x44,4,1).map_err(|e|e.to_string())?;
+    m.write(0x1200,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    m.write(0x1202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    m.write(0x1204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    device.write(0x30,4,1).map_err(|e|e.to_string())?;
+    device.write(0x50,4,0).map_err(|e|e.to_string())?;
+    let tx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
+    if tx.len()!=1||tx[0].status!=0 {return Err("Net TX completion failed".into());}
+    if backend.pending()!=1 {return Err("Loopback backend did not capture TX frame".into());}
+    // RX queue (sel=0): descriptor table 0x2000, avail 0x2200, used 0x2400.
+    let mut rd=[0u8;16];
+    rd[..8].copy_from_slice(&0x1800u64.to_le_bytes());
+    rd[8..12].copy_from_slice(&64u32.to_le_bytes());
+    rd[12..14].copy_from_slice(&2u16.to_le_bytes()); // writable
+    m.write(0x2000,&rd).map_err(|e|e.to_string())?;
+    device.write(0x30,4,0).map_err(|e|e.to_string())?;
+    device.write(0x38,4,8).map_err(|e|e.to_string())?;
+    device.write(0x80,4,0x2000).map_err(|e|e.to_string())?;
+    device.write(0x90,4,0x2200).map_err(|e|e.to_string())?;
+    device.write(0xa0,4,0x2400).map_err(|e|e.to_string())?;
+    device.write(0x44,4,1).map_err(|e|e.to_string())?;
+    m.write(0x2200,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    m.write(0x2202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    m.write(0x2204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
+    device.write(0x30,4,0).map_err(|e|e.to_string())?;
+    device.write(0x50,4,0).map_err(|e|e.to_string())?;
+    let rx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
+    if rx.len()!=1||rx[0].written!=(HDR_LEN+5) as u32 {return Err("Net RX completion failed".into());}
+    let mut out=[0u8;HDR_LEN+5];
+    m.read(0x1800,&mut out).map_err(|e|e.to_string())?;
+    if &out[HDR_LEN..]!=b"NEXUS" {return Err("Loopback RX frame data mismatch".into());}
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,7 +281,7 @@ mod tests {
         push_avail(&mut m,0x1200,0);
         device.write(0x30,4,1).unwrap();
         device.write(0x50,4,0).unwrap();
-        assert!(device.irq_asserted()==false);
+        assert!(!device.irq_asserted());
         let mut backend=virtio_net::Loopback::new();
         let done=device.service(&mut m,&mut backend,8).unwrap();
         assert_eq!(done.len(),1);
@@ -240,75 +314,4 @@ mod tests {
         let mut device=NetMmio::new();
         assert!(device.write(0x50,4,0).is_err());
     }
-}
-
-/// In-process VirtIO-MMIO net smoke: negotiate features, drive a TX frame through
-/// the loopback backend, then deliver it back through the RX queue. No WHP or guest
-/// CPU required; exercises the full register model + executor end to end.
-pub fn net_smoke()->Result<(),String> {
-    use crate::guest_memory::RamRegion;
-    let ram=Box::leak(Box::new(vec![0u8;0x4000]));
-    let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).map_err(|e|e.to_string())?;
-    let mut device=NetMmio::new();
-    device.write(0x70,4,ACK).map_err(|e|e.to_string())?;
-    device.write(0x70,4,ACK|DRIVER).map_err(|e|e.to_string())?;
-    device.write(0x24,4,0).map_err(|e|e.to_string())?;
-    device.write(0x20,4,F_MAC as u32).map_err(|e|e.to_string())?;
-    device.write(0x24,4,1).map_err(|e|e.to_string())?;
-    device.write(0x20,4,(VERSION_1>>32) as u32).map_err(|e|e.to_string())?;
-    device.write(0x70,4,ACK|DRIVER|FEATURES_OK).map_err(|e|e.to_string())?;
-    device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).map_err(|e|e.to_string())?;
-    let mut backend=virtio_net::Loopback::new();
-    // TX queue (sel=1): descriptor table 0x1000, avail 0x1200, used 0x1400.
-    let mut packet=vec![0u8;HDR_LEN+5];
-    packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
-    packet[HDR_LEN..].copy_from_slice(b"NEXUS");
-    let mut td=[0u8;16];
-    td[..8].copy_from_slice(&0x800u64.to_le_bytes());
-    td[8..12].copy_from_slice(&((HDR_LEN+5) as u32).to_le_bytes());
-    td[12..14].copy_from_slice(&0u16.to_le_bytes()); // read-only
-    let mut ts=[0u8;16];
-    ts[..8].copy_from_slice(&0x900u64.to_le_bytes());
-    ts[8..12].copy_from_slice(&1u32.to_le_bytes());
-    ts[12..14].copy_from_slice(&2u16.to_le_bytes()); // writable status
-    m.write(0x1000,&td).map_err(|e|e.to_string())?;
-    m.write(0x1010,&ts).map_err(|e|e.to_string())?;
-    m.write(0x800,&packet).map_err(|e|e.to_string())?;
-    device.write(0x30,4,1).map_err(|e|e.to_string())?;
-    device.write(0x38,4,8).map_err(|e|e.to_string())?;
-    device.write(0x80,4,0x1000).map_err(|e|e.to_string())?;
-    device.write(0x90,4,0x1200).map_err(|e|e.to_string())?;
-    device.write(0xa0,4,0x1400).map_err(|e|e.to_string())?;
-    device.write(0x44,4,1).map_err(|e|e.to_string())?;
-    m.write(0x1200,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    m.write(0x1202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    m.write(0x1204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    device.write(0x30,4,1).map_err(|e|e.to_string())?;
-    device.write(0x50,4,0).map_err(|e|e.to_string())?;
-    let tx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
-    if tx.len()!=1||tx[0].status!=0 {return Err("Net TX completion failed".into());}
-    if backend.pending()!=1 {return Err("Loopback backend did not capture TX frame".into());}
-    // RX queue (sel=0): descriptor table 0x2000, avail 0x2200, used 0x2400.
-    let mut rd=[0u8;16];
-    rd[..8].copy_from_slice(&0x1800u64.to_le_bytes());
-    rd[8..12].copy_from_slice(&64u32.to_le_bytes());
-    rd[12..14].copy_from_slice(&2u16.to_le_bytes()); // writable
-    m.write(0x2000,&rd).map_err(|e|e.to_string())?;
-    device.write(0x30,4,0).map_err(|e|e.to_string())?;
-    device.write(0x38,4,8).map_err(|e|e.to_string())?;
-    device.write(0x80,4,0x2000).map_err(|e|e.to_string())?;
-    device.write(0x90,4,0x2200).map_err(|e|e.to_string())?;
-    device.write(0xa0,4,0x2400).map_err(|e|e.to_string())?;
-    device.write(0x44,4,1).map_err(|e|e.to_string())?;
-    m.write(0x2200,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    m.write(0x2202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    m.write(0x2204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
-    device.write(0x30,4,0).map_err(|e|e.to_string())?;
-    device.write(0x50,4,0).map_err(|e|e.to_string())?;
-    let rx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
-    if rx.len()!=1||rx[0].written!=(HDR_LEN+5) as u32 {return Err("Net RX completion failed".into());}
-    let mut out=[0u8;HDR_LEN+5];
-    m.read(0x1800,&mut out).map_err(|e|e.to_string())?;
-    if &out[HDR_LEN..]!=b"NEXUS" {return Err("Loopback RX frame data mismatch".into());}
-    Ok(())
 }
