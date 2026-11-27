@@ -408,9 +408,9 @@ pub fn net_mmio_smoke()->Result<(),String> {
             // Verify RX completion: RX buffer contains the loopback frame.
             let rx=unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20800),17)};
             if rx[..12]!=header||&rx[12..]!=b"NEXUS" {return Err("Net MMIO RX loopback frame data mismatch".into());}
-            // Verify used-ring indices advanced.
-            let tx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20200),2)}.try_into().unwrap());
-            let rx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20700),2)}.try_into().unwrap());
+            // Verify used-ring indices advanced. The used index lives at used+2.
+            let tx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20202),2)}.try_into().unwrap());
+            let rx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20702),2)}.try_into().unwrap());
             if tx_used_idx!=1||rx_used_idx!=1 {return Err("Net MMIO used-ring index mismatch".into());}
             if !irq_seen {return Err("Net MMIO IRQ6 was never asserted".into());}
             if serviced_tx<2 {return Err("Net MMIO did not complete both TX and RX requests".into());}
