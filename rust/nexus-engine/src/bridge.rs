@@ -23,8 +23,10 @@ impl Bridge {
     pub fn app(&self)->Option<&str> {self.app.as_deref()}
     pub fn next_byte(&mut self)->Option<u8> {self.pending.pop_front()}
     /// Queue a command line (e.g. "NEXUS 1 BACK") for transmission to the guest.
+    /// Lines must be ASCII graphic/space text (no control bytes), non-empty and
+    /// at most 127 bytes, matching the receive-side frame grammar.
     pub fn push_command(&mut self,line:&str)->Result<(),String> {
-        if !line.is_ascii() || line.is_empty() || line.len()>127 {return Err("Invalid bridge command line".into());}
+        if line.is_empty() || line.len()>127 || !line.bytes().all(|b|b.is_ascii_graphic()||b==b' ') {return Err("Invalid bridge command line".into());}
         self.pending.extend(format!("{line}\n").bytes());Ok(())
     }
     pub fn receive(&mut self,bytes:&[u8])->Result<(),String> {

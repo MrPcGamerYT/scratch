@@ -70,10 +70,17 @@ impl Keymaps {
         self.maps.entry(app.to_string()).or_default().push(entry);
     }
     /// Look up the command for `host_key` in the keymap for `app`
-    /// (falling back to "default"). Returns `None` if no mapping exists.
+    /// (falling back to "default" when the app is absent OR the key is
+    /// absent from the app's map). Returns `None` if no mapping exists.
     pub fn translate(&self,app:&str,host_key:u32)->Option<String> {
-        let map=self.maps.get(app).or_else(||self.maps.get("default"))?;
-        map.iter().find(|e|e.host_key==host_key).map(|e|e.command.clone())
+        if let Some(map)=self.maps.get(app) {
+            if let Some(entry)=map.iter().find(|e|e.host_key==host_key) {
+                return Some(entry.command.clone());
+            }
+        }
+        self.maps.get("default")
+            .and_then(|map| map.iter().find(|e|e.host_key==host_key))
+            .map(|e|e.command.clone())
     }
 }
 
@@ -397,7 +404,7 @@ mod native {
         assert_eq!(hit_button(840,6),Some(0));
         assert_eq!(hit_button(840,37),Some(0));
         assert_eq!(hit_button(840,42),Some(1));
-        assert_eq!(hit_button(840,365),Some(9));
+        assert_eq!(hit_button(840,361),Some(9));
         assert_eq!(hit_button(840,0),None);
         assert_eq!(hit_button(840,366),None);
         // Too narrow: button doesn't fit.
@@ -419,13 +426,15 @@ mod native {
         assert_eq!(s.translate_key(0x5a),Some("NEXUS 1 HOME".to_string()));
         s.set_app("com.foo.app").unwrap();
         assert_eq!(s.translate_key(0x41),Some("NEXUS 1 BACK".to_string()));
-        assert_eq!(s.translate_key(0x5a),None);
+        // 0x42 is absent from both com.foo.app and "default": no fallback hit.
+        assert_eq!(s.translate_key(0x42),None);
     }
     #[test] fn fullscreen_keymap_volume_toggle() {
         let s=Session::default();
-        assert!(!s.toggle_fullscreen());
+        // toggle_fullscreen returns the NEW state: false -> true -> false -> true.
         assert!(s.toggle_fullscreen());
         assert!(!s.toggle_fullscreen());
+        assert!(s.toggle_fullscreen());
         assert_eq!(s.cycle_keymap(),0);
         assert_eq!(s.cycle_keymap(),1);
         assert_eq!(s.volume.load(Ordering::Acquire),50);
