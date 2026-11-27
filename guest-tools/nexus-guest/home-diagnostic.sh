@@ -24,15 +24,23 @@ else
     echo NEXUS_HOME_NO_CANDIDATE
 fi
 # Wait for the launcher process to be running before injecting keyevents.
+# Use ps -A (more reliable across Android builds than pidof) and emit raw output.
 package="${component%%/*}"
+find_pid() {
+    # ps -A lists all processes; grep for the package name.
+    ps -A 2>/dev/null | grep -F "$package" | awk '{print $1}' | head -n 1
+}
 ready=0
 for attempt in 1 2 3 4 5 6; do
-    pid=$(pidof "$package" 2>/dev/null)
+    pid=$(find_pid)
     if [ -n "$pid" ]; then ready=1; break; fi
     sleep 3
 done
 echo "NEXUS_HOME_PROCESS_READY $ready"
-before=$(pidof "$package" 2>/dev/null)
+echo "NEXUS_HOME_PS_A_BEGIN"
+ps -A 2>/dev/null | grep -F "$package" || echo "NEXUS_HOME_PS_A_NO_MATCH"
+echo "NEXUS_HOME_PS_A_END"
+before=$(find_pid)
 echo "NEXUS_HOME_PID_BEFORE $before"
 # Send keyevents with retries; a transient input timeout is not launcher loss.
 send_keyevent() {
@@ -54,7 +62,7 @@ timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedAct
 echo NEXUS_HOME_RECENTS_END
 send_keyevent 3 HOME || true
 sleep 8
-after=$(pidof "$package" 2>/dev/null)
+after=$(find_pid)
 echo "NEXUS_HOME_PID_AFTER $after"
 if [ -n "$before" ] && [ -n "$after" ] && [ "$before" = "$after" ]; then echo NEXUS_HOME_PROCESS_RETAINED; fi
 echo NEXUS_HOME_FRAME_STATS_BEGIN
