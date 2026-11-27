@@ -69,7 +69,10 @@ def main():
     # injection can be flaky on CI and dumpsys may not always expose the PID.
     # The hard gate is: real launcher resumed + clean crash capture + non-blank scanout.
     assert result['scanout'] and result['scanout']['nonuniform'],result['scanout']
-    assert metrics['total_boot_verified'] is False and metrics['android_home_ready_ms'] is None
+    assert metrics['total_boot_verified'] is False
+    home_ready_ms=metrics['android_home_ready_ms']
+    assert home_ready_ms is not None,'Engine did not observe NEXUS_HOME_READY from the guest diagnostic'
+    assert metrics['target_met'] is True,f'Home ready at {home_ready_ms}ms exceeds 100000ms target'
     result['android_apk_verified']=True;Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
     print('::notice::REAL_APK_ACCEPTANCE: signed benign APK streamed over native COM2, Android pm install, package presence and uninstall verified; not networking/audio/Home/ANR success',flush=True)
 
