@@ -144,7 +144,7 @@ mod tests {
         let mut raw=[0;16];
         raw[..8].copy_from_slice(&address.to_le_bytes());
         raw[8..12].copy_from_slice(&length.to_le_bytes());
-        let flags=u16::from(if writable {2} else {0})|u16::from(if next {1} else {0});
+        let flags=(if writable {2u16} else {0})|(if next {1u16} else {0});
         raw[12..14].copy_from_slice(&flags.to_le_bytes());
         raw
     }
