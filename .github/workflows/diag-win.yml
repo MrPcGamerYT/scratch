@@ -15,34 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Capture Windows cargo build output
-        shell: bash
+      - name: Run real build script (test + clippy + release)
+        shell: python
         run: |
-          {
-            echo "=== cargo test ==="
-            cargo test --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets
-            echo "TEST_EXIT=$?"
-            echo "=== cargo clippy ==="
-            cargo clippy --locked --manifest-path rust/nexus-engine/Cargo.toml --all-targets -- -D warnings
-            echo "CLIPPY_EXIT=$?"
-            echo "=== cargo build --release ==="
-            cargo build --locked --release --manifest-path rust/nexus-engine/Cargo.toml
-            echo "BUILD_EXIT=$?"
-          } > /tmp/win-build.txt 2>&1
-      - name: Commit Windows build output to branch
+          import runpy, sys
+          try:
+              runpy.run_path('tests/build_native_engine.py', run_name='__main__')
+          except SystemExit as e:
+              print(f'BUILD_SCRIPT_EXIT={e.code}')
+      - name: Commit build logs to branch
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           mkdir -p .ci-diag
-          cp /tmp/win-build.txt .ci-diag/win-build.txt
+          cp native-engine-*.log .ci-diag/ 2>/dev/null || true
           git config user.email "ci@nexus.local"
           git config user.name "Nexus CI diagnostic"
-          git add .ci-diag/win-build.txt
+          git add .ci-diag/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "ci: diagnostic windows cargo build output [skip ci]"
+            git commit -m "ci: diagnostic windows build logs [skip ci]"
             git push
           fi
