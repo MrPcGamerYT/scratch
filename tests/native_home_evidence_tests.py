@@ -28,6 +28,16 @@ class HomeEvidenceTests(unittest.TestCase):
             p=subprocess.run(['sh','-c',selection+'\nprintf "%s" "$component"'],env={'candidates':candidates},capture_output=True,text=True,check=True)
             self.assertEqual(p.stdout,'com.android.launcher3/com.bliss.launcher.BlissLauncher')
 
+    def test_process_ready_and_keyevent_failure_are_distinct(self):
+        text=self.sample()
+        text=text.replace('NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_PROCESS_READY 1\nNEXUS_HOME_RECENTS_KEY_FAILED\nNEXUS_HOME_HOME_KEY_FAILED\n')
+        d=home_evidence(text)
+        self.assertTrue(d['launcher_process_ready'])
+        self.assertFalse(d['keyevent_commands_completed'])
+        self.assertFalse(d['launcher_process_retained'])
+        # keyevent failure must not look like a clean pass
+        self.assertFalse(d['android_home_verified'])
+
     def test_duration_abort_and_other_native_crashes(self):
         d=home_evidence(self.sample(crash="Abort message: 'Impossible totalDuration 0'"));self.assertTrue(d['frame_duration_abort_observed']);self.assertTrue(d['captured_native_crash'])
         self.assertTrue(home_evidence(self.sample(crash='Fatal signal 11'))['captured_native_crash'])
