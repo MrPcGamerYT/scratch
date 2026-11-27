@@ -59,7 +59,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
         Some("ata-pio-smoke") if args.len()==3 => {whp::ata_pio_smoke(Path::new(&args[2]))?; println!("Verified ZLAG -> ATA IDENTIFY/PIO sector read -> guest RAM and write refusal passed. Read-only, polled subset; not Android storage certification.");Ok(())}
         Some("mmio-smoke") if args.len()==2 => {whp::mmio_smoke()?;println!("Real WHP protected/long-mode MMIO queue write/flush/read/COW persistence and protected-mode external IRQ5 passed; not Android certification.");Ok(())}
         Some("net-smoke") if args.len()==2 => {
-            crate::virtio_net_mmio::net_smoke()?;
+            nexus_engine::virtio_net_mmio::net_smoke()?;
             println!("VirtIO-MMIO net device model passed: feature negotiation, TX frame transmit, loopback RX delivery and queue completion; loopback backend only, no host network stack or guest boot.");
             Ok(())
         }

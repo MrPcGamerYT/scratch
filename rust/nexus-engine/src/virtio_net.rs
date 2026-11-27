@@ -41,9 +41,6 @@ impl NetBackend for Loopback {
 
 #[derive(Debug)]
 pub struct Completion{pub head:u16,pub status:u8,pub written:u32,pub notify:bool,pub error:Option<String>}
-enum Failure{Unsupported,Io(String)}
-impl From<String> for Failure {fn from(e:String)->Self {Self::Io(e)}}
-impl From<&str> for Failure {fn from(e:&str)->Self {Self::Io(e.into())}}
 
 /// Process one TX request: a read-only packet descriptor (with the 12-byte header)
 /// followed by a one-byte writable status descriptor. The frame (header stripped)
