@@ -53,7 +53,15 @@ jobs:
           if proc4.stderr.strip(): print(proc4.stderr.strip())
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nAUDIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc4.returncode, proc4.stdout, proc4.stderr))
-          sys.exit(proc4.returncode)
+          if proc4.returncode: sys.exit(proc4.returncode)
+          # Run the live WHP MMIO audio device smoke (enum dispatch, GPA routing, IRQ7, null-backend round-trip).
+          proc5=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-mmio-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc5.stdout.strip(): print(proc5.stdout.strip())
+          if proc5.stderr.strip(): print(proc5.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nAUDIO-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc5.returncode, proc5.stdout, proc5.stderr))
+          sys.exit(proc5.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash

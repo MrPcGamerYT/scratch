@@ -546,7 +546,26 @@ failed, incl. the 10 new audio unit tests), clippy `-D warnings` clean, release
 build, `audio-smoke` OK, `net-smoke`/`net-mmio-smoke` still OK, `physical-check`
 valid, artifact uploaded.
 
-**Still open (honest).** The audio device model is verified standalone in-
-process; `AudioMmio` is **not yet wired** into the platform MMIO enum, IRQ
-routing, or boot plan. A real host audio backend (not the null backend) and a
-guest OS with a VirtIO-sound driver remain undone.
+## Fix 9 (audio) — platform wiring
+
+**Wiring.** Mirrors the net device wiring exactly: `MmioDevice::Audio` variant
+(with `#[allow(dead_code)]`), `MMIO_AUDIO_BASE=0xd0002000`, GPA routing in
+`emu_memory` (audio checked first, then net, then disk), IRQ7 wiring via
+`pic.set_irq7()`, a `LiveAudio{context,emulator,backend:NullBackend}` struct
+with `access()`, `run_platform` gained a `mut audio:Option<&mut LiveAudio>`
+parameter, `KernelPlan.audio_probe` field + `with_audio_probe()` builder +
+validation refusing it under the APIC profile, and `boot_kernel` /
+`boot_kernel_disk` construct `Option<LiveAudio>` (declared outside the `if`)
+when `plan.audio_probe` is set and pass it to `run_platform`. A
+`audio_probe_requires_single_vcpu_platform_path` test covers the validation.
+
+**Confirmed (wiring gate).** Run **46046748586** (commit e5bc355) succeeded —
+the full gate with the audio device wired into the platform: tests (incl. the
+new `audio_probe` validation test), clippy clean, release build, `audio-smoke`
+OK, `net-smoke`/`net-mmio-smoke` still OK, `physical-check` valid, artifact
+uploaded.
+
+**Still open (honest).** The audio device model and platform wiring are
+verified; a real host audio backend (not the null backend) and a guest OS with
+a VirtIO-sound driver remain undone. Real audio playback, general
+Linux/Android boot, and guest GPU acceleration remain unproven workstreams.

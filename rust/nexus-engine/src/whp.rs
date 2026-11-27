@@ -814,6 +814,11 @@ pub use windows::net_mmio_smoke;
 pub fn net_mmio_smoke()->Result<(),String> {Err("WHP MMIO net execution requires Windows x64".into())}
 
 #[cfg(windows)]
+pub use windows::audio_mmio_smoke;
+#[cfg(not(windows))]
+pub fn audio_mmio_smoke()->Result<(),String> {Err("WHP MMIO audio execution requires Windows x64".into())}
+
+#[cfg(windows)]
 pub use windows::boot_kernel_disk;
 #[cfg(not(windows))]
 pub fn boot_kernel_disk(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant,_base:&std::path::Path,_cow:&std::path::Path,_create:bool)->Result<(),String> {Err("WHP VirtIO Linux boot requires Windows x64".into())}

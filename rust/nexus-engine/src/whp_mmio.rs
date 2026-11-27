@@ -439,3 +439,142 @@ pub fn net_mmio_smoke()->Result<(),String> {
         })?;
     }Ok(())
 }
+
+/// Live MMIO smoke for the VirtIO-MMIO audio device: runs the real emulator
+/// CPU executing guest code that maps the audio MMIO base, negotiates features,
+/// sets up playback (TX) and capture (RX) queues, notifies both, then services
+/// the device from the MMIO callback. Verifies register reads, IRQ7, completion
+/// status, capture silence delivery, used-ring indices, and real callback
+/// execution. Null backend only; no host audio stack or guest boot.
+pub fn audio_mmio_smoke()->Result<(),String> {
+    use crate::cpu;
+    for long in [false,true] {
+        let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
+        // Map the audio MMIO base in guest page tables (long mode only).
+        if long {
+            f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_AUDIO_BASE|0x83).to_le_bytes());
+        }
+        // Fixture virtqueues: TX (sel=1, playback) descriptor table 0x20000, avail 0x20100, used 0x20200;
+        // RX (sel=0, capture) descriptor table 0x20500, avail 0x20600, used 0x20700.
+        // TX samples at 0x20300 (32 bytes), TX status byte at 0x20400.
+        // RX capture buffer at 0x20800 (256 bytes).
+        // TX descriptor chain: [samples (RO, NEXT->1), status (WR, 1 byte)].
+        let tx_samples_addr=0x20300u64;let tx_status_addr=0x20400u64;
+        let tx_descs=[(0x20000u64,tx_samples_addr,32u32,1u16,1u16),(0x20010,tx_status_addr,1,2,0)];
+        for (base,address,length,flags,next) in tx_descs {
+            let b=base as usize;
+            f.ram[b..b+8].copy_from_slice(&address.to_le_bytes());
+            f.ram[b+8..b+12].copy_from_slice(&length.to_le_bytes());
+            f.ram[b+12..b+14].copy_from_slice(&flags.to_le_bytes());
+            f.ram[b+14..b+16].copy_from_slice(&next.to_le_bytes());
+        }
+        // TX avail ring: flags=0, index=1, head=0. TX used ring: index=0, head=0.
+        f.ram[0x20100..0x20102].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20102..0x20104].copy_from_slice(&1u16.to_le_bytes());
+        f.ram[0x20104..0x2010c].copy_from_slice(&0u64.to_le_bytes());
+        f.ram[0x20200..0x20202].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20202..0x2020a].copy_from_slice(&0u64.to_le_bytes());
+        // TX playback samples.
+        for n in 0..32u32 {f.ram[0x20300+n as usize]=(n.wrapping_mul(13) as u8).to_le();}
+        // RX descriptor: single writable capture buffer at 0x20800, len 256.
+        f.ram[0x20500..0x20508].copy_from_slice(&0x20800u64.to_le_bytes());
+        f.ram[0x20508..0x2050c].copy_from_slice(&256u32.to_le_bytes());
+        f.ram[0x2050c..0x2050e].copy_from_slice(&2u16.to_le_bytes());
+        f.ram[0x2050e..0x20510].copy_from_slice(&0u16.to_le_bytes());
+        // RX avail ring: flags=0, index=1, head=0. RX used ring: index=0, head=0.
+        f.ram[0x20600..0x20602].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20602..0x20604].copy_from_slice(&1u16.to_le_bytes());
+        f.ram[0x20604..0x2060c].copy_from_slice(&0u64.to_le_bytes());
+        f.ram[0x20700..0x20702].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20702..0x2070a].copy_from_slice(&0u64.to_le_bytes());
+        let mut code=Vec::new();
+        let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
+            if long {code.push(0x67);}code.push(if size==1 {0xa0} else {0xa1});code.extend_from_slice(&((MMIO_AUDIO_BASE as u32)+offset).to_le_bytes());
+            if size==1 {code.extend_from_slice(&[0x0f,0xb6,0xc0]);}
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&dest.to_le_bytes());
+        };
+        let write=|code:&mut Vec<u8>,offset:u32,value:u32| {
+            code.push(0xb8);code.extend_from_slice(&value.to_le_bytes());if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((MMIO_AUDIO_BASE as u32)+offset).to_le_bytes());
+        };
+        // Read device identity: device ID (0), version (4), vendor ID (0xc), queue num (0x34).
+        for (index,offset) in [0,4,0xc,0x34].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
+        // Negotiate: ACK, DRIVER, features (F_PCM low, VERSION_1 high), FEATURES_OK, DRIVER_OK.
+        for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,1),(0x24,1),(0x20,1),(0x70,11),(0x70,15)] {write(&mut code,offset,value);}
+        load(&mut code,0x70,4,0x1b010); // status after DRIVER_OK.
+        // TX queue setup (sel=1) + notify.
+        for (offset,value) in [(0x30,1),(0x38,8),(0x80,0x20000),(0x90,0x20100),(0xa0,0x20200),(0x44,1),(0x50,0)] {write(&mut code,offset,value);}
+        // RX queue setup (sel=0) + notify.
+        for (offset,value) in [(0x30,0),(0x38,8),(0x80,0x20500),(0x90,0x20600),(0xa0,0x20700),(0x44,1),(0x50,0)] {write(&mut code,offset,value);}
+        // Interrupt status + ACK + re-read.
+        load(&mut code,0x60,4,0x1b014);write(&mut code,0x64,1);load(&mut code,0x60,4,0x1b018);
+        // Reset + read status.
+        write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b01c);
+        code.push(0xf4); // HLT
+        let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
+            let emulator=Emulator::new()?;
+            let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0};
+            let mut backend=crate::virtio_audio::NullBackend::new();
+            let mut serviced=0;let mut irq_seen=false;
+            let mut platform=crate::platform::EarlyPlatform::default();
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..128 {
+                    platform.pic.set_irq7(ctx.device.irq_asserted());
+                    if ctx.device.irq_asserted() {irq_seen=true;}
+                    let exit=run_once(partition)?;
+                    match exit.reason() {
+                        8=>return Ok(Ok(())),
+                        1=>{
+                            emulator.emulate(&mut ctx,&exit,long)?;
+                            if ctx.device.work_pending() {
+                                let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
+                                let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+                                let done=if let MmioDevice::Audio(device)=&mut ctx.device {device.service(&mut memory,&mut backend,8)?} else {return Err("Audio MMIO smoke context is not an audio device".into())};
+                                serviced+=done.len();
+                            }
+                        },
+                        2=>{
+                            let io=crate::io::IoExit::decode(&exit.0)?;
+                            if io.port!=0x20||!io.write||io.size!=1 {return Err("Unexpected audio MMIO fixture port access".into());}
+                            let mode=crate::cpu::CpuMode::from_exit(&exit.0)?;
+                            platform.pic.set_irq7(ctx.device.irq_asserted());
+                            platform.access(io,0)?;
+                            set_registers(partition,&[0x10],&[Register::scalar(mode.next_rip(io.rip,io.instruction_len)?)])?;
+                        },
+                        reason=>return Err(format!("Unexpected audio MMIO fixture exit 0x{reason:x}"))
+                    }
+                }Ok(Err("Audio MMIO fixture exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("Audio MMIO fixture deadline exceeded".into());}result?;
+            // Verify register reads.
+            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),32)};
+            for (n,expected) in [0x74726976u32,2,0x5358454e,256,15].into_iter().enumerate() {
+                let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("Audio MMIO register {n} mismatch 0x{actual:x}"));}
+            }
+            // Verify interrupt was asserted and cleared by ACK.
+            let irq_before=u32::from_le_bytes(bytes[5*4..5*4+4].try_into().unwrap());
+            let irq_after=u32::from_le_bytes(bytes[6*4..6*4+4].try_into().unwrap());
+            if irq_before==0||irq_after!=0 {return Err("Audio MMIO interrupt status/ACK mismatch".into());}
+            // Verify status after reset.
+            let status_reset=u32::from_le_bytes(bytes[7*4..7*4+4].try_into().unwrap());
+            if status_reset!=0 {return Err("Audio MMIO status not cleared by reset".into());}
+            // Verify TX completion: status byte written with 0.
+            let tx_status=u8::from_le(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20400),1)}[0]);
+            if tx_status!=0 {return Err("Audio MMIO TX completion status not success".into());}
+            // Verify RX completion: capture buffer filled with silence (null backend).
+            let rx=unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20800),256)};
+            if !rx.iter().all(|&b| b==0) {return Err("Audio MMIO RX capture buffer not silence".into());}
+            // Verify used-ring indices advanced. The used index lives at used+2.
+            let tx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20202),2)}.try_into().unwrap());
+            let rx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20702),2)}.try_into().unwrap());
+            if tx_used_idx!=1||rx_used_idx!=1 {return Err("Audio MMIO used-ring index mismatch".into());}
+            if !irq_seen {return Err("Audio MMIO IRQ7 was never asserted".into());}
+            if serviced<2 {return Err("Audio MMIO did not complete both TX and RX requests".into());}
+            if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real audio MMIO/translation callback execution".into());}
+            Ok(())
+        })?;
+    }Ok(())
+}
