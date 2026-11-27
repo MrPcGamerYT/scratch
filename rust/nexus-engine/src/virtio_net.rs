@@ -11,6 +11,14 @@ pub const F_MAC:u64=1<<0;
 /// Fixed loopback MAC (locally administered, non-routable).
 pub const LOOPBACK_MAC:[u8;6]=[0x52,0x54,0x00,0x00,0x00,0x01];
 
+/// Build a 12-byte virtio-net header (destination MAC + source MAC) for loopback.
+pub fn net_header()->[u8;HDR_LEN] {
+    let mut header=[0u8;HDR_LEN];
+    header[..6].copy_from_slice(&LOOPBACK_MAC);
+    header[6..].copy_from_slice(&LOOPBACK_MAC);
+    header
+}
+
 /// A packet backend: transmit frames (without the virtio-net header) and receive
 /// frames into a caller-provided buffer. `receive` returns 0 when no frame is ready.
 pub trait NetBackend {
@@ -80,7 +88,7 @@ fn process_rx(m:&mut GuestMemory<'_>,queue:&mut SplitQueue,backend:&mut dyn NetB
     let n=backend.receive(&mut frame)?;
     if n==0 {return Ok(None);}
     let mut packet=vec![0u8;HDR_LEN+n];
-    packet[..HDR_LEN].copy_from_slice(&LOOPBACK_MAC);
+    packet[..HDR_LEN].copy_from_slice(&net_header());
     packet[HDR_LEN..].copy_from_slice(&frame[..n]);
     m.write(buffer.address,&packet)?;
     let total=(HDR_LEN+n) as u32;
@@ -127,7 +135,7 @@ mod tests {
         m.write(desc_base+16,&desc(0x900,1,true)).unwrap();
         // packet at 0x800: 12-byte header + "HELLO"
         let mut packet=vec![0u8;HDR_LEN+5];
-        packet[..HDR_LEN].copy_from_slice(&LOOPBACK_MAC);
+        packet[..HDR_LEN].copy_from_slice(&net_header());
         packet[HDR_LEN..].copy_from_slice(b"HELLO");
         m.write(0x800,&packet).unwrap();
         let mut queue=setup_queue(&m,8,desc_base,0x1200,0x1400);
@@ -157,7 +165,7 @@ mod tests {
         // packet written into 0x800: header + WORLD
         let mut out=[0u8;HDR_LEN+5];
         m.read(0x800,&mut out).unwrap();
-        assert_eq!(&out[..HDR_LEN],&LOOPBACK_MAC);
+        assert_eq!(&out[..HDR_LEN],&net_header());
         assert_eq!(&out[HDR_LEN..],b"WORLD");
     }
 
@@ -198,7 +206,7 @@ mod tests {
         m.write(desc_base,&desc(0x800,HDR_LEN as u32+3,false)).unwrap();
         m.write(desc_base+16,&desc(0x900,1,true)).unwrap();
         let mut packet=vec![0u8;HDR_LEN+3];
-        packet[..HDR_LEN].copy_from_slice(&LOOPBACK_MAC);
+        packet[..HDR_LEN].copy_from_slice(&net_header());
         packet[HDR_LEN..].copy_from_slice(b"ABC");
         m.write(0x800,&packet).unwrap();
         let mut tx=setup_queue(&m,8,desc_base,0x1200,0x1400);

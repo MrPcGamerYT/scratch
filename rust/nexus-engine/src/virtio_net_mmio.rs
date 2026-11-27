@@ -151,8 +151,10 @@ mod tests {
     fn negotiate(device:&mut NetMmio) {
         device.write(0x70,4,ACK).unwrap();
         device.write(0x70,4,ACK|DRIVER).unwrap();
-        device.write(0x20,4,(VERSION_1|F_MAC) as u32).unwrap(); // driver features low word
+        device.write(0x20,4,F_MAC as u32).unwrap(); // driver features low word (F_MAC)
         device.write(0x24,4,0).unwrap();
+        device.write(0x20,4,(VERSION_1>>32) as u32).unwrap(); // high word (VERSION_1)
+        device.write(0x24,4,1).unwrap();
         device.write(0x70,4,ACK|DRIVER|FEATURES_OK).unwrap();
         device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).unwrap();
     }
@@ -196,7 +198,7 @@ mod tests {
         m.write(0x1000,&desc(0x800,(HDR_LEN+4) as u32,false)).unwrap();
         m.write(0x1010,&desc(0x900,1,true)).unwrap();
         let mut packet=vec![0u8;HDR_LEN+4];
-        packet[..HDR_LEN].copy_from_slice(&LOOPBACK_MAC);
+        packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
         packet[HDR_LEN..].copy_from_slice(b"PING");
         m.write(0x800,&packet).unwrap();
         setup_queue(&mut device,&m,1,8,0x1000,0x1200,0x1400);
@@ -248,14 +250,16 @@ pub fn net_smoke()->Result<(),String> {
     let mut device=NetMmio::new();
     device.write(0x70,4,ACK).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER).map_err(|e|e.to_string())?;
-    device.write(0x20,4,(VERSION_1|F_MAC) as u32).map_err(|e|e.to_string())?;
+    device.write(0x20,4,F_MAC as u32).map_err(|e|e.to_string())?;
     device.write(0x24,4,0).map_err(|e|e.to_string())?;
+    device.write(0x20,4,(VERSION_1>>32) as u32).map_err(|e|e.to_string())?;
+    device.write(0x24,4,1).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER|FEATURES_OK).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).map_err(|e|e.to_string())?;
     let mut backend=virtio_net::Loopback::new();
     // TX queue (sel=1): descriptor table 0x1000, avail 0x1200, used 0x1400.
     let mut packet=vec![0u8;HDR_LEN+5];
-    packet[..HDR_LEN].copy_from_slice(&LOOPBACK_MAC);
+    packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
     packet[HDR_LEN..].copy_from_slice(b"NEXUS");
     let mut td=[0u8;16];
     td[..8].copy_from_slice(&0x800u64.to_le_bytes());
