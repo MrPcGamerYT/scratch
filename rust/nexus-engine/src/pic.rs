@@ -42,10 +42,10 @@ impl Controller {
     }
 }
 
-pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,irq4_high:bool,irq3_high:bool,elcr:u8}
+pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,irq4_high:bool,irq3_high:bool,irq6_high:bool,elcr:u8}
 impl Default for PicPair {
     fn default()->Self {
-        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,irq4_high:false,irq3_high:false,elcr:0}
+        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,irq4_high:false,irq3_high:false,irq6_high:false,elcr:0}
     }
 }
 impl PicPair {
@@ -59,10 +59,15 @@ impl PicPair {
         } else if high&&!self.irq5_high {self.master.irr|=0x20;}
         self.irq5_high=high;
     }
+    /// IRQ6 line for the VirtIO-net device. Edge-triggered (no ELCR level mode).
+    pub fn set_irq6(&mut self,high:bool) {
+        if high&&!self.irq6_high {self.master.irr|=0x40;}
+        self.irq6_high=high;
+    }
     fn pending_irq(&self)->Option<u8> {
         let m=&self.master;
         if !m.initialized||m.step!=0 {return None;}
-        let pending=m.irr&!m.mask&0x39;
+        let pending=m.irr&!m.mask&0x79;
         if pending==0 {return None;}
         let irq=pending.trailing_zeros() as u8;
         if m.isr!=0&&u32::from(irq)>=m.isr.trailing_zeros() {return None;}

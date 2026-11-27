@@ -399,3 +399,56 @@ emits valid evidence on a real Windows host, but it is a Windows *Server*
 inside a hosted hypervisor — not the physical Windows 10 target. Running the
 strict gate on a physical machine is the remaining step to close Fix 8
 fully; the command and verifier are in place to do so.
+
+## Fix 9 — VirtIO-MMIO network device model + loopback smoke + engine gate
+
+**Problem.** Fix 8 proved the engine runs on a real (physical or CI) Windows
+host, but no VirtIO network device existed in the engine's platform model, so
+a guest could not receive or transmit packets and the engine's native-bridge
+network path was unverified. Fix 9 adds a self-contained VirtIO-MMIO **net**
+device with a loopback backend, a standalone in-process smoke test, and a
+full-gate CI step that exercises the device end-to-end on the Windows runner.
+
+**Design.**
+
+1. **`src/virtio_net.rs` — net executor.** `NetBackend{transmit,receive}`
+   trait, a `Loopback` backend that captures TX frames and replays them to RX,
+   and `process_one(m,queue,backend,rx)` driving one request off a split
+   virtqueue. VirtIO-net constants: `HDR_LEN=12` (dest MAC + src MAC header),
+   `F_MAC=1<<0`, `VERSION_1=1<<32`, `LOOPBACK_MAC=[0x52,0x54,0x00,0x00,0x00,0x01]`,
+   and `net_header()` building the 12-byte header from the MAC. TX strips the
+   12-byte header and completes the request; RX prepends it. 5 unit tests.
+2. **`src/virtio_net_mmio.rs` — `NetMmio` device.** VirtIO-MMIO register
+   model (`new/read/write/irq_asserted/work_pending/service`), RX queue sel=0 /
+   TX sel=1, MAC config space at 0x100..0x106, status lifecycle
+   ACK→DRIVER→FEATURES_OK→DRIVER_OK. Features offered are `VERSION_1|F_MAC`,
+   split across the low/high words at 0x20 selected by `driver_sel` (0x24).
+   `net_smoke()` performs full feature negotiation, a TX frame through the
+   loopback backend, then delivers it back through RX — no WHP or guest CPU
+   required. 5 unit tests.
+3. **`src/main.rs` — `net-smoke` CLI command.** Runs `net_smoke()` and exits
+   nonzero on failure; prints `NET_SMOKE_OK` on success.
+4. **`engine-exe.yml` — full gate.** The build step now runs
+   `tests/build_native_engine.py` (`cargo test` → `cargo clippy -D warnings` →
+   `cargo build --release --locked`) **then** `nexus-engine net-smoke`, then
+   `physical-check`, then artifact uploads.
+
+**VirtIO descriptor rules learned (and encoded in the tests):** a multi-
+descriptor request needs the NEXT flag (bit 0 of the flags u16) on all but
+the last descriptor, **and** the `next_index` field (bytes 14-15) must point
+to the next descriptor; feature words (0x20 low/high) are selected by
+`driver_sel` (0=low, 1=high) — set `driver_sel` **before** writing each word;
+the notify register (0x50) is written with **0**; the avail flags word must be
+**0** to request an interrupt (1 = NO_INTERRUPT).
+
+**Confirmed.** Run **46034707959** (commit a9a1db0) succeeded — the full gate
+passed: 154 tests (0 failed), clippy `-D warnings` clean, release build,
+`net-smoke` printed `NET_SMOKE_OK`, `physical-check` emitted schema-valid
+evidence, and the `nexus-engine-exe` artifact uploaded.
+
+**Still open (honest).** The device model is verified standalone in-process;
+`NetMmio` is **not yet wired** into `platform.rs` (`EarlyPlatform::access`
+port dispatch + `tick`/IRQ) or `whp.rs` (`run_platform` memory-exit reason 1
+→ `service()` + `set_irq5`), so no guest OS actually drives the device yet.
+Real networking, audio, general Linux/Android boot, and guest GPU
+acceleration remain unproven workstreams.

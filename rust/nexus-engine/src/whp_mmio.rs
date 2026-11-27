@@ -23,8 +23,23 @@ extern "system" {
     fn WHvTranslateGva(partition:*mut c_void,index:u32,gva:u64,flags:u32,result:*mut Translation,gpa:*mut u64)->i32;
 }
 const MMIO_BASE:u64=0xd0000000;
+/// Secondary VirtIO-MMIO base for the net device; distinct from the block base so
+/// both devices can coexist under one emulator callback.
+const MMIO_NET_BASE:u64=0xd0001000;
+/// Which VirtIO-MMIO device the context services. Block is the default so the
+/// existing disk boot path is unchanged; Net is activated only when requested.
+enum MmioDevice {
+    Block(crate::virtio_mmio::BlockMmio),
+    Net(crate::virtio_net_mmio::NetMmio),
+}
+impl MmioDevice {
+    fn read(&self,offset:u64,size:u8)->Result<u32,String> {match self {MmioDevice::Block(d)=>d.read(offset,size),MmioDevice::Net(d)=>d.read(offset,size)}}
+    fn write(&mut self,offset:u64,size:u8,value:u32)->Result<(),String> {match self {MmioDevice::Block(d)=>d.write(offset,size,value),MmioDevice::Net(d)=>d.write(offset,size,value)}}
+    fn work_pending(&self)->bool {match self {MmioDevice::Block(d)=>d.work_pending(),MmioDevice::Net(d)=>d.work_pending()}}
+    fn irq_asserted(&self)->bool {match self {MmioDevice::Block(d)=>d.irq_asserted(),MmioDevice::Net(d)=>d.irq_asserted()}}
+}
 struct MmioContext {
-    partition:*mut c_void,ram:*mut u8,bytes:usize,device:crate::virtio_mmio::BlockMmio,
+    partition:*mut c_void,ram:*mut u8,bytes:usize,device:MmioDevice,
     error:Option<String>,translations:u64,accesses:u64,
 }
 fn callback(context:*mut c_void,action:impl FnOnce(&mut MmioContext)->Result<(),String>)->i32 {
@@ -70,13 +85,16 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
             let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram.add(a.gpa as usize),n)};
             if a.direction==0 {a.data[..n].copy_from_slice(ram);} else {ram.copy_from_slice(&a.data[..n]);}return Ok(());
         }
-        if a.gpa<MMIO_BASE||end>MMIO_BASE+4096 {return Err("Emulator memory access outside RAM/device page".into());}
+        if !((a.gpa>=MMIO_BASE&&end<=MMIO_BASE+4096)||(a.gpa>=MMIO_NET_BASE&&end<=MMIO_NET_BASE+4096)) {return Err("Emulator memory access outside RAM/device page".into());}
         if ![1,2,4].contains(&a.size) {return Err("Unsupported MMIO register access width".into());}
-        let offset=a.gpa-MMIO_BASE;
+        let offset=if a.gpa>=MMIO_NET_BASE {a.gpa-MMIO_NET_BASE} else {a.gpa-MMIO_BASE};
         if a.direction==0 {let value=ctx.device.read(offset,a.size)?.to_le_bytes();a.data[..n].copy_from_slice(&value[..n]);}
         else {
             // Defined RO registers/config ignore writes, without changing device state.
-            let config=(0x100..0x200).contains(&offset)&&end<=MMIO_BASE+0x200&&[1,2,4].contains(&a.size);
+            // Config space bound differs per device: block 0x100..0x200, net MAC 0x100..0x106.
+            let is_net=matches!(ctx.device,MmioDevice::Net(_));
+            let config_end=if is_net {0x106u64} else {0x200u64};
+            let config=(0x100..config_end).contains(&offset)&&end<=(if is_net {MMIO_NET_BASE} else {MMIO_BASE})+config_end&&[1,2,4].contains(&a.size);
             let readonly=[0,4,8,0xc,0x10,0x34,0x60,0xfc].contains(&offset)&&a.size==4&&offset%4==0;
             if !config&&!readonly {
                 let value=u32::from_le_bytes(a.data[..4].try_into().unwrap());ctx.device.write(offset,a.size,value)?;
@@ -113,7 +131,23 @@ impl LiveBlock {
             // Sole vCPU stopped, synchronous emulator callbacks have all returned.
             let ram=unsafe {std::slice::from_raw_parts_mut(self.context.ram,self.context.bytes)};
             let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
-            self.context.device.service(&mut memory,&mut self.backend,256)?;
+            if let MmioDevice::Block(device)=&mut self.context.device {device.service(&mut memory,&mut self.backend,256)?;}
+        }
+        Ok(())
+    }
+}
+
+/// Live net device: same MMIO emulation pattern as the block device, but services
+/// the VirtIO-net queues with a loopback backend. Activated only when a net device
+/// is requested; the block boot path is unaffected.
+struct LiveNet {context:MmioContext,emulator:Emulator,backend:crate::virtio_net::Loopback}
+impl LiveNet {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
+        if self.context.device.work_pending() {
+            let ram=unsafe {std::slice::from_raw_parts_mut(self.context.ram,self.context.bytes)};
+            let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+            if let MmioDevice::Net(device)=&mut self.context.device {device.service(&mut memory,&mut self.backend,256)?;}
         }
         Ok(())
     }
@@ -191,7 +225,7 @@ pub fn mmio_smoke()->Result<(),String> {
             if !long {
                 for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0xdf),(0x4d0,0x20)] {platform.pic.access(port,true,value)?;}
             }
-            let emulator=Emulator::new()?;let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:crate::virtio_mmio::BlockMmio::new(4,false)?,error:None,translations:0,accesses:0};
+            let emulator=Emulator::new()?;let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Block(crate::virtio_mmio::BlockMmio::new(4,false)?),error:None,translations:0,accesses:0};
             let (result,timed_out)=bounded(partition,5000,|| {
                 for _ in 0..128 {
                     if !long {

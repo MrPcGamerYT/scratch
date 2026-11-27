@@ -470,7 +470,7 @@ mod windows {
     enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve,NativeBridge,NativeApk}
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
-        run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>)->Result<(),String> {
+        run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>,mut net:Option<&mut LiveNet>)->Result<(),String> {
         let (goal,display)=run;let mut last_frame=std::time::Instant::now();
         let fixture=goal==RunGoal::TimerFixture;
         // Diagnostic wall budgets. Android/APK runs need room for CI scheduling variance;
@@ -516,6 +516,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                         if platform.uart.can_receive() {if let Some(byte)=session.next_byte() {platform.uart.receive(byte)?;}}
                     }
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
+                    if let Some(net)=net.as_ref() {platform.pic.set_irq6(net.context.device.irq_asserted());}
                     if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,3=>trace.irq3_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
@@ -525,6 +526,11 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     last.0=context.reason();last.1=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
                     match context.reason() {
                         1=>{
+                            // Route the MMIO exit to the device whose base owns the GPA.
+                            let gpa=u64::from_le_bytes(context.0[48..56].try_into().unwrap());
+                            if let Some(net)=net.as_mut() {
+                                if (MMIO_NET_BASE..MMIO_NET_BASE+4096).contains(&gpa) {net.access(&context)?;continue;}
+                            }
                             let disk=disk.as_mut().ok_or("Unmapped memory exit without a configured VirtIO device")?;
                             disk.access(&context)?;
                         }
@@ -580,7 +586,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
             if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None)
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,None)
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -591,12 +597,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             if plan.apic_probe {return run_apic_os(partition,memory,serial,trace,start,(Some(backend),plan.bridge_probe,plan.dma_failure));}
             let capacity=backend.disk_bytes()/512;
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
-                device:crate::virtio_mmio::BlockMmio::new(capacity,false)?,error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
+                device:MmioDevice::Block(crate::virtio_mmio::BlockMmio::new(capacity,false)?),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
             let mut platform=crate::platform::EarlyPlatform::default();
             if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk))
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),None)
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
@@ -687,7 +693,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             platform.pit0.access(0x43,true,control,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
-            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None)?;
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None,None)?;
             let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
             if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
                 return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));
