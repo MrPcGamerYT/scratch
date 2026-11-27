@@ -22,6 +22,11 @@ impl Bridge {
     pub fn complete(&self)->bool {if self.apk.is_some() {self.result} else {self.greeted&&self.app.is_some()&&self.result}}
     pub fn app(&self)->Option<&str> {self.app.as_deref()}
     pub fn next_byte(&mut self)->Option<u8> {self.pending.pop_front()}
+    /// Queue a command line (e.g. "NEXUS 1 BACK") for transmission to the guest.
+    pub fn push_command(&mut self,line:&str)->Result<(),String> {
+        if !line.is_ascii() || line.is_empty() || line.len()>127 {return Err("Invalid bridge command line".into());}
+        self.pending.extend(format!("{line}\n").bytes());Ok(())
+    }
     pub fn receive(&mut self,bytes:&[u8])->Result<(),String> {
         for &byte in bytes {
             if self.received>=1024*1024 {return Err("Native bridge receive budget exceeded".into());}self.received+=1;
@@ -118,6 +123,15 @@ impl Device {
         b.receive(b"NEXUS 1 APK NEXT\n").unwrap();assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 APK COMMIT\n");assert!(!b.complete());
         b.receive(b"NEXUS 1 RESULT APK_INSTALL OK\n").unwrap();assert!(!b.complete());assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 VERIFY_TEST_APK\n");
         b.receive(b"NEXUS 1 RESULT VERIFY_TEST_APK OK\n").unwrap();assert!(b.complete());drop(b);std::fs::remove_file(path).unwrap();
+    }
+    #[test] fn push_command_queues_valid_lines_and_rejects_bad() {
+        let mut b=Bridge::default();
+        b.push_command("NEXUS 1 BACK").unwrap();
+        b.push_command("NEXUS 1 HOME").unwrap();
+        assert_eq!(b.next_byte(),Some(b'N'));
+        assert!(b.push_command("").is_err());
+        assert!(b.push_command("bad\0line").is_err());
+        assert!(b.push_command(&"x".repeat(128)).is_err());
     }
     #[test] fn backpressure_does_not_overwrite_receiver() {
         let mut d=Device::default();d.client.pending.extend(b"abc");d.tick().unwrap();d.tick().unwrap();assert_eq!(d.client.pending.len(),2);

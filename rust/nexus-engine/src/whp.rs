@@ -471,6 +471,13 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     platform.tick(now_ns);
                     if let Some(bridge)=&mut platform.bridge {
                         bridge.tick()?;
+                        // Drain player UI commands into the bridge's outbound queue.
+                        if let Some((_,session))=display {
+                            while let Some(cmd)=session.next_command() {
+                                bridge.client.push_command(&cmd)?;
+                            }
+                            if let Some(app)=bridge.client.app() {let _=session.set_app(app);}
+                        }
                         if matches!(goal,RunGoal::NativeBridge|RunGoal::NativeApk)&&bridge.client.complete() {
                             if bridge.client.installing() {
                                 println!("NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK");
