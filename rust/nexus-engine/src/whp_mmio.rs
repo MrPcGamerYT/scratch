@@ -451,9 +451,12 @@ pub fn audio_mmio_smoke()->Result<(),String> {
     for long in [false,true] {
         let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
         // Map the audio MMIO base in guest page tables (long mode only).
+        // Use MMIO_BASE (0xd0000000, 2MB-aligned) as the 2MB page GPA so VA
+        // 0xd0002000 maps to GPA 0xd0002000 (identity within the 2MB page),
+        // landing in the MMIO_AUDIO_BASE range for the emulator callback.
         if long {
             f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_AUDIO_BASE|0x83).to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
         }
         // Fixture virtqueues: TX (sel=1, playback) descriptor table 0x20000, avail 0x20100, used 0x20200;
         // RX (sel=0, capture) descriptor table 0x20500, avail 0x20600, used 0x20700.
