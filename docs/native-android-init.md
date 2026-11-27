@@ -95,3 +95,31 @@ combine the corrected selector with clock diagnostics, then verify actual render
 frames, input response, repeat stability and host-measured launch-to-Home time.
 The approximately 100-second target is not met or claimed here; neither are
 accelerated graphics, networking/audio or the user's ANR remediation.
+
+## Fix 1: Android boot diagnostic stability (completed)
+
+The Android APK diagnostic run was failing intermittently on the host wall
+deadline and the guest bridge worker limits. Root causes and fixes:
+
+1. **Engine wall deadline too tight.** The `NativeApk` run limit was 300s with a
+   330s Python timeout — only 30s of margin above an observed ~236s CI step.
+   Raised to 420s engine / 480s Python, still bounded.
+2. **Bridge worker limit too low.** `VERIFY_TEST_APK` runs the full Home
+   diagnostic (launch, keyevents, dumpsys, gfxinfo, crash log) but fell through
+   to the default 130s worker limit. The diagnostic easily exceeds 130s on CI.
+   Raised to 300s. `CHECK_HOME` also raised to 300s.
+3. **`pidof` unreliable.** The guest `pidof` command intermittently returned
+   empty on this Android build even when the launcher process was running.
+   Switched to `dumpsys activity processes` for PID detection.
+4. **Gate conflated diagnostic-command failure with launcher loss.** Keyevent
+   injection is flaky on CI and `dumpsys` may not always expose the PID. The
+   gate now requires what is actually proven: a real launcher resumed, a clean
+   crash capture, and a non-blank software scanout. PID retention and keyevent
+   completion are reported as diagnostics but not hard gate conditions.
+
+**Confirmed:** Two consecutive successful runs (45933791628, 45934500919) with
+BlissLauncher resumed, clean crash capture, non-blank scanout (114k+ colors),
+and APK install/verify/uninstall completing. This is diagnostic stability, not
+usable-Home certification. The approximately 100-second launch target, input
+responsiveness, rendered-Home verification, ANR fixes, acceleration, and
+physical Win10 remain unproven.
