@@ -72,8 +72,20 @@ COW overlays; no user disk or original base is changed.
 - **3445427** excludes provisioning/settings/fallback activities and prefers
   Launcher3 only if it is actually returned by PackageManager. Selection-order
   and fail-closed evidence tests run locally. This latest selection correction
-  has **not yet been boot-verified in rebuilt guest assets**. Existing assets
-  45866271217 contain the old ordering-sensitive selector.
+  has been boot-verified. Rebuilt assets **45914110206** selected BlissLauncher,
+  remained resumed, retained TSC without watchdog fallback, and produced a clean
+  crash capture. Existing assets 45866271217 contain the old ordering-sensitive
+  selector.
+- Run **45915444706** passed with actual software scanout statistics: 800x600,
+  114330 distinct colors, and a 6.75% dominant-color share, proving the buffer is
+  not a blank fixture. The next run **45916153374** passed guest Recents and Home
+  keyevents with BlissLauncher still resumed and its process retained.
+- Run **45917383699** reported 116 launcher-rendered frames and clean activity
+  evidence, but **failed on the host process wall deadline** before normal
+  completion. Its bounded diagnostics were nevertheless complete, and the failure
+  is a diagnostic timeout—not a new Home, rendering, crash, keyevent or APK
+  regression. The bounded success therefore does not constitute the final 100-second
+  or interactive certification.
 
 The host gate keeps `android_home_verified`, rendered-Home and input-responsive
 flags false even when a launcher activity is resumed. Its checks now reject a
