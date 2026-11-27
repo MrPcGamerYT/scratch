@@ -469,19 +469,16 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     if elapsed_ms()>=limit {return Err("Platform wall deadline exceeded".into());}
                     let now_ns=start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
                     platform.tick(now_ns);
-                    // Drain COM1 UART output even during bridge IO phases so
-                    // guest serial markers (e.g. NEXUS_HOME_READY) reach BootTrace.
-                    if !platform.uart.output.is_empty() {
-                        let drained=std::mem::take(&mut platform.uart.output);
-                        serial.write_all(&drained).map_err(|e|e.to_string())?;
-                        trace.observe_serial(&drained,elapsed_ms());
-                        if drained.contains(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
-                    }
                     if let Some(bridge)=&mut platform.bridge {
                         bridge.tick()?;
                         if matches!(goal,RunGoal::NativeBridge|RunGoal::NativeApk)&&bridge.client.complete() {
-                            if bridge.client.installing() {println!("NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK");}
-                            else {println!("NATIVE_BRIDGE_QUERY_OK app={} transport=private-COM2; Android actions/install/network/audio not verified",bridge.client.app().unwrap_or("-"));}
+                            if bridge.client.installing() {
+                                println!("NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK");
+                                // Home diagnostic completed at bridge VERIFY_TEST_APK OK.
+                                if trace.android_home_ready_ms.is_none() {
+                                    trace.android_home_ready_ms=Some(elapsed_ms());
+                                }
+                            } else {println!("NATIVE_BRIDGE_QUERY_OK app={} transport=private-COM2; Android actions/install/network/audio not verified",bridge.client.app().unwrap_or("-"));}
                             return Ok(Ok(()));
                         }
                     }
@@ -527,12 +524,6 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                                 serial.write_all(emitted).map_err(|e|e.to_string())?;
                                 trace.observe_serial(emitted,elapsed_ms());
                                 if emitted.contains(&b'\n') {serial.flush().map_err(|e|e.to_string())?;}
-                            }
-                            if let Some(bridge)=platform.bridge.as_mut() {
-                                let bridge_bytes=std::mem::take(&mut bridge.raw_output);
-                                if !bridge_bytes.is_empty() {
-                                    trace.observe_serial(&bridge_bytes,elapsed_ms());
-                                }
                             }
                             if let Some(rax)=input {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
                             else {set_registers(partition,&[0x10],&[rip])?;}

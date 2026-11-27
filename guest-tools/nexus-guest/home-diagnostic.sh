@@ -72,10 +72,6 @@ echo NEXUS_HOME_FRAME_STATS_END
 echo NEXUS_HOME_ACTIVITY_STATE_BEGIN
 timeout 10 dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ResumedActivity|Hist #0|mFocusedApp'
 echo NEXUS_HOME_ACTIVITY_STATE_END
-# Emit Home-ready marker after the diagnostic completes; the engine records
-# when it sees this on the serial stream. The Python gate separately verifies
-# that the launcher activity was actually resumed.
-echo NEXUS_HOME_READY
 echo NEXUS_HOME_WINDOW_STATE_BEGIN
 timeout 10 dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp|mHasSurface|isOnScreen|isVisible|mObscuringWindow'
 echo NEXUS_HOME_WINDOW_STATE_END

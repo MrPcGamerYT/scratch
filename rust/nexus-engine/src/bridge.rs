@@ -66,9 +66,9 @@ impl Bridge {
     }
 }
 #[derive(Default)]
-pub struct Device {pub uart:EarlyUart,pub client:Bridge,probe_bytes:usize,pub raw_output:Vec<u8>}
+pub struct Device {pub uart:EarlyUart,pub client:Bridge,probe_bytes:usize}
 impl Device {
-    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?,probe_bytes:0,raw_output:Vec::new()})}
+    pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?,probe_bytes:0})}
     pub fn tick(&mut self)->Result<(),String> {
         if self.uart.can_receive() {if let Some(byte)=self.client.next_byte() {self.uart.receive(byte)?;}}Ok(())
     }
@@ -78,7 +78,6 @@ impl Device {
         let answer=self.uart.access(io)?;
         if !self.uart.output.is_empty() {
             let bytes=std::mem::take(&mut self.uart.output);
-            self.raw_output.extend_from_slice(&bytes);
             for byte in bytes {
                 // Linux 8250 autoconfig_irq deliberately transmits 0xff before
                 // a userspace port is opened. Bound this hardware probe preface;
