@@ -21,7 +21,7 @@ pub const TITLEBAR_PAD:i32=6;
 
 /// Default titlebar buttons in left-to-right order.
 /// Each maps to a bridge command the guest agent already supports.
-pub const BUTTONS:&[Button]=[
+pub const BUTTONS:&[Button]=&[
     Button{label:"<",command:"NEXUS 1 BACK"},
     Button{label:"H",command:"NEXUS 1 HOME"},
     Button{label:"R",command:"NEXUS 1 RECENTS"},
