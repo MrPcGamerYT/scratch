@@ -140,21 +140,21 @@ mod tests {
         let ram=Box::leak(Box::new(vec![0u8;bytes]));
         GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).unwrap()
     }
-    fn desc(address:u64,length:u32,writable:bool)->[u8;16] {
+    fn desc(address:u64,length:u32,writable:bool,next:bool)->[u8;16] {
         let mut raw=[0;16];
         raw[..8].copy_from_slice(&address.to_le_bytes());
         raw[8..12].copy_from_slice(&length.to_le_bytes());
-        let flags=if writable {2u16} else {0};
+        let flags=u16::from(if writable {2} else {0})|u16::from(if next {1} else {0});
         raw[12..14].copy_from_slice(&flags.to_le_bytes());
         raw
     }
     fn negotiate(device:&mut NetMmio) {
         device.write(0x70,4,ACK).unwrap();
         device.write(0x70,4,ACK|DRIVER).unwrap();
-        device.write(0x20,4,F_MAC as u32).unwrap(); // driver features low word (F_MAC)
-        device.write(0x24,4,0).unwrap();
-        device.write(0x20,4,(VERSION_1>>32) as u32).unwrap(); // high word (VERSION_1)
-        device.write(0x24,4,1).unwrap();
+        device.write(0x24,4,0).unwrap(); // driver_sel = 0 (low word)
+        device.write(0x20,4,F_MAC as u32).unwrap(); // low word = F_MAC
+        device.write(0x24,4,1).unwrap(); // driver_sel = 1 (high word)
+        device.write(0x20,4,(VERSION_1>>32) as u32).unwrap(); // high word = VERSION_1
         device.write(0x70,4,ACK|DRIVER|FEATURES_OK).unwrap();
         device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).unwrap();
     }
@@ -195,8 +195,8 @@ mod tests {
         let mut device=NetMmio::new();
         negotiate(&mut device);
         // TX queue (sel=1): descriptor table 0x1000, avail 0x1200, used 0x1400
-        m.write(0x1000,&desc(0x800,(HDR_LEN+4) as u32,false)).unwrap();
-        m.write(0x1010,&desc(0x900,1,true)).unwrap();
+        m.write(0x1000,&desc(0x800,(HDR_LEN+4) as u32,false,true)).unwrap();
+        m.write(0x1010,&desc(0x900,1,true,false)).unwrap();
         let mut packet=vec![0u8;HDR_LEN+4];
         packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
         packet[HDR_LEN..].copy_from_slice(b"PING");
@@ -221,7 +221,7 @@ mod tests {
         let mut backend=virtio_net::Loopback::new();
         backend.transmit(b"PONG").unwrap();
         // RX queue (sel=0): descriptor table 0x1000, avail 0x1200, used 0x1400
-        m.write(0x1000,&desc(0x800,64,true)).unwrap();
+        m.write(0x1000,&desc(0x800,64,true,false)).unwrap();
         setup_queue(&mut device,&m,0,8,0x1000,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         device.write(0x30,4,0).unwrap();
@@ -250,10 +250,10 @@ pub fn net_smoke()->Result<(),String> {
     let mut device=NetMmio::new();
     device.write(0x70,4,ACK).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER).map_err(|e|e.to_string())?;
-    device.write(0x20,4,F_MAC as u32).map_err(|e|e.to_string())?;
     device.write(0x24,4,0).map_err(|e|e.to_string())?;
-    device.write(0x20,4,(VERSION_1>>32) as u32).map_err(|e|e.to_string())?;
+    device.write(0x20,4,F_MAC as u32).map_err(|e|e.to_string())?;
     device.write(0x24,4,1).map_err(|e|e.to_string())?;
+    device.write(0x20,4,(VERSION_1>>32) as u32).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER|FEATURES_OK).map_err(|e|e.to_string())?;
     device.write(0x70,4,ACK|DRIVER|FEATURES_OK|DRIVER_OK).map_err(|e|e.to_string())?;
     let mut backend=virtio_net::Loopback::new();
