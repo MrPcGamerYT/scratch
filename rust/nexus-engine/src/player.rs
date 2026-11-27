@@ -159,13 +159,11 @@ impl Session {
 
     /// Toggle fullscreen state. Returns the new state.
     pub fn toggle_fullscreen(&self)->bool {
-        let new=!self.fullscreen.swap(!self.fullscreen.load(Ordering::Acquire),Ordering::AcqRel);
-        new
+        !self.fullscreen.swap(!self.fullscreen.load(Ordering::Acquire),Ordering::AcqRel)
     }
     /// Cycle the keymap selector. Returns the new index.
     pub fn cycle_keymap(&self)->usize {
-        let idx=self.keymap_selector.fetch_add(1,Ordering::AcqRel);
-        idx
+        self.keymap_selector.fetch_add(1,Ordering::AcqRel)
     }
     /// Adjust volume by `delta` (clamped to 0..100). Returns the new level.
     pub fn adjust_volume(&self,delta:i32)->i32 {
@@ -244,7 +242,6 @@ mod native {
         fn StretchDIBits(dc:Handle,x:i32,y:i32,w:i32,h:i32,sx:i32,sy:i32,sw:i32,sh:i32,bits:*const c_void,info:*const Bitmap,usage:u32,rop:u32)->i32;
         fn TextOutW(dc:Handle,x:i32,y:i32,text:*const u16,count:i32)->i32;
         fn SetTextColor(dc:Handle,color:u32)->u32;
-        fn SetBkColor(dc:Handle,color:u32)->u32;
         fn SetBkMode(dc:Handle,mode:i32)->i32;
         fn Rectangle(dc:Handle,left:i32,top:i32,right:i32,bottom:i32)->i32;
     }
@@ -264,7 +261,7 @@ mod native {
         if m==2 {PostQuitMessage(0);return 0;}
         // WM_LBUTTONDOWN: hit-test titlebar buttons.
         if m==0x201 {
-            let x=(l & 0xffff as isize) as i32;
+            let x=(l & 0xffff) as i32;
             let y=(l >> 16) as i32;
             if y<TITLEBAR_HEIGHT {
                 let mut rect=Rect{left:0,top:0,right:0,bottom:0};
@@ -277,11 +274,11 @@ mod native {
                         } else if cmd=="__KEYMAP__" {
                             let _=shared_cycle_keymap();
                         } else if cmd=="__INSTALL_APK__" {
-                            let _=shared_push("NEXUS 1 APK_INSTALL");
+                            shared_push("NEXUS 1 APK_INSTALL");
                         } else if cmd=="__SETTINGS__" {
-                            let _=shared_push("NEXUS 1 QUERY_APP");
+                            shared_push("NEXUS 1 QUERY_APP");
                         } else {
-                            let _=shared_push(cmd);
+                            shared_push(cmd);
                         }
                     }
                 }
@@ -290,7 +287,7 @@ mod native {
         // WM_KEYDOWN: translate via active app's keymap.
         if m==0x100 {
             let vk=w as u32;
-            if let Some(cmd)=shared_translate_key(vk) {let _=shared_push(&cmd);}
+            if let Some(cmd)=shared_translate_key(vk) {shared_push(&cmd);}
         }
         DefWindowProcW(h,m,w,l)
     }
