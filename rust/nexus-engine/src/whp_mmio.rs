@@ -302,10 +302,11 @@ pub fn net_mmio_smoke()->Result<(),String> {
         let tx_packet_addr=0x20300u64;let tx_status_addr=0x20400u64;
         let descs=[(0x20000u64,tx_packet_addr,17u32,1u16,1u16),(0x20010,tx_status_addr,1,2,0)];
         for (base,address,length,flags,next) in descs {
-            f.ram[base..base+8].copy_from_slice(&address.to_le_bytes());
-            f.ram[base+8..base+12].copy_from_slice(&length.to_le_bytes());
-            f.ram[base+12..base+14].copy_from_slice(&flags.to_le_bytes());
-            f.ram[base+14..base+16].copy_from_slice(&next.to_le_bytes());
+            let b=base as usize;
+            f.ram[b..b+8].copy_from_slice(&address.to_le_bytes());
+            f.ram[b+8..b+12].copy_from_slice(&length.to_le_bytes());
+            f.ram[b+12..b+14].copy_from_slice(&flags.to_le_bytes());
+            f.ram[b+14..b+16].copy_from_slice(&next.to_le_bytes());
         }
         // TX avail ring: flags=0, index=1, head=0. TX used ring: index=0, head=0.
         f.ram[0x20100..0x20102].copy_from_slice(&0u16.to_le_bytes());
