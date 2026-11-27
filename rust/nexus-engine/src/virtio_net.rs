@@ -110,12 +110,14 @@ mod tests {
         let ram=Box::leak(Box::new(vec![0u8;bytes]));
         GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).unwrap()
     }
-    fn desc(address:u64,length:u32,writable:bool,next:bool)->[u8;16] {
+    fn desc(address:u64,length:u32,writable:bool,next_index:u16)->[u8;16] {
         let mut raw=[0;16];
         raw[..8].copy_from_slice(&address.to_le_bytes());
         raw[8..12].copy_from_slice(&length.to_le_bytes());
-        let flags=(if writable {2u16} else {0})|(if next {1u16} else {0});
+        let has_next=next_index!=0;
+        let flags=(if writable {2u16} else {0})|(if has_next {1u16} else {0});
         raw[12..14].copy_from_slice(&flags.to_le_bytes());
+        raw[14..16].copy_from_slice(&next_index.to_le_bytes());
         raw
     }
     fn setup_queue(m:&GuestMemory<'_>,size:u16,desc:u64,avail:u64,used:u64)->SplitQueue {
@@ -131,8 +133,8 @@ mod tests {
         let mut m=memory(0x2000);
         // descriptor table at 0x1000, avail at 0x1200, used at 0x1400
         let desc_base=0x1000u64;
-        m.write(desc_base,&desc(0x800,HDR_LEN as u32+4,false,true)).unwrap();
-        m.write(desc_base+16,&desc(0x900,1,true,false)).unwrap();
+        m.write(desc_base,&desc(0x800,HDR_LEN as u32+4,false,1)).unwrap();
+        m.write(desc_base+16,&desc(0x900,1,true,0)).unwrap();
         // packet at 0x800: 12-byte header + "HELLO"
         let mut packet=vec![0u8;HDR_LEN+5];
         packet[..HDR_LEN].copy_from_slice(&net_header());
@@ -157,7 +159,7 @@ mod tests {
         backend.transmit(b"WORLD").unwrap();
         let desc_base=0x1000u64;
         // single writable RX buffer at 0x800, length 64
-        m.write(desc_base,&desc(0x800,64,true,false)).unwrap();
+        m.write(desc_base,&desc(0x800,64,true,0)).unwrap();
         let mut queue=setup_queue(&m,8,desc_base,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         let completion=process_rx(&mut m,&mut queue,&mut backend).unwrap().unwrap();
@@ -173,7 +175,7 @@ mod tests {
         let mut m=memory(0x2000);
         let mut backend=Loopback::new();
         let desc_base=0x1000u64;
-        m.write(desc_base,&desc(0x800,64,true,false)).unwrap();
+        m.write(desc_base,&desc(0x800,64,true,0)).unwrap();
         let mut queue=setup_queue(&m,8,desc_base,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         assert!(process_rx(&mut m,&mut queue,&mut backend).unwrap().is_none());
@@ -185,14 +187,14 @@ mod tests {
         let mut m=memory(0x2000);
         let desc_base=0x1000u64;
         // packet shorter than header
-        m.write(desc_base,&desc(0x800,4,false,true)).unwrap();
-        m.write(desc_base+16,&desc(0x900,1,true,false)).unwrap();
+        m.write(desc_base,&desc(0x800,4,false,1)).unwrap();
+        m.write(desc_base+16,&desc(0x900,1,true,0)).unwrap();
         let mut queue=setup_queue(&m,8,desc_base,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         let mut backend=Loopback::new();
         assert!(process_tx(&mut m,&mut queue,&mut backend).is_err());
         // packet writable (wrong direction)
-        m.write(desc_base,&desc(0x800,HDR_LEN as u32+4,true,true)).unwrap();
+        m.write(desc_base,&desc(0x800,HDR_LEN as u32+4,true,1)).unwrap();
         let mut queue=setup_queue(&m,8,desc_base,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         assert!(process_tx(&mut m,&mut queue,&mut backend).is_err());
@@ -203,8 +205,8 @@ mod tests {
         let mut backend=Loopback::new();
         let desc_base=0x1000u64;
         // TX queue: descriptor table at 0x1000, avail 0x1200, used 0x1400
-        m.write(desc_base,&desc(0x800,HDR_LEN as u32+3,false,true)).unwrap();
-        m.write(desc_base+16,&desc(0x900,1,true,false)).unwrap();
+        m.write(desc_base,&desc(0x800,HDR_LEN as u32+3,false,1)).unwrap();
+        m.write(desc_base+16,&desc(0x900,1,true,0)).unwrap();
         let mut packet=vec![0u8;HDR_LEN+3];
         packet[..HDR_LEN].copy_from_slice(&net_header());
         packet[HDR_LEN..].copy_from_slice(b"ABC");
@@ -215,7 +217,7 @@ mod tests {
         assert_eq!(tx_done.status,0);
         // RX queue: separate descriptor table at 0x2000, avail 0x2200, used 0x2400
         let rx_desc=0x2000u64;
-        m.write(rx_desc,&desc(0x1800,64,true,false)).unwrap();
+        m.write(rx_desc,&desc(0x1800,64,true,0)).unwrap();
         let mut rx=setup_queue(&m,8,rx_desc,0x2200,0x2400);
         push_avail(&mut m,0x2200,0);
         let rx_done=process_rx(&mut m,&mut rx,&mut backend).unwrap().unwrap();

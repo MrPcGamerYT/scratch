@@ -140,12 +140,14 @@ mod tests {
         let ram=Box::leak(Box::new(vec![0u8;bytes]));
         GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).unwrap()
     }
-    fn desc(address:u64,length:u32,writable:bool,next:bool)->[u8;16] {
+    fn desc(address:u64,length:u32,writable:bool,next_index:u16)->[u8;16] {
         let mut raw=[0;16];
         raw[..8].copy_from_slice(&address.to_le_bytes());
         raw[8..12].copy_from_slice(&length.to_le_bytes());
-        let flags=(if writable {2u16} else {0})|(if next {1u16} else {0});
+        let has_next=next_index!=0;
+        let flags=(if writable {2u16} else {0})|(if has_next {1u16} else {0});
         raw[12..14].copy_from_slice(&flags.to_le_bytes());
+        raw[14..16].copy_from_slice(&next_index.to_le_bytes());
         raw
     }
     fn negotiate(device:&mut NetMmio) {
@@ -195,8 +197,8 @@ mod tests {
         let mut device=NetMmio::new();
         negotiate(&mut device);
         // TX queue (sel=1): descriptor table 0x1000, avail 0x1200, used 0x1400
-        m.write(0x1000,&desc(0x800,(HDR_LEN+4) as u32,false,true)).unwrap();
-        m.write(0x1010,&desc(0x900,1,true,false)).unwrap();
+        m.write(0x1000,&desc(0x800,(HDR_LEN+4) as u32,false,1)).unwrap();
+        m.write(0x1010,&desc(0x900,1,true,0)).unwrap();
         let mut packet=vec![0u8;HDR_LEN+4];
         packet[..HDR_LEN].copy_from_slice(&virtio_net::net_header());
         packet[HDR_LEN..].copy_from_slice(b"PING");
@@ -204,7 +206,7 @@ mod tests {
         setup_queue(&mut device,&m,1,8,0x1000,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         device.write(0x30,4,1).unwrap();
-        device.write(0x50,4,1).unwrap();
+        device.write(0x50,4,0).unwrap();
         assert!(device.irq_asserted()==false);
         let mut backend=virtio_net::Loopback::new();
         let done=device.service(&mut m,&mut backend,8).unwrap();
@@ -221,11 +223,11 @@ mod tests {
         let mut backend=virtio_net::Loopback::new();
         backend.transmit(b"PONG").unwrap();
         // RX queue (sel=0): descriptor table 0x1000, avail 0x1200, used 0x1400
-        m.write(0x1000,&desc(0x800,64,true,false)).unwrap();
+        m.write(0x1000,&desc(0x800,64,true,0)).unwrap();
         setup_queue(&mut device,&m,0,8,0x1000,0x1200,0x1400);
         push_avail(&mut m,0x1200,0);
         device.write(0x30,4,0).unwrap();
-        device.write(0x50,4,1).unwrap();
+        device.write(0x50,4,0).unwrap();
         let done=device.service(&mut m,&mut backend,8).unwrap();
         assert_eq!(done.len(),1);
         assert_eq!(done[0].written,(HDR_LEN+4) as u32);
@@ -236,7 +238,7 @@ mod tests {
 
     #[test] fn notify_before_driver_ok_is_rejected() {
         let mut device=NetMmio::new();
-        assert!(device.write(0x50,4,1).is_err());
+        assert!(device.write(0x50,4,0).is_err());
     }
 }
 
@@ -282,7 +284,7 @@ pub fn net_smoke()->Result<(),String> {
     m.write(0x1202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
     m.write(0x1204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
     device.write(0x30,4,1).map_err(|e|e.to_string())?;
-    device.write(0x50,4,1).map_err(|e|e.to_string())?;
+    device.write(0x50,4,0).map_err(|e|e.to_string())?;
     let tx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
     if tx.len()!=1||tx[0].status!=0 {return Err("Net TX completion failed".into());}
     if backend.pending()!=1 {return Err("Loopback backend did not capture TX frame".into());}
@@ -302,7 +304,7 @@ pub fn net_smoke()->Result<(),String> {
     m.write(0x2202,&1u16.to_le_bytes()).map_err(|e|e.to_string())?;
     m.write(0x2204,&0u16.to_le_bytes()).map_err(|e|e.to_string())?;
     device.write(0x30,4,0).map_err(|e|e.to_string())?;
-    device.write(0x50,4,1).map_err(|e|e.to_string())?;
+    device.write(0x50,4,0).map_err(|e|e.to_string())?;
     let rx=device.service(&mut m,&mut backend,8).map_err(|e|e.to_string())?;
     if rx.len()!=1||rx[0].written!=(HDR_LEN+5) as u32 {return Err("Net RX completion failed".into());}
     let mut out=[0u8;HDR_LEN+5];
