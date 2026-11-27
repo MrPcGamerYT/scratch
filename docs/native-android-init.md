@@ -233,3 +233,50 @@ kernel-entry-boot-flake failures (45961781439, 45962758210 — `RIP=
 0xffffffff81d33ba9`) are the known intermittent guest-boot flake, not
 slimming regressions. `anr_fixed` remains False — slimming reduces the
 package surface but is not ANR remediation.
+
+## Fix 6: `--renderer` selection governs the scanout path (complete)
+
+**Problem.** The CPU/RAM/renderer settings must actually govern execution.
+`--cpus=N>1` is unreachable for the Android/APK/player path: `whp.rs:558`
+rejects `apic_probe` when `bridge_apk`/`android_init_probe`/`player`/
+`framebuffer_output` is set, and the checkpoint kernel cmdline is fixed at
+`maxcpus=1 HWACCEL=0 noapic nolapic`. There was no renderer selection at
+all — the scanout path was implicit.
+
+**Fix.** Added `--renderer=software|hardware`:
+
+1. **`Renderer` enum.** `rust/nexus-engine/src/kernel.rs` defines
+   `Renderer::{Software,Hardware}` (default `Software`) with `parse()` and
+   `as_str()`. `KernelPlan` gains a `renderer:Renderer` field.
+   `KernelPlan::build()` initializes it to `Software`.
+2. **Validation enforces the selection.** `validate_regions()` refuses
+   `Renderer::Hardware` with "Hardware renderer is not implemented; guest
+   GPU acceleration is unavailable, use software" — the selection governs
+   execution by rejecting the unsupported path rather than silently
+   no-op'ing. `Software` is the only implemented scanout path (framebuffer
+   capture + optional window player).
+3. **CLI threading.** `main.rs` parses `--renderer=` via `Renderer::parse()`
+   and assigns `plan.renderer` before `validate_regions()`. Usage text
+   documents both options.
+4. **Timing JSON records the renderer.** `timing.rs` adds
+   `renderer:String` to `BootTrace`; `after_header()` sets `"software"`; the
+   `json()` format string emits `"renderer":"software"` alongside
+   `"serial_bytes"`. Args line passes `quote(&self.renderer)`.
+5. **Checkpoint contract.** `tests/native_android_apk_checkpoint.py` passes
+   `--renderer=software` and asserts `metrics.get('renderer')=='software'`
+   in the timing JSON — proving the selection governed the run.
+6. **Tests.** Added `hardware_renderer_is_refused_at_validation`,
+   `software_renderer_validates` (kernel.rs) and
+   `renderer_is_recorded_in_json` (timing.rs).
+
+**Confirmed:** Run 45969999369 (commit 01ac174) succeeded with both `assets`
+and `apk` jobs. The checkpoint's `metrics.get('renderer')=='software'`
+assertion passed (the apk job succeeded, so the assertion held). Fix 5
+slimming remained stable (`slim_ran: true`, `slim_disabled: 3`), Home
+rendered (non-blank scanout, `unique_rgb_colors: 114257`),
+`home_activity_resumed: true`, `crash_capture_complete: true`. Two earlier
+Fix-6 CI failures (45967845624, 45968605201) were compile errors: the first
+from clippy's `should_implement_trait` lint on the `from_str` method (renamed
+to `parse`); the second from doubled backslashes in the `concat!` format
+string (corrected to match the `serial_bytes` escaping pattern). Neither
+was a guest or contract regression.
