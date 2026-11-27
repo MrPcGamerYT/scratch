@@ -99,7 +99,7 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
         else {
             // Defined RO registers/config ignore writes, without changing device state.
             // Config space bound differs per device: block 0x100..0x200, net MAC 0x100..0x106, audio none.
-            let (is_net,is_audio)=matches!(ctx.device,MmioDevice::Net(_)),matches!(ctx.device,MmioDevice::Audio(_));
+            let (is_net,is_audio)=(matches!(ctx.device,MmioDevice::Net(_)),matches!(ctx.device,MmioDevice::Audio(_)));
             let config_end=if is_net {0x106u64} else if is_audio {0u64} else {0x200u64};
             let config=(0x100..config_end).contains(&offset)&&end<=(if is_net {MMIO_NET_BASE} else if is_audio {MMIO_AUDIO_BASE} else {MMIO_BASE})+config_end&&[1,2,4].contains(&a.size);
             let readonly=[0,4,8,0xc,0x10,0x34,0x60,0xfc].contains(&offset)&&a.size==4&&offset%4==0;
