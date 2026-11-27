@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from native_home_evidence import home_evidence
 from native_scanout_evidence import scanout_evidence
+from native_anr_evidence import anr_evidence
 
 
 def digest(path):
@@ -29,7 +30,7 @@ def main():
     p=subprocess.run([exe,'probe-android-observe-create',str(root/'kernel'),str(log),cmd,str(root/'initrd.img'),str(root/'android-system.zlag'),'native-apk.cow','--ram-mib=2048','--framebuffer=native-apk-software.ppm',f'--bridge-apk-smoke={root/"smoke.apk"}'],capture_output=True,text=True,timeout=480)
     serial=log.read_text(errors='replace') if log.exists() else ''
     timing=Path(str(log)+'.timing.json');metrics=json.loads(timing.read_text()) if timing.exists() else {}
-    result={'schema':1,'diagnostic_engine_deadline_ms':420000,'profile':'HWACCEL=0 software scanout with diagnostic TSC watchdog bypass; not accelerated graphics or general host clock certification','android_apk_verified':False,'step4_complete':False,'anr_fixed':False,'packages_removed':[],
+    result={'schema':1,'diagnostic_engine_deadline_ms':420000,'profile':'HWACCEL=0 software scanout with diagnostic TSC watchdog bypass; not accelerated graphics or general host clock certification','android_apk_verified':False,'step4_complete':False,'anr_fixed':False,'packages_removed':[],'anr_evidence':anr_evidence(serial),
             'bridge_service_connected':'NATIVE_BRIDGE_EVENT HELLO' in p.stdout.splitlines(),
             'android_boot_completed':'NATIVE_BRIDGE_EVENT NEXUS 1 READY 1' in p.stdout.splitlines(),
             'apk_begin_acknowledged':'NATIVE_BRIDGE_EVENT NEXUS 1 APK NEXT' in p.stdout.splitlines(),
@@ -50,6 +51,8 @@ def main():
     summary=dict(result['scanout'] or {})
     preview=summary.pop('preview_png_base64','')
     print('::notice::ANDROID_SCANOUT_EVIDENCE='+json.dumps(summary),flush=True)
+    anr_summary={k:v for k,v in result['anr_evidence'].items() if k!='packages'}
+    print('::notice::ANDROID_ANR_EVIDENCE='+json.dumps(anr_summary),flush=True)
     for offset in range(0,len(preview),2800):
         print(f'::notice::ANDROID_SCANOUT_PREVIEW_{offset}='+preview[offset:offset+2800],flush=True)
     diagnostic=serial[serial.find('NEXUS_ANR_BASELINE_BEGIN'):] if 'NEXUS_ANR_BASELINE_BEGIN' in serial else ''
