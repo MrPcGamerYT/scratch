@@ -587,12 +587,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
             if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
-            let net=if plan.net_probe {
-                let mut live=LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
-                    device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()};
-                Some(&mut live)
-            } else {None};
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net)
+            let mut net:Option<LiveNet>=None;
+            if plan.net_probe {
+                net=Some(LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
+                    device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()});
+            }
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut())
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -608,12 +608,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
-            let net=if plan.net_probe {
-                let mut live=LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
-                    device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()};
-                Some(&mut live)
-            } else {None};
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net)
+            let mut net:Option<LiveNet>=None;
+            if plan.net_probe {
+                net=Some(LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
+                    device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()});
+            }
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut())
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
