@@ -22,16 +22,16 @@ pub const TITLEBAR_PAD:i32=6;
 /// Default titlebar buttons in left-to-right order.
 /// Each maps to a bridge command the guest agent already supports.
 pub const BUTTONS:&[Button]=[
-    &Button{label:"<",command:"NEXUS 1 BACK"},
-    &Button{label:"H",command:"NEXUS 1 HOME"},
-    &Button{label:"R",command:"NEXUS 1 RECENTS"},
-    &Button{label:"F",command:"__FULLSCREEN__"},
-    &Button{label:"K",command:"__KEYMAP__"},
-    &Button{label:"V",command:"NEXUS 1 VOLUME_UP"},
-    &Button{label:"M",command:"NEXUS 1 VOLUME_DOWN"},
-    &Button{label:"G",command:"NEXUS 1 PROVISION_HOME"},
-    &Button{label:"A",command:"__INSTALL_APK__"},
-    &Button{label:"S",command:"__SETTINGS__"},
+    Button{label:"<",command:"NEXUS 1 BACK"},
+    Button{label:"H",command:"NEXUS 1 HOME"},
+    Button{label:"R",command:"NEXUS 1 RECENTS"},
+    Button{label:"F",command:"__FULLSCREEN__"},
+    Button{label:"K",command:"__KEYMAP__"},
+    Button{label:"V",command:"NEXUS 1 VOLUME_UP"},
+    Button{label:"M",command:"NEXUS 1 VOLUME_DOWN"},
+    Button{label:"G",command:"NEXUS 1 PROVISION_HOME"},
+    Button{label:"A",command:"__INSTALL_APK__"},
+    Button{label:"S",command:"__SETTINGS__"},
 ];
 
 /// Returns the x-offset of button `index` within a titlebar of `width` pixels.
