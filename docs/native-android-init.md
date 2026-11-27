@@ -473,6 +473,25 @@ artifact uploaded. The `Net` variant and `LiveNet` are wired and compile but
 are **not yet activated by any boot plan** (no `KernelPlan` flag constructs a
 `LiveNet`), so no guest OS drives the net device in a live boot yet.
 
+**Live MMIO net smoke (completed).** `net_mmio_smoke()` in `whp_mmio.rs`
+exercises the `LiveNet` wiring through the **real WHP MMIO emulator** on a
+Windows host, mirroring `mmio_smoke` for the block device: it maps the net
+MMIO base (`MMIO_NET_BASE=0xd0001000`) in guest page tables, builds fixture
+virtqueues (TX descriptor chain + RX buffer), runs guest code that negotiates
+features, sets up both queues, notifies, reads/ACKs the interrupt, and resets.
+The emulator callback routes net-base GPAs to the `Net` enum variant; the
+service call drives a TX frame through the loopback backend and delivers it
+back through RX. It verifies device-ID/version/vendor/queue-num register reads,
+interrupt assert+ACK, TX completion status, RX loopback frame data, used-ring
+indices, and real MMIO callback execution — in both protected-32 and long-64
+modes. Exposed as the `net-mmio-smoke` CLI command and added to the
+`engine-exe.yml` gate after `net-smoke`.
+
+**Confirmed (live MMIO gate).** Run **46043460898** (commit 37e32aa) succeeded —
+154 tests (0 failed), clippy clean, release build, `net-smoke` OK,
+`net-mmio-smoke` OK (real WHP emulator path), `physical-check` valid, artifact
+uploaded.
+
 **Still open (honest).** The device model and platform wiring are verified;
 activation by a boot plan (a `net_probe`/`net_device` plan flag that constructs
 `LiveNet` and passes it to `run_platform`) and a guest OS that actually
