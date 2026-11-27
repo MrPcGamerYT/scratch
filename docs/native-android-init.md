@@ -446,9 +446,36 @@ passed: 154 tests (0 failed), clippy `-D warnings` clean, release build,
 `net-smoke` printed `NET_SMOKE_OK`, `physical-check` emitted schema-valid
 evidence, and the `nexus-engine-exe` artifact uploaded.
 
-**Still open (honest).** The device model is verified standalone in-process;
-`NetMmio` is **not yet wired** into `platform.rs` (`EarlyPlatform::access`
-port dispatch + `tick`/IRQ) or `whp.rs` (`run_platform` memory-exit reason 1
-→ `service()` + `set_irq5`), so no guest OS actually drives the device yet.
-Real networking, audio, general Linux/Android boot, and guest GPU
-acceleration remain unproven workstreams.
+**Platform wiring (completed).** `NetMmio` is now wired into the live MMIO boot
+loop alongside the block device:
+
+1. **`whp_mmio.rs` `MmioDevice` enum.** `MmioContext.device` is now an enum
+   `Block(BlockMmio) | Net(NetMmio)`, with `read`/`write`/`work_pending`/
+   `irq_asserted` dispatching to the active variant. The MMIO emulator callback
+   accepts two device pages: block at `MMIO_BASE=0xd0000000`, net at
+   `MMIO_NET_BASE=0xd0001000`, routing by GPA range and applying the correct
+   config-space write-ignore bound per device (block `0x100..0x200`, net MAC
+   `0x100..0x106`).
+2. **`LiveNet` struct.** Parallel to `LiveBlock`: owns an `Emulator` +
+   `MmioContext` (net variant) + `Loopback` backend; `access()` emulates the
+   MMIO exit then services the net queue when work is pending.
+3. **`whp.rs` `run_platform`.** Takes an additional `net: Option<&mut LiveNet>`
+   parameter. Reason-1 (MMIO) exits are routed by GPA: net-base exits go to
+   `LiveNet.access`, others to `LiveBlock.access`. IRQ6 is asserted for the net
+   device (`platform.pic.set_irq6`); IRQ5 remains the block device's line.
+4. **`pic.rs` IRQ6.** Added `set_irq6` (edge-triggered) and extended the pending
+   mask from `0x39` to `0x79` so IRQ6 is deliverable.
+
+**Confirmed (wired gate).** Run **46037691433** (commit 6848776) succeeded — the
+full gate passed with the net device wired in: 154 tests (0 failed), clippy
+`-D warnings` clean, release build, `net-smoke` OK, `physical-check` valid,
+artifact uploaded. The `Net` variant and `LiveNet` are wired and compile but
+are **not yet activated by any boot plan** (no `KernelPlan` flag constructs a
+`LiveNet`), so no guest OS drives the net device in a live boot yet.
+
+**Still open (honest).** The device model and platform wiring are verified;
+activation by a boot plan (a `net_probe`/`net_device` plan flag that constructs
+`LiveNet` and passes it to `run_platform`) and a guest OS that actually
+negotiates and uses the VirtIO-net device remain undone. Real networking,
+audio, general Linux/Android boot, and guest GPU acceleration remain unproven
+workstreams.

@@ -280,3 +280,141 @@ pub fn mmio_smoke()->Result<(),String> {
         })?;
     }Ok(())
 }
+
+/// Live WHP MMIO smoke for the VirtIO-net device: same emulator-callback path as
+/// `mmio_smoke`, but routes net-base GPAs to a `LiveNet` with a loopback backend.
+/// Proves the enum MMIO dispatch, GPA routing, IRQ6 assertion and a full
+/// TX→loopback→RX round-trip through the real WHP emulator on a Windows host.
+pub fn net_mmio_smoke()->Result<(),String> {
+    use crate::cpu;
+    for long in [false,true] {
+        let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
+        // Map the net MMIO base in guest page tables (long mode only).
+        if long {
+            f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_NET_BASE|0x83).to_le_bytes());
+        }
+        // Fixture virtqueues: TX (sel=1) descriptor table 0x20000, avail 0x20100, used 0x20200;
+        // RX (sel=0) descriptor table 0x20500, avail 0x20600, used 0x20700.
+        // TX packet at 0x20300 (12-byte header + 5-byte payload), TX status at 0x20400.
+        // RX buffer at 0x20800 (64 bytes).
+        // TX descriptor chain: [packet (RO, NEXT->1), status (WR)].
+        let tx_packet_addr=0x20300u64;let tx_status_addr=0x20400u64;
+        let descs=[(0x20000u64,tx_packet_addr,17u32,1u16,1u16),(0x20010,tx_status_addr,1,2,0)];
+        for (base,address,length,flags,next) in descs {
+            f.ram[base..base+8].copy_from_slice(&address.to_le_bytes());
+            f.ram[base+8..base+12].copy_from_slice(&length.to_le_bytes());
+            f.ram[base+12..base+14].copy_from_slice(&flags.to_le_bytes());
+            f.ram[base+14..base+16].copy_from_slice(&next.to_le_bytes());
+        }
+        // TX avail ring: flags=0, index=1, head=0. TX used ring: index=0, head=0.
+        f.ram[0x20100..0x20102].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20102..0x20104].copy_from_slice(&1u16.to_le_bytes());
+        f.ram[0x20104..0x2010c].copy_from_slice(&0u64.to_le_bytes());
+        f.ram[0x20200..0x20202].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20202..0x2020a].copy_from_slice(&0u64.to_le_bytes());
+        // TX packet: 12-byte header (dst+src MAC) + "NEXUS".
+        let header=crate::virtio_net::net_header();
+        f.ram[0x20300..0x2030c].copy_from_slice(&header);
+        f.ram[0x2030c..0x20311].copy_from_slice(b"NEXUS");
+        // RX descriptor: single writable buffer at 0x20800, len 64.
+        f.ram[0x20500..0x20508].copy_from_slice(&0x20800u64.to_le_bytes());
+        f.ram[0x20508..0x2050c].copy_from_slice(&64u32.to_le_bytes());
+        f.ram[0x2050c..0x2050e].copy_from_slice(&2u16.to_le_bytes());
+        f.ram[0x2050e..0x20510].copy_from_slice(&0u16.to_le_bytes());
+        // RX avail ring: flags=0, index=1, head=0. RX used ring: index=0, head=0.
+        f.ram[0x20600..0x20602].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20602..0x20604].copy_from_slice(&1u16.to_le_bytes());
+        f.ram[0x20604..0x2060c].copy_from_slice(&0u64.to_le_bytes());
+        f.ram[0x20700..0x20702].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20702..0x2070a].copy_from_slice(&0u64.to_le_bytes());
+        let mut code=Vec::new();
+        let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
+            if long {code.push(0x67);}code.push(if size==1 {0xa0} else {0xa1});code.extend_from_slice(&((MMIO_NET_BASE as u32)+offset).to_le_bytes());
+            if size==1 {code.extend_from_slice(&[0x0f,0xb6,0xc0]);}
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&dest.to_le_bytes());
+        };
+        let write=|code:&mut Vec<u8>,offset:u32,value:u32| {
+            code.push(0xb8);code.extend_from_slice(&value.to_le_bytes());if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((MMIO_NET_BASE as u32)+offset).to_le_bytes());
+        };
+        // Read device identity.
+        for (index,offset) in [0,4,8,0x34].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
+        // Negotiate: ACK, DRIVER, features (F_MAC low, VERSION_1 high), FEATURES_OK, DRIVER_OK.
+        for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,1),(0x24,1),(0x20,1),(0x70,11),(0x70,15)] {write(&mut code,offset,value);}
+        load(&mut code,0x70,4,0x1b010); // status after DRIVER_OK.
+        // TX queue setup (sel=1) + notify.
+        for (offset,value) in [(0x30,1),(0x38,8),(0x80,0x20000),(0x90,0x20100),(0xa0,0x20200),(0x44,1),(0x50,0)] {write(&mut code,offset,value);}
+        // RX queue setup (sel=0) + notify.
+        for (offset,value) in [(0x30,0),(0x38,8),(0x80,0x20500),(0x90,0x20600),(0xa0,0x20700),(0x44,1),(0x50,0)] {write(&mut code,offset,value);}
+        // Interrupt status + ACK + re-read.
+        load(&mut code,0x60,4,0x1b014);write(&mut code,0x64,1);load(&mut code,0x60,4,0x1b018);
+        // Reset + read status.
+        write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b01c);
+        code.push(0xf4); // HLT
+        let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
+            let emulator=Emulator::new()?;
+            let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0};
+            let mut backend=crate::virtio_net::Loopback::new();
+            let mut serviced_tx=0;let mut irq_seen=false;
+            let mut platform=crate::platform::EarlyPlatform::default();
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..128 {
+                    platform.pic.set_irq6(ctx.device.irq_asserted());
+                    if ctx.device.irq_asserted() {irq_seen=true;}
+                    let exit=run_once(partition)?;
+                    match exit.reason() {
+                        8=>return Ok(Ok(())),
+                        1=>{
+                            emulator.emulate(&mut ctx,&exit,long)?;
+                            if ctx.device.work_pending() {
+                                let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
+                                let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+                                let done=if let MmioDevice::Net(device)=&mut ctx.device {device.service(&mut memory,&mut backend,8)?} else {return Err("Net MMIO smoke context is not a net device".into())};
+                                serviced_tx+=done.len();
+                            }
+                        },
+                        2=>{
+                            let io=crate::io::IoExit::decode(&exit.0)?;
+                            if io.port!=0x20||!io.write||io.size!=1 {return Err("Unexpected net MMIO fixture port access".into());}
+                            let mode=crate::cpu::CpuMode::from_exit(&exit.0)?;
+                            platform.pic.set_irq6(ctx.device.irq_asserted());
+                            platform.access(io,0)?;
+                            set_registers(partition,&[0x10],&[Register::scalar(mode.next_rip(io.rip,io.instruction_len)?)])?;
+                        },
+                        reason=>return Err(format!("Unexpected net MMIO fixture exit 0x{reason:x}"))
+                    }
+                }Ok(Err("Net MMIO fixture exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("Net MMIO fixture deadline exceeded".into());}result?;
+            // Verify register reads.
+            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),32)};
+            for (n,expected) in [0x74726976u32,2,0x5358454e,2,15].into_iter().enumerate() {
+                let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("Net MMIO register {n} mismatch 0x{actual:x}"));}
+            }
+            // Verify interrupt was asserted and cleared by ACK.
+            let irq_before=u32::from_le_bytes(bytes[14*4..14*4+4].try_into().unwrap());
+            let irq_after=u32::from_le_bytes(bytes[16*4..16*4+4].try_into().unwrap());
+            if irq_before==0||irq_after!=0 {return Err("Net MMIO interrupt status/ACK mismatch".into());}
+            // Verify status after reset.
+            let status_reset=u32::from_le_bytes(bytes[18*4..18*4+4].try_into().unwrap());
+            if status_reset!=0 {return Err("Net MMIO status not cleared by reset".into());}
+            // Verify TX completion: status descriptor written with 0.
+            let tx_status=u32::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20400),4)}.try_into().unwrap());
+            if tx_status!=0 {return Err("Net MMIO TX completion status not success".into());}
+            // Verify RX completion: RX buffer contains the loopback frame.
+            let rx=unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20800),17)};
+            if &rx[..12]!=&header||&rx[12..]!=b"NEXUS" {return Err("Net MMIO RX loopback frame data mismatch".into());}
+            // Verify used-ring indices advanced.
+            let tx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20200),2)}.try_into().unwrap());
+            let rx_used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20700),2)}.try_into().unwrap());
+            if tx_used_idx!=1||rx_used_idx!=1 {return Err("Net MMIO used-ring index mismatch".into());}
+            if !irq_seen {return Err("Net MMIO IRQ6 was never asserted".into());}
+            if serviced_tx<2 {return Err("Net MMIO did not complete both TX and RX requests".into());}
+            if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real net MMIO/translation callback execution".into());}
+            Ok(())
+        })?;
+    }Ok(())
+}

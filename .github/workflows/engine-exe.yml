@@ -35,7 +35,13 @@ jobs:
                                capture_output=True,text=True,timeout=60)
           if proc2.stdout.strip(): print(proc2.stdout.strip())
           if proc2.stderr.strip(): print(proc2.stderr.strip())
-          sys.exit(proc2.returncode)
+          if proc2.returncode: sys.exit(proc2.returncode)
+          # Run the live WHP MMIO net device smoke (enum dispatch, GPA routing, IRQ6, loopback round-trip).
+          proc3=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'net-mmio-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc3.stdout.strip(): print(proc3.stdout.strip())
+          if proc3.stderr.strip(): print(proc3.stderr.strip())
+          sys.exit(proc3.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash
