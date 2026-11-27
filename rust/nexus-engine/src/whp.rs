@@ -471,7 +471,7 @@ mod windows {
     #[allow(clippy::too_many_arguments)]
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
-        run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>,mut net:Option<&mut LiveNet>)->Result<(),String> {
+        run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>,mut net:Option<&mut LiveNet>,mut audio:Option<&mut LiveAudio>)->Result<(),String> {
         let (goal,display)=run;let mut last_frame=std::time::Instant::now();
         let fixture=goal==RunGoal::TimerFixture;
         // Diagnostic wall budgets. Android/APK runs need room for CI scheduling variance;
@@ -518,6 +518,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     }
                     if let Some(disk)=disk.as_ref() {platform.pic.set_irq5(disk.context.device.irq_asserted());}
                     if let Some(net)=net.as_ref() {platform.pic.set_irq6(net.context.device.irq_asserted());}
+                    if let Some(audio)=audio.as_ref() {platform.pic.set_irq7(audio.context.device.irq_asserted());}
                     if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,3=>trace.irq3_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
@@ -529,6 +530,9 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                         1=>{
                             // Route the MMIO exit to the device whose base owns the GPA.
                             let gpa=u64::from_le_bytes(context.0[48..56].try_into().unwrap());
+                            if let Some(audio)=audio.as_mut() {
+                                if (MMIO_AUDIO_BASE..MMIO_AUDIO_BASE+4096).contains(&gpa) {audio.access(&context)?;continue;}
+                            }
                             if let Some(net)=net.as_mut() {
                                 if (MMIO_NET_BASE..MMIO_NET_BASE+4096).contains(&gpa) {net.access(&context)?;continue;}
                             }
@@ -592,7 +596,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                 net=Some(LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                     device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()});
             }
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut())
+            let mut audio:Option<LiveAudio>=None;
+            if plan.audio_probe {
+                audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
+                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_audio::NullBackend::new()});
+            }
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut(),audio.as_mut())
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -613,7 +622,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                 net=Some(LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                     device:MmioDevice::Net(crate::virtio_net_mmio::NetMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_net::Loopback::new()});
             }
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut())
+            let mut audio:Option<LiveAudio>=None;
+            if plan.audio_probe {
+                audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
+                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_audio::NullBackend::new()});
+            }
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut(),audio.as_mut())
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
@@ -704,7 +718,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             platform.pit0.access(0x43,true,control,0)?;
             platform.pit0.access(0x40,true,0,0)?;platform.pit0.access(0x40,true,0,0)?;
             let mut trace=crate::timing::BootTrace::default();let start=std::time::Instant::now();
-            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None,None)?;
+            run_platform(partition,&mut platform,&mut std::io::sink(),&mut trace,start,(RunGoal::TimerFixture,None),None,None,None)?;
             let count=unsafe {std::ptr::read_unaligned(memory.address.cast::<u8>().add(cpu::INTERRUPT_COUNT).cast::<u32>())};
             if count!=1||trace.irq0_injections!=1||trace.halt_waits!=1||scalar_register(partition,4)?!=cpu::STACK {
                 return Err(format!("Timer IRQ/HLT/IRETD mismatch count={count}, trace={}",trace.json()));

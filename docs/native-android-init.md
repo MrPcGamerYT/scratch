@@ -512,3 +512,41 @@ activation by a boot plan (a `net_probe`/`net_device` plan flag that constructs
 negotiates and uses the VirtIO-net device remain undone. Real networking,
 audio, general Linux/Android boot, and guest GPU acceleration remain unproven
 workstreams.
+
+## Fix 9 (audio) — VirtIO-MMIO audio (sound/PCM) device model
+
+**Problem.** Fix 9 was scoped "network/audio/native bridge". The net half is
+complete above; no audio device existed. Fix 9 (audio) adds a VirtIO-MMIO
+**sound/PCM** device with a null backend, a standalone in-process smoke test,
+and a CI gate step, mirroring the net device pattern.
+
+**Design.**
+
+1. **`src/virtio_audio.rs` — PCM executor.** `AudioBackend{playback,capture}`
+   trait, a `NullBackend` that discards playback samples and returns silence
+   for capture, and `process_one(m,queue,backend,rx)` driving one request off a
+   split virtqueue. TX (playback): read-only sample descriptor + one-byte
+   writable status; RX (capture): single writable buffer. Features: `F_PCM`
+   (bit 0), `F_CTRL` (bit 1). 5 unit tests.
+2. **`src/virtio_audio_mmio.rs` — `AudioMmio` device.** VirtIO-MMIO register
+   model (`new/read/write/irq_asserted/work_pending/service`), capture queue
+   sel=0 / playback queue sel=1, status lifecycle
+   ACK→DRIVER→FEATURES_OK→DRIVER_OK. Features offered are
+   `VERSION_1|F_PCM|F_CTRL`, split across low/high words at 0x20 selected by
+   `driver_sel` (0x24). `audio_smoke()` performs full feature negotiation, a
+   playback request through the null backend, then a capture block — no WHP or
+   guest CPU required. 5 unit tests.
+3. **`src/main.rs` — `audio-smoke` CLI command.** Runs `audio_smoke()` and
+   exits nonzero on failure.
+4. **`engine-exe.yml` — gate.** Added an `audio-smoke` step after
+   `net-mmio-smoke`; its output is captured in the diagnostic file.
+
+**Confirmed.** Run **46045612108** (commit 2df6b39) succeeded — 165 tests (0
+failed, incl. the 10 new audio unit tests), clippy `-D warnings` clean, release
+build, `audio-smoke` OK, `net-smoke`/`net-mmio-smoke` still OK, `physical-check`
+valid, artifact uploaded.
+
+**Still open (honest).** The audio device model is verified standalone in-
+process; `AudioMmio` is **not yet wired** into the platform MMIO enum, IRQ
+routing, or boot plan. A real host audio backend (not the null backend) and a
+guest OS with a VirtIO-sound driver remain undone.
