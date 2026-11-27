@@ -14,7 +14,7 @@ def scanout_evidence(data):
     if not 1<=width<=4096 or not 1<=height<=4096 or len(pixels)!=width*height*3:raise ValueError('Invalid scanout size')
     counts=collections.Counter(pixels[i:i+3] for i in range(0,len(pixels),3))
     # A small exact nearest-neighbour preview for CI inspection without extra packages.
-    w,h=min(80,width),min(60,height)
+    w,h=min(160,width),min(120,height)
     raw=bytearray()
     for y in range(h):
         raw.append(0)
