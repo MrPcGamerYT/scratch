@@ -450,7 +450,9 @@ mod windows {
         run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>)->Result<(),String> {
         let (goal,display)=run;let mut last_frame=std::time::Instant::now();
         let fixture=goal==RunGoal::TimerFixture;
-        let limit=if goal==RunGoal::NativeApk {300000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {120000} else {30000};
+        // Diagnostic wall budgets. Android/APK runs need room for CI scheduling variance;
+// they still terminate via this global deadline and the bridge's completion exit.
+let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {180000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
