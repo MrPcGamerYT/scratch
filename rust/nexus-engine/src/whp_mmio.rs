@@ -27,9 +27,11 @@ const MMIO_BASE:u64=0xd0000000;
 /// both devices can coexist under one emulator callback.
 const MMIO_NET_BASE:u64=0xd0001000;
 /// Which VirtIO-MMIO device the context services. Block is the default so the
-/// existing disk boot path is unchanged; Net is activated only when requested.
+/// existing disk boot path is unchanged; Net is activated only when a net device
+/// is requested (wiring in place; no boot plan activates it yet).
 enum MmioDevice {
     Block(crate::virtio_mmio::BlockMmio),
+    #[allow(dead_code)]
     Net(crate::virtio_net_mmio::NetMmio),
 }
 impl MmioDevice {

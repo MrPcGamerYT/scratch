@@ -468,6 +468,7 @@ mod windows {
     }
     #[derive(Clone,Copy,PartialEq)]
     enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve,NativeBridge,NativeApk}
+    #[allow(clippy::too_many_arguments)]
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
         run:(RunGoal,Option<(&Mapping<'_>,&crate::player::Session)>),mut disk:Option<&mut LiveBlock>,mut net:Option<&mut LiveNet>)->Result<(),String> {
