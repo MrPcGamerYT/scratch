@@ -99,6 +99,17 @@ jobs:
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nGPU-PRESENT-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gpu_present.returncode, proc_gpu_present.stdout, proc_gpu_present.stderr))
           if proc_gpu_present.returncode: sys.exit(proc_gpu_present.returncode)
+          # Run the native player window smoke: opens the Win32 software console
+          # player, publishes a software scanout frame, verifies it presents, and
+          # closes. This is the native engine's player presentation path (not the
+          # QEMU-based NexusEngine.exe the Qt UI currently launches).
+          proc_player=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'player-window-smoke'],
+                                     capture_output=True,text=True,timeout=60)
+          if proc_player.stdout.strip(): print(proc_player.stdout.strip())
+          if proc_player.stderr.strip(): print(proc_player.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nPLAYER-WINDOW-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_player.returncode, proc_player.stdout, proc_player.stderr))
+          if proc_player.returncode: sys.exit(proc_player.returncode)
           # Run the real audio backend smoke (WAV playback recording + tone capture).
           proc7=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-real-smoke'],
                                capture_output=True,text=True,timeout=60)
