@@ -53,7 +53,7 @@ help: use the `?` operator to extract the `Result<Result<_, String>, String>` va
 error[E0308]: mismatched types
    --> src\whp_mmio.rs:634:32
     |
-634 |         let mut f=cpu::fixture(long);
+634 |         let mut f=cpu::fixture(long)?;
     |                   ------------ ^^^^ expected `CpuMode`, found `bool`
     |                   |
     |                   arguments to this function are incorrect
@@ -64,139 +64,12 @@ note: function defined here
  47 | pub fn fixture(mode:CpuMode)->Result<Fixture,String> {
     |        ^^^^^^^ ------------
 
-error[E0609]: no field `ram` on type `Result<Fixture, String>`
-   --> src\whp_mmio.rs:639:15
-    |
-639 |             f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-    |               ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-639 |             f.unwrap().ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-    |               +++++++++
-
-error[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`
-   --> src\whp_mmio.rs:639:15
-    |
-639 |             f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-    |               ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-639 |             f.unwrap().ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-    |               +++++++++
-
-error[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`
-   --> src\whp_mmio.rs:640:15
-    |
-640 |             f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
-    |               ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-640 |             f.unwrap().ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
-    |               +++++++++
-
-error[E0609]: no field `ram` on type `Result<Fixture, String>`
-   --> src\whp_mmio.rs:640:15
-    |
-640 |             f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
-    |               ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-640 |             f.unwrap().ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
-    |               +++++++++
-
-error[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`
-   --> src\whp_mmio.rs:683:62
-    |
-683 |         let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
-    |                                                              ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-683 |         let physical=if long {cpu::DATA} else {cpu::ENTRY};f.unwrap().ram[physical..physical+code.len()].copy_from_slice(&code);
-    |                                                              +++++++++
-
-error[E0609]: no field `ram` on type `Result<Fixture, String>`
-   --> src\whp_mmio.rs:683:62
-    |
-683 |         let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
-    |                                                              ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-683 |         let physical=if long {cpu::DATA} else {cpu::ENTRY};f.unwrap().ram[physical..physical+code.len()].copy_from_slice(&code);
-    |                                                              +++++++++
-
-error[E0609]: no field `ram` on type `Result<Fixture, String>`
-   --> src\whp_mmio.rs:685:53
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                     ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.unwrap().ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                     +++++++++
-
-error[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`
-   --> src\whp_mmio.rs:685:53
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                     ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.unwrap().ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                     +++++++++
-
-error[E0609]: no field `ram` on type `Result<Fixture, String>`
-   --> src\whp_mmio.rs:685:96
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                                                                ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.unwrap().ram.len());}
-    |                                                                                                +++++++++
-
-error[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`
-   --> src\whp_mmio.rs:685:96
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
-    |                                                                                                ^^^ unknown field
-    |
-help: one of the expressions' fields has a field of the same name
-    |
-685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.unwrap().ram.len());}
-    |                                                                                                +++++++++
-
-error[E0308]: mismatched types
-   --> src\whp_mmio.rs:686:41
-    |
-686 |             configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
-    |             -----------------           ^^ expected `&Fixture`, found `&Result<Fixture, String>`
-    |             |
-    |             arguments to this function are incorrect
-    |
-    = note: expected reference `&Fixture`
-               found reference `&Result<Fixture, String>`
-note: function defined here
-   --> src\whp.rs:332:8
-    |
-332 |     fn configure_fixture(partition:&Partition,f:&crate::cpu::Fixture)->Result<(),String> {
-    |        ^^^^^^^^^^^^^^^^^                      ----------------------
-
-Some errors have detailed explanations: E0308, E0609.
-For more information about an error, try `rustc --explain E0308`.
-error: could not compile `nexus-engine` (lib) due to 9 previous errors
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `nexus-engine` (lib) due to 3 previous errors
 warning: build failed, waiting for other jobs to finish...
-error: could not compile `nexus-engine` (lib test) due to 9 previous errors
+error: could not compile `nexus-engine` (lib test) due to 3 previous errors
 
-::error::                               +++++++++%0A%0Aerror[E0609]: no field `ram` on type `Result<Fixture, String>`%0A   --> src\whp_mmio.rs:685:53%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                     ^^^ unknown field%0A    |%0Ahelp: one of the expressions' fields has a field of the same name%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.unwrap().ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                     +++++++++%0A%0Aerror[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`%0A   --> src\whp_mmio.rs:685:53%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                     ^^^ unknown field%0A    |%0Ahelp: one of the expressions' fields has a field of the same name%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.unwrap().ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                     +++++++++%0A%0Aerror[E0609]: no field `ram` on type `Result<Fixture, String>`%0A   --> src\whp_mmio.rs:685:96%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                                                                ^^^ unknown field%0A    |%0Ahelp: one of the expressions' fields has a field of the same name%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.unwrap().ram.len());}%0A    |                                                                                                +++++++++%0A%0Aerror[E0609]: no field `ram` on type `Result<cpu::Fixture, String>`%0A   --> src\whp_mmio.rs:685:96%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}%0A    |                                                                                                ^^^ unknown field%0A    |%0Ahelp: one of the expressions' fields has a field of the same name%0A    |%0A685 |             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.unwrap().ram.len());}%0A    |                                                                                                +++++++++%0A%0Aerror[E0308]: mismatched types%0A   --> src\whp_mmio.rs:686:41%0A    |%0A686 |             configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}%0A    |             -----------------           ^^ expected `&Fixture`, found `&Result<Fixture, String>`%0A    |             |%0A    |             arguments to this function are incorrect%0A    |%0A    = note: expected reference `&Fixture`%0A               found reference `&Result<Fixture, String>`%0Anote: function defined here%0A   --> src\whp.rs:332:8%0A    |%0A332 |     fn configure_fixture(partition:&Partition,f:&crate::cpu::Fixture)->Result<(),String> {%0A    |        ^^^^^^^^^^^^^^^^^                      ----------------------%0A%0ASome errors have detailed explanations: E0308, E0609.%0AFor more information about an error, try `rustc --explain E0308`.%0Aerror: could not compile `nexus-engine` (lib) due to 9 previous errors%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 9 previous errors%0A
+::error::   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)%0Aerror[E0308]: mismatched types%0A  --> src\gpio.rs:24:18%0A   |%0A24 |           .map(|v| match size {%0A   |  __________________^%0A25 | |             1 => (v & 0xff) as u32,%0A26 | |             2 => (v & 0xffff) as u32,%0A27 | |             4 => v,%0A28 | |             _ => return Err(format!("GPIO read size {size} not supported")),%0A29 | |         })%0A   | |_________^ expected `Result<_, String>`, found `u32`%0A   |%0A   = note: expected enum `Result<_, String>`%0A              found type `u32`%0Anote: return type inferred to be `Result<_, String>` here%0A  --> src\gpio.rs:28:25%0A   |%0A28 |             _ => return Err(format!("GPIO read size {size} not supported")),%0A   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^%0Ahelp: try wrapping the expression in `Ok`%0A   |%0A24 ~         .map(|v| Ok(match size {%0A25 |             1 => (v & 0xff) as u32,%0A...%0A28 |             _ => return Err(format!("GPIO read size {size} not supported")),%0A29 ~         }))%0A   |%0A%0Aerror[E0308]: mismatched types%0A  --> src\gpio.rs:17:9%0A   |%0A16 |       fn read_reg(&self, offset: u64, size: u8) -> Result<u32, String> {%0A   |                                                    ------------------- expected `Result<u32, String>` because of return type%0A17 | /         match offset {%0A18 | |             0x00 => Ok(self.direction),%0A19 | |             0x04 => Ok(self.output),%0A20 | |             0x08 => Ok(self.input),%0A...  |%0A28 | |             _ => return Err(format!("GPIO read size {size} not supported")),%0A29 | |         })%0A   | |__________^ expected `Result<u32, String>`, found `Result<Result<_, String>, String>`%0A   |%0A   = note: expected enum `Result<u32, _>`%0A              found enum `Result<Result<_, String>, _>`%0Ahelp: use the `?` operator to extract the `Result<Result<_, String>, String>` value, propagating a `Result::Err` value to the caller%0A   |%0A29 |         })?%0A   |           +%0A%0Aerror[E0308]: mismatched types%0A   --> src\whp_mmio.rs:634:32%0A    |%0A634 |         let mut f=cpu::fixture(long)?;%0A    |                   ------------ ^^^^ expected `CpuMode`, found `bool`%0A    |                   |%0A    |                   arguments to this function are incorrect%0A    |%0Anote: function defined here%0A   --> src\cpu.rs:47:8%0A    |%0A 47 | pub fn fixture(mode:CpuMode)->Result<Fixture,String> {%0A    |        ^^^^^^^ ------------%0A%0AFor more information about this error, try `rustc --explain E0308`.%0Aerror: could not compile `nexus-engine` (lib) due to 3 previous errors%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 3 previous errors%0A
 
 STDERR:
 
