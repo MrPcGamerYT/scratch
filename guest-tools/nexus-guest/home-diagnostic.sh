@@ -10,15 +10,20 @@ done
 echo "NEXUS_HOME_BOOT_READY $boot_ready"
 echo NEXUS_HOME_CANDIDATES_BEGIN
 # The clean-launch flow sends CHECK_HOME immediately after boot_completed=1,
-# with no prior package-manager operation. The APK flow's pm install/uninstall/
-# disable triggers PackageManager to scan and register all apps; without that
-# trigger, query-activities returns nothing. Force a scan with pm list packages,
-# then retry query-activities until at least one HOME candidate is returned.
+# with no prior package-manager operation. The APK flow's pm install/uninstall
+# triggers PackageManager to register all app activities AND provisions the
+# device. Without that, query-activities returns nothing for user 0. Mimic the
+# provisioning that nexus-provision-home.sh does (without the
+# /data/.nexus-provision marker), force a thorough package scan, then retry
+# query-activities until at least one HOME candidate is returned.
+settings put global device_provisioned 1 2>/dev/null
+settings put secure user_setup_complete 1 2>/dev/null
+pm list packages -f >/dev/null 2>&1
 candidates=""
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    pm list packages >/dev/null 2>&1
     candidates=$(timeout 15 cmd package query-activities --brief --components --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null)
     if printf '%s\n' "$candidates" | grep -qE '^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$'; then break; fi
+    pm list packages -f >/dev/null 2>&1
     sleep 5
 done
 printf '%s\n' "$candidates"
