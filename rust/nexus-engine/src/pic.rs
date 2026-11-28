@@ -42,10 +42,10 @@ impl Controller {
     }
 }
 
-pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,irq4_high:bool,irq3_high:bool,irq6_high:bool,irq7_high:bool,elcr:u8}
+pub struct PicPair {master:Controller,slave:Controller,pub accesses:u64,pub initializations:u64,irq5_high:bool,irq4_high:bool,irq3_high:bool,irq6_high:bool,irq7_high:bool,irq8_high:bool,elcr:u8}
 impl Default for PicPair {
     fn default()->Self {
-        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,irq4_high:false,irq3_high:false,irq6_high:false,irq7_high:false,elcr:0}
+        Self{master:Controller{mask:0xff,..Default::default()},slave:Controller{mask:0xff,..Default::default()},accesses:0,initializations:0,irq5_high:false,irq4_high:false,irq3_high:false,irq6_high:false,irq7_high:false,irq8_high:false,elcr:0}
     }
 }
 impl PicPair {
@@ -69,19 +69,41 @@ impl PicPair {
         if high&&!self.irq7_high {self.master.irr|=0x80;}
         self.irq7_high=high;
     }
+    /// IRQ8 line for the VirtIO-GPU device (slave PIC IRQ0, cascaded to master
+    /// IRQ2). Edge-triggered (no ELCR level mode). Requires the slave controller
+    /// to be initialized; delivery goes through the master cascade line.
+    pub fn set_irq8(&mut self,high:bool) {
+        if high&&!self.irq8_high {self.slave.irr|=1;}
+        self.irq8_high=high;
+    }
     fn pending_irq(&self)->Option<u8> {
         let m=&self.master;
         if !m.initialized||m.step!=0 {return None;}
-        let pending=m.irr&!m.mask&0xfb;
-        if pending==0 {return None;}
-        let irq=pending.trailing_zeros() as u8;
-        if m.isr!=0&&u32::from(irq)>=m.isr.trailing_zeros() {return None;}
-        Some(irq)
+        // Direct master IRQs (exclude the cascade line IRQ2 = bit 2).
+        let direct=m.irr&!m.mask&0xfb;
+        if direct!=0 {
+            let irq=direct.trailing_zeros() as u8;
+            if m.isr!=0&&u32::from(irq)>=m.isr.trailing_zeros() {return None;}
+            return Some(irq);
+        }
+        // Cascade: a slave request asserts master IRQ2.
+        let slave_pending=self.slave.irr&!self.slave.mask;
+        if slave_pending!=0 {
+            if m.isr!=0&&2>=m.isr.trailing_zeros() {return None;}
+            return Some(2);
+        }
+        None
     }
     pub fn pending_vector(&self)->Option<u8> {self.pending_irq().map(|irq|self.master.vector+irq)}
     /// Acknowledge the selected request only after WHP accepted external injection.
     pub fn acknowledge(&mut self)->Result<(),String> {
         let irq=self.pending_irq().ok_or("PIC acknowledged without a deliverable request")?;
+        if irq==2 {
+            // Cascade line: clear the slave request that asserted it.
+            let s_irq=self.slave.irr.trailing_zeros() as u8;
+            self.slave.irr&=!(1<<s_irq);
+            if !self.slave.auto_eoi {self.slave.isr|=1<<s_irq;}
+        }
         self.master.irr&=!(1<<irq);if !self.master.auto_eoi {self.master.isr|=1<<irq;}
         else if irq==5&&self.elcr&0x20!=0&&self.irq5_high {self.master.irr|=0x20;}
         Ok(())
@@ -187,6 +209,25 @@ mod tests {
         assert_eq!(p.access(0x4d0,false,0).unwrap(),Some(0));assert_eq!(p.access(0x4d1,false,0).unwrap(),Some(0));
         for (port,value) in [(0x4d0,1),(0x4d0,0x80),(0x4d1,1)] {assert!(p.access(port,true,value).is_err());}
         p.access(0x4d0,true,0x20).unwrap();assert_eq!(p.access(0x4d0,false,0).unwrap(),Some(0x20));
+    }
+    #[test] fn irq8_slave_cascade_delivery_and_ack() {
+        // Initialize master + slave (slave vector base 0x28, cascade on IRQ2).
+        let mut p=PicPair::default();
+        for (port,value) in [(0x20,0x11),(0x21,0x20),(0x21,4),(0x21,1),(0x21,0),(0xa0,0x11),(0xa1,0x28),(0xa1,2),(0xa1,1),(0xa1,0)] {
+            p.access(port,true,value).unwrap();
+        }
+        // GPU IRQ8 (slave IRQ0) edge-asserts; master cascade delivers IRQ2 (vector 0x22).
+        p.set_irq8(true);
+        assert_eq!(p.pending_vector(),Some(0x22));
+        p.acknowledge().unwrap();
+        assert_eq!(p.pending_vector(),None);
+        // Deassert then re-assert: a fresh edge delivers again.
+        p.set_irq8(false);p.set_irq8(true);
+        assert_eq!(p.pending_vector(),Some(0x22));
+        p.acknowledge().unwrap();
+        // Slave request cleared; master IRQ2 no longer pending.
+        assert_eq!(p.slave.irr,0);
+        assert_eq!(p.pending_vector(),None);
     }
     #[test] fn masks_roundtrip_and_reset() {
         let mut p=PicPair::default();
