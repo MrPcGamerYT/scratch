@@ -599,7 +599,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             let mut audio:Option<LiveAudio>=None;
             if plan.audio_probe {
                 audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
-                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_audio::NullBackend::new()});
+                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:match plan.audio_backend {crate::kernel::AudioBackendKind::Null=>Box::new(crate::virtio_audio::NullBackend::new()),crate::kernel::AudioBackendKind::Real=>Box::new(crate::virtio_audio::RealBackend::new(44100))}});
             }
             run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut(),audio.as_mut())
         })
@@ -625,7 +625,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             let mut audio:Option<LiveAudio>=None;
             if plan.audio_probe {
                 audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
-                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:crate::virtio_audio::NullBackend::new()});
+                    device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:match plan.audio_backend {crate::kernel::AudioBackendKind::Null=>Box::new(crate::virtio_audio::NullBackend::new()),crate::kernel::AudioBackendKind::Real=>Box::new(crate::virtio_audio::RealBackend::new(44100))}});
             }
             run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut(),audio.as_mut())
         })

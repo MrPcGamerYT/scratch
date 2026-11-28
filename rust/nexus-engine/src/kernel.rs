@@ -47,10 +47,24 @@ impl Renderer {
     }
     pub fn as_str(&self)->&'static str {match self {Renderer::Software=>"software",Renderer::Hardware=>"hardware"}}
 }
+/// Audio backend selection that governs the VirtIO-audio device's host-side
+/// sample sink/source. `Null` discards playback and returns silence (the
+/// default, no host audio stack). `Real` records playback to a playable WAV
+/// and synthesizes a real tone for capture, carrying real audio data without
+/// a host audio device.
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Default)]
+pub enum AudioBackendKind {#[default]Null,Real}
+impl AudioBackendKind {
+    pub fn parse(value:&str)->Result<Self,String> {
+        match value {"null"=>Ok(AudioBackendKind::Null),"real"=>Ok(AudioBackendKind::Real),
+            _=>Err("Audio backend must be null or real".into())}
+    }
+    pub fn as_str(&self)->&'static str {match self {AudioBackendKind::Null=>"null",AudioBackendKind::Real=>"real"}}
+}
 #[derive(Debug)]
 pub struct KernelPlan {
     pub dma_failure:Option<DmaFailure>,pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
-    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub player:Option<std::sync::Arc<crate::player::Session>>,pub renderer:Renderer,pub net_probe:bool,pub audio_probe:bool,
+    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub player:Option<std::sync::Arc<crate::player::Session>>,pub renderer:Renderer,pub net_probe:bool,pub audio_probe:bool,pub audio_backend:AudioBackendKind,
 }
 impl KernelPlan {
     pub fn build(image:&[u8],initrd:Option<&[u8]>,command:&str,ram:usize)->Result<Self,String> {
@@ -104,7 +118,7 @@ impl KernelPlan {
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
             regions.push(Region{address:at,bytes:data.to_vec()});initrd_address=Some(at);
         }
-        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None,renderer:Renderer::Software,net_probe:false,audio_probe:false};p.validate_regions()?;Ok(p)
+        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,player:None,renderer:Renderer::Software,net_probe:false,audio_probe:false,audio_backend:AudioBackendKind::Null};p.validate_regions()?;Ok(p)
     }
     /// Linux early TSC calibration handoff for vendors which don't consume CPUID15.
     /// Kernel versions lacking this parameter still need a verified clocksource gate.
@@ -133,12 +147,14 @@ impl KernelPlan {
     /// with a VirtIO-net driver can then negotiate and use it.
     pub fn with_net_probe(mut self)->Self {self.net_probe=true;self}
     pub fn with_audio_probe(mut self)->Self {self.audio_probe=true;self}
+    pub fn with_audio_backend_real(mut self)->Self {self.audio_backend=AudioBackendKind::Real;self}
     pub fn validate_regions(&self)->Result<(),String> {
         if self.dma_failure.is_some()&&(!self.apic_probe||self.cpu_count<2) {return Err("DMA failure injection requires SMP/APIC".into());}
         if !(1..=8).contains(&self.cpu_count)||(!self.apic_probe&&self.cpu_count!=1) {return Err("Multiple CPUs require the explicit APIC profile (1..8 CPUs)".into());}
         if self.renderer==Renderer::Hardware {return Err("Hardware renderer is not implemented; guest GPU acceleration is unavailable, use software".into());}
         if self.net_probe&&self.apic_probe {return Err("Net device probe requires the single-vCPU platform path, not the APIC profile".into());}
         if self.audio_probe&&self.apic_probe {return Err("Audio device probe requires the single-vCPU platform path, not the APIC profile".into());}
+        if self.audio_backend==AudioBackendKind::Real&&!self.audio_probe {return Err("Real audio backend requires the audio device probe (--audio-probe)".into());}
         for (i,r) in self.regions.iter().enumerate() {
             let end=r.address.checked_add(r.bytes.len()).ok_or("Kernel region overflow")?;
             if r.bytes.is_empty()||end>self.ram_bytes {return Err("Kernel region outside RAM".into());}
@@ -191,6 +207,17 @@ mod tests {
         p.validate_regions().unwrap();
         p.apic_probe=true;p.cpu_count=2;
         assert!(p.validate_regions().is_err(),"audio_probe must be refused with APIC profile");
+    }
+    #[test] fn real_audio_backend_requires_audio_probe() {
+        let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
+        assert_eq!(p.audio_backend,AudioBackendKind::Null);
+        // Real backend without the audio device probe is refused.
+        p=p.with_audio_backend_real();
+        assert_eq!(p.audio_backend,AudioBackendKind::Real);
+        assert!(p.validate_regions().is_err(),"real audio backend must require --audio-probe");
+        // Real backend with the probe validates.
+        p=p.with_audio_probe();
+        assert!(p.validate_regions().is_ok());
     }
     #[test] fn clock_handoff_uses_actual_frequency_and_preserves_command_prefix() {
         let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();

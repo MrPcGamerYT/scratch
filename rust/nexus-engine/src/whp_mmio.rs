@@ -177,7 +177,7 @@ impl LiveNet {
 
 /// Live audio device: same MMIO emulation pattern, but services the VirtIO-sound
 /// queues with a null backend. Activated only when an audio device is requested.
-struct LiveAudio {context:MmioContext,emulator:Emulator,backend:crate::virtio_audio::NullBackend}
+struct LiveAudio {context:MmioContext,emulator:Emulator,backend:Box<dyn crate::virtio_audio::AudioBackend>}
 impl LiveAudio {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;

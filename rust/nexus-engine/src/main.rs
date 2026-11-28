@@ -2,7 +2,7 @@ use nexus_engine::{image::{self,Image},whp};
 use std::path::Path;
 fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
     let boot_command=matches!(args.get(1).map(String::as_str),Some("boot-kernel"|"boot-kernel-disk-create"|"boot-kernel-disk-open"|"probe-android-init-create"|"probe-android-init-open"|"probe-android-observe-create"));
-    let mut dma_failure=None;let mut cpu_count=None;let mut apic_probe=false;let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;let mut renderer=nexus_engine::kernel::Renderer::Software;
+    let mut dma_failure=None;let mut cpu_count=None;let mut apic_probe=false;let mut args=args;let mut ram=nexus_engine::kernel::DEFAULT_RAM;let mut surface=None;let mut live=false;let mut bridge_probe=false;let mut bridge_apk=None;let mut ram_set=false;let mut renderer=nexus_engine::kernel::Renderer::Software;let mut audio_probe=false;let mut audio_backend=nexus_engine::kernel::AudioBackendKind::Null;
     if boot_command {
         while let Some(option)=args.last() {
             if let Some(path)=option.strip_prefix("--bridge-apk-smoke=") {
@@ -29,6 +29,10 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             } else if let Some(value)=option.strip_prefix("--renderer=") {
                 let parsed=nexus_engine::kernel::Renderer::parse(value)?;
                 renderer=parsed;
+            } else if option=="--audio-probe" {if audio_probe {return Err("Duplicate --audio-probe".into());}audio_probe=true;
+            } else if let Some(value)=option.strip_prefix("--audio-backend=") {
+                let parsed=nexus_engine::kernel::AudioBackendKind::parse(value)?;
+                audio_backend=parsed;
             } else if let Some(value)=option.strip_prefix("--framebuffer=") {
                 if surface.is_some()||value.is_empty() {return Err("Invalid/duplicate framebuffer capture path".into());}
                 surface=Some(Path::new(value));
@@ -73,6 +77,11 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             println!("VirtIO-MMIO audio device model passed: feature negotiation, playback TX, capture RX and queue completion; null backend only, no host audio stack or guest boot.");
             Ok(())
         }
+        Some("audio-real-smoke") if args.len()==2 => {
+            nexus_engine::virtio_audio::audio_real_smoke()?;
+            println!("Real audio backend passed: playback recorded to a playable WAV, capture synthesized a non-silent tone; real sample flow, no host audio device required.");
+            Ok(())
+        }
         Some("audio-mmio-smoke") if args.len()==2 => {
             whp::audio_mmio_smoke()?;
             println!("Real WHP MMIO audio device passed: enum dispatch, GPA routing, IRQ7, playback TX and capture RX delivery through the live emulator; null backend only, not Android boot.");
@@ -101,6 +110,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             if apic_probe&&(command.starts_with("probe-android-")||live||surface.is_some()||bridge_apk.is_some()) {return Err("--apic-probe supports headless Linux only, not Android/APK/player".into());}
             plan.dma_failure=dma_failure;plan.apic_probe=apic_probe;plan.cpu_count=cpu_count.unwrap_or(1);
             plan.renderer=renderer;
+            plan.audio_probe=audio_probe;plan.audio_backend=audio_backend;
             plan.validate_regions()?;
             plan.bridge_probe=bridge_probe||bridge_apk.is_some();plan.bridge_apk=bridge_apk;
             plan.android_init_probe=command.starts_with("probe-android-");
@@ -189,7 +199,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             }
         }
         Some("boot") => Err("Android boot is not implemented. Refusing to pretend this is a working emulator or launch QEMU.".into()),
-        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | net-smoke | net-mmio-smoke | audio-smoke | audio-mmio-smoke | platform-mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | kernel-contract-smoke | physical-check | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | probe-android-init-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init probe only, not Android Home) | probe-android-init-open <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <existing-overlay.cow> | graphics-smoke-hardware <NEW-64x64.rgba> | graphics-smoke-warp <NEW-64x64.rgba> | capabilities (boot-kernel accepts experimental --apic-probe with --cpus=1..8 (headless Linux initramfs/disk, no Android/player); kernel boot commands accept trailing --bridge-probe (query-only integration checkpoint), --window (software console player), --ram-mib=128..3072, --renderer=software|hardware (software is the only implemented renderer; hardware is refused) and --framebuffer=NEW-file.ppm; software scanout, not GPU acceleration)".into())
+        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | net-smoke | net-mmio-smoke | audio-smoke | audio-real-smoke | audio-mmio-smoke | platform-mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | kernel-contract-smoke | physical-check | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | probe-android-init-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init probe only, not Android Home) | probe-android-init-open <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <existing-overlay.cow> | graphics-smoke-hardware <NEW-64x64.rgba> | graphics-smoke-warp <NEW-64x64.rgba> | capabilities (boot-kernel accepts experimental --apic-probe with --cpus=1..8 (headless Linux initramfs/disk, no Android/player); kernel boot commands accept trailing --bridge-probe (query-only integration checkpoint), --window (software console player), --ram-mib=128..3072, --renderer=software|hardware (software is the only implemented renderer; hardware is refused) and --framebuffer=NEW-file.ppm; software scanout, not GPU acceleration)".into())
     }
 }
 fn main() { let start=std::time::Instant::now(); if let Err(error)=execute(&std::env::args().collect::<Vec<_>>(),start) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }
