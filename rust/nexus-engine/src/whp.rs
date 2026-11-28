@@ -676,12 +676,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         for (port,value) in [(0x1f6u32,0xe0u8),(0x1f2,1),(0x1f3,0),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {out(&mut fw,port,value);}
         // Read 256 words from 0x1f0 into 0x7c00.
         fw.push(0xba);fw.extend_from_slice(&0x1f0u16.to_le_bytes());
-        fw.push(0xbb);fw.extend_from_slice(&0x7c00u32.to_le_bytes());
+        fw.push(0xbf);fw.extend_from_slice(&0x7c00u32.to_le_bytes());     // MOV EDI, 0x7c00
         fw.push(0xb9);fw.extend_from_slice(&256u32.to_le_bytes());
         let loop_start=fw.len();
         fw.push(0x66);fw.push(0xed);            // IN AX, DX (16-bit)
-        fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EBX], AX (16-bit)
-        fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD BX, 2
+        fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EDI], AX (16-bit)
+        fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD EDI, 2
         let jnz_pos=fw.len();
         fw.push(0xe2);fw.extend_from_slice(&[0,0]); // JNZ loop
         let jmp_pos=fw.len();
