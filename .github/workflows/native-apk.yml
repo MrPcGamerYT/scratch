@@ -244,8 +244,12 @@ jobs:
               lines.append('SERIAL_LEN='+str(len(serial)))
               lines.append('SERIAL_HEAD='+repr(serial[:1500]))
               lines.append('SERIAL_TAIL='+repr(serial[-1500:]))
-              for marker in ['NEXUS_HOME_SELECTED','NEXUS_HOME_PROCESS_READY','NEXUS_HOME_PID_BEFORE','NEXUS_HOME_PID_AFTER','NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_WINDOW_VISIBLE','NEXUS_HOME_FRAME_STATS_BEGIN','NEXUS_HOME_ACTIVITY_STATE_BEGIN','NEXUS_HOME_CRASH_LOG_BEGIN','NEXUS_HOME_ANR_BEGIN','NATIVE_BRIDGE_EVENT HELLO','NATIVE_BRIDGE_EVENT NEXUS 1 READY 1','NATIVE_BRIDGE_HOME_VERIFIED']:
+              for marker in ['NEXUS_HOME_SELECTED','NEXUS_HOME_NO_CANDIDATE','NEXUS_HOME_PROCESS_READY','NEXUS_HOME_PID_BEFORE','NEXUS_HOME_PID_AFTER','NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_WINDOW_VISIBLE','NEXUS_HOME_FRAME_STATS_BEGIN','NEXUS_HOME_ACTIVITY_STATE_BEGIN','NEXUS_HOME_CRASH_LOG_BEGIN','NEXUS_HOME_ANR_BEGIN','NATIVE_BRIDGE_EVENT HELLO','NATIVE_BRIDGE_EVENT NEXUS 1 READY 1','NATIVE_BRIDGE_HOME_VERIFIED']:
                   if marker in serial: lines.append('MARKER '+marker)
+              # Capture the candidates section to see what query-activities returned.
+              if 'NEXUS_HOME_CANDIDATES_BEGIN' in serial:
+                  cand=serial.split('NEXUS_HOME_CANDIDATES_BEGIN',1)[1].split('NEXUS_HOME_CANDIDATES_END',1)[0]
+                  lines.append('CANDIDATES_SECTION='+repr(cand[:2000]))
               anr=re.findall(r'(?m)^.*(?:ANR in|Not responding).*$',serial)
               lines.append('ANR_DEFINITIVE_LINES='+repr(anr[:20]) if anr else 'ANR_DEFINITIVE_LINES=none')
               for m in re.findall(r'(?m)^NEXUS_HOME_SELECTED (.+)$',serial): lines.append('HOME_SELECTED='+m)
