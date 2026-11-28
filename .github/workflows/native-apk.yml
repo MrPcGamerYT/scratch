@@ -135,11 +135,11 @@ jobs:
           name: native-apk-gate-summary
           path: native-apk-gate-summary.json
           if-no-files-found: ignore
-      - name: Persist native-apk diagnostics on failure
+      - name: Extract native-apk diagnostics
         if: failure()
         shell: python
         run: |
-          import json,re,subprocess,os
+          import json,re,os
           from pathlib import Path
           os.makedirs('.ci-diag',exist_ok=True)
           lines=[]
@@ -160,14 +160,18 @@ jobs:
           except Exception as e:
               lines.append('SERIAL_READ_FAILED='+str(e))
           Path('.ci-diag/native-apk-diag.txt').write_text('\n'.join(lines)+'\n')
-          subprocess.run(['git','config','user.email','ci@nexus.local'])
-          subprocess.run(['git','config','user.name','Nexus CI'])
-          subprocess.run(['git','add','.ci-diag'])
-          subprocess.run(['git','commit','-q','-m','ci-diag: native-apk failure diagnostics'])
-          branch=os.environ.get('GITHUB_REF','refs/heads/main').split('/',2)[-1]
-          subprocess.run(['git','fetch','-q','origin',branch])
-          subprocess.run(['git','rebase','-q','origin/'+branch])
-          subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])
+      - name: Commit native-apk diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          git config user.email "ci@nexus.local"
+          git config user.name "Nexus CI"
+          git add .ci-diag
+          git commit -q -m "ci-diag: native-apk failure diagnostics" || true
+          branch=${{ github.ref_name }}
+          git fetch -q origin "$branch"
+          git rebase -q "origin/$branch" || true
+          git push -q origin "HEAD:${{ github.ref }}" || true
   home:
     needs: [assets, apk]
     if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
@@ -208,11 +212,11 @@ jobs:
           name: native-home-gate-summary
           path: native-home-gate-summary.json
           if-no-files-found: ignore
-      - name: Persist native-home diagnostics on failure
+      - name: Extract native-home diagnostics
         if: failure()
         shell: python
         run: |
-          import json,re,subprocess,os
+          import json,re,os
           from pathlib import Path
           os.makedirs('.ci-diag',exist_ok=True)
           lines=[]
@@ -232,11 +236,15 @@ jobs:
           except Exception as e:
               lines.append('SERIAL_READ_FAILED='+str(e))
           Path('.ci-diag/native-home-diag.txt').write_text('\n'.join(lines)+'\n')
-          subprocess.run(['git','config','user.email','ci@nexus.local'])
-          subprocess.run(['git','config','user.name','Nexus CI'])
-          subprocess.run(['git','add','.ci-diag'])
-          subprocess.run(['git','commit','-q','-m','ci-diag: native-home failure diagnostics'])
-          branch=os.environ.get('GITHUB_REF','refs/heads/main').split('/',2)[-1]
-          subprocess.run(['git','fetch','-q','origin',branch])
-          subprocess.run(['git','rebase','-q','origin/'+branch])
-          subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])
+      - name: Commit native-home diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          git config user.email "ci@nexus.local"
+          git config user.name "Nexus CI"
+          git add .ci-diag
+          git commit -q -m "ci-diag: native-home failure diagnostics" || true
+          branch=${{ github.ref_name }}
+          git fetch -q origin "$branch"
+          git rebase -q "origin/$branch" || true
+          git push -q origin "HEAD:${{ github.ref }}" || true
