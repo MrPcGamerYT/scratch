@@ -53,7 +53,8 @@ pub struct Surface {
 }
 
 impl Surface {
-    fn allocate(width:u32,height:u32,format:u32,pitch:u32)->Result<Self,String> {
+    /// Allocate a zeroed scanout surface, validating geometry, pitch and format.
+    pub fn allocate(width:u32,height:u32,format:u32,pitch:u32)->Result<Self,String> {
         let bpp=4u32;
         if width==0||height==0||pitch<width*bpp {return Err("Scanout surface has invalid geometry".into());}
         if format!=FORMAT_XRGB8888&&format!=FORMAT_ARGB8888 {return Err(format!("Unsupported pixel format 0x{format:08x}"));}

@@ -159,13 +159,8 @@ impl GpuMmio {
             s.width!=self.scanout_width||s.height!=self.scanout_height||s.format!=self.scanout_format||s.pitch!=self.scanout_pitch
         };
         if needs_resize {
-            let size=(self.scanout_pitch as usize).checked_mul(self.scanout_height as usize).ok_or("Scanout surface size overflow")?;
             let s=backend.scanout_mut();
-            s.width=self.scanout_width;
-            s.height=self.scanout_height;
-            s.format=self.scanout_format;
-            s.pitch=self.scanout_pitch;
-            s.data.resize(size,0);
+            *s=virtio_gpu::Surface::allocate(self.scanout_width,self.scanout_height,self.scanout_format,self.scanout_pitch)?;
         }
         Ok(())
     }
