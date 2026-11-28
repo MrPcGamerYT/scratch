@@ -683,12 +683,12 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EDI], AX (16-bit)
         fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD EDI, 2
         let jnz_pos=fw.len();
-        fw.push(0xe2);fw.extend_from_slice(&[0,0]); // JNZ loop
+        fw.push(0xe2);fw.push(0); // JNZ rel8 loop (2 bytes: opcode + 1 disp)
         let jmp_pos=fw.len();
         fw.push(0xe9);fw.extend_from_slice(&[0,0,0,0]); // JMP rel32 -> 0x7c00
-        // Patch JNZ back to loop_start.
-        let jnz_disp=(loop_start as i32)-(jnz_pos as i32+3);
-        fw[jnz_pos+1..jnz_pos+3].copy_from_slice(&(jnz_disp as u16).to_le_bytes());
+        // Patch JNZ back to loop_start (rel8, 2-byte instruction).
+        let jnz_disp=(loop_start as i32)-(jnz_pos as i32+2);
+        fw[jnz_pos+1]=(jnz_disp as i8) as u8;
         // Patch JMP to 0x7c00 (rel32). Displacement is relative to the JMP's
         // actual address, which is cpu::ENTRY + jmp_pos.
         let jmp_disp=(0x7c00i32)-(cpu::ENTRY as i32+jmp_pos as i32+5);
