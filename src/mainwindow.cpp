@@ -359,7 +359,6 @@ void MainWindow::launch() {
     if (hasCode && (!QFileInfo(code).isFile() || !prepareManagedFirmware(varsTemplate, vars, &error))) {
         QMessageBox::critical(this, "UEFI firmware", error.isEmpty() ? "UEFI code is not a file." : error); return;
     }
-    const QSettings s;
     const auto resources = selectedResources(s);
     const int ram = static_cast<int>(resources.memory_mb), cpus = static_cast<int>(resources.cpus);
     recordEvent(QString("Resource allocation: %1 CPUs, %2 MB (%3)").arg(cpus).arg(ram).arg(automaticResources(s) ? "automatic" : "manual"));
