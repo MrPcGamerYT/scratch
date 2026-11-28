@@ -1,66 +1,20 @@
-RETURN=101
+RETURN=0
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-warning: struct `LiveGpio` is never constructed
-   --> src\whp_mmio.rs:193:8
-    |
-193 | struct LiveGpio {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: method `access` is never used
-   --> src\whp_mmio.rs:195:8
-    |
-194 | impl LiveGpio {
-    | ------------- method in this implementation
-195 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
-
-warning: struct `LiveI2c` is never constructed
-   --> src\whp_mmio.rs:203:8
-    |
-203 | struct LiveI2c {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^
-
-warning: method `access` is never used
-   --> src\whp_mmio.rs:205:8
-    |
-204 | impl LiveI2c {
-    | ------------ method in this implementation
-205 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
-
-warning: struct `LiveSpi` is never constructed
-   --> src\whp_mmio.rs:213:8
-    |
-213 | struct LiveSpi {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^
-
-warning: method `access` is never used
-   --> src\whp_mmio.rs:215:8
-    |
-214 | impl LiveSpi {
-    | ------------ method in this implementation
-215 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
-
-warning: `nexus-engine` (lib) generated 6 warnings (6 duplicates)
-warning: `nexus-engine` (lib test) generated 6 warnings
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.77s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 38s
      Running unittests src\lib.rs (rust\nexus-engine\target\debug\build\nexus-engine/6eeb0d3c744f3473\out\nexus_engine-6eeb0d3c744f3473.exe)
 
 running 180 tests
-test ata::tests::reset_slave_and_corrupt_images ... ok
 test ata::tests::identify_capacity_and_pio_sector_data_not_container_header ... ok
 test ata::tests::write_dma_and_bounds_refused_and_source_unchanged ... ok
 test boot::tests::requires_boot_signature ... ok
-test bridge::tests::backpressure_does_not_overwrite_receiver ... ok
+test ata::tests::reset_slave_and_corrupt_images ... ok
 test bridge::tests::apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification ... ok
-test bridge::tests::fragmented_greeting_query_and_result_not_home_or_install_success ... ok
+test bridge::tests::backpressure_does_not_overwrite_receiver ... ok
 test ata::tests::cow_guest_words_persist_and_partial_sector_is_discarded_on_reset ... ok
-test bridge::tests::push_command_queues_valid_lines_and_rejects_bad ... ok
+test bridge::tests::fragmented_greeting_query_and_result_not_home_or_install_success ... ok
 test bridge::tests::hardware_irq_probe_preface_is_bounded_and_not_allowed_after_greeting ... ok
+test bridge::tests::push_command_queues_valid_lines_and_rejects_bad ... ok
 test bridge::tests::rejects_versions_injection_overflow_and_out_of_order_result ... ok
 test cpu::tests::fixture_writes_fail_closed ... ok
 test cpu::tests::infer_mode_after_guest_transitions ... ok
@@ -89,7 +43,7 @@ test i2c::tests::unsupported_offsets_and_sizes ... ok
 test framebuffer::tests::exact_rgb_channels_ignore_x_and_mapping_padding ... ok
 test image::tests::crc_vector ... ok
 test image::tests::renamed_containers_refused ... ok
-test image::tests::corruption_rejected ... ok
+test framebuffer::tests::capture_refuses_overwrite ... ok
 test io::tests::bus_is_private_and_bounded ... ok
 test io::tests::decode_and_width_rules ... ok
 test io::tests::reject_unsupported_contexts ... ok
@@ -106,20 +60,20 @@ test kernel::tests::larger_ram_e820_initrd_and_mmio_separation ... ok
 test kernel::tests::malformed_headers_refused ... ok
 test kernel::tests::net_probe_requires_single_vcpu_platform_path ... ok
 test kernel::tests::nonrelocatable_runtime_is_separate_from_compressed_load ... ok
+test image::tests::corruption_rejected ... ok
 test kernel::tests::overlap_validation ... ok
 test kernel::tests::selected_cpu_count_requires_matching_boot_profile ... ok
 test kernel::tests::software_renderer_validates ... ok
-test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test lapic::tests::disabled_masked_priority_and_deferred_acknowledgement ... ok
 test lapic::tests::edge_coalescing_and_invalid_registers_leave_requests_intact ... ok
 test lapic::tests::flat_logical_destinations_and_mode_validation ... ok
-test framebuffer::tests::capture_refuses_overwrite ... ok
 test lapic::tests::nested_higher_priority_and_same_class_waits_for_eoi ... ok
 test lapic::tests::physical_destination_and_shorthand_do_not_touch_other_cpus ... ok
 test lapic::tests::timer_all_dividers_and_disabled_apic ... ok
 test lapic::tests::timer_countdown_periodic_masking_and_reprogramming ... ok
 test lapic::tests::trigger_mode_tracks_acknowledged_vector_and_clears_on_eoi ... ok
 test lapic::tests::cr8_priority_classes_preserve_subpriority_and_defer_without_losing_irr ... ok
+test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test image::tests::round_trip_bounds_and_no_overwrite ... ok
 test overlay::tests::host_write_failure_poisoning_preserves_committed_data ... ok
 test overlay::tests::single_writer_no_overwrite_and_bounds ... ok
@@ -232,7 +186,7 @@ test virtio_block_tests::readonly_backend_requires_verified_payload_and_refuses_
 test virtio_block_tests::actual_cow_backend_write_flush_reopen_and_base_preservation ... ok
 test virtio_mmio_tests::mmio_model_cow_write_flush_reset_reopen_read_preserves_base ... ok
 
-test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
 
      Running unittests src\main.rs (rust\nexus-engine\target\debug\build\nexus-engine/2d847dd113b5de05\out\nexus_engine-2d847dd113b5de05.exe)
 
@@ -242,92 +196,46 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
     Checking nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-error: struct `LiveGpio` is never constructed
-   --> src\whp_mmio.rs:193:8
-    |
-193 | struct LiveGpio {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^^
-    |
-    = note: `-D dead-code` implied by `-D warnings`
-    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.49s
 
-error: method `access` is never used
-   --> src\whp_mmio.rs:195:8
-    |
-194 | impl LiveGpio {
-    | ------------- method in this implementation
-195 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
+   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
+    Finished `release` profile [optimized] target(s) in 21.23s
 
-error: struct `LiveI2c` is never constructed
-   --> src\whp_mmio.rs:203:8
-    |
-203 | struct LiveI2c {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^
-
-error: method `access` is never used
-   --> src\whp_mmio.rs:205:8
-    |
-204 | impl LiveI2c {
-    | ------------ method in this implementation
-205 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
-
-error: struct `LiveSpi` is never constructed
-   --> src\whp_mmio.rs:213:8
-    |
-213 | struct LiveSpi {context:MmioContext,emulator:Emulator}
-    |        ^^^^^^^
-
-error: method `access` is never used
-   --> src\whp_mmio.rs:215:8
-    |
-214 | impl LiveSpi {
-    | ------------ method in this implementation
-215 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
-    |        ^^^^^^
-
-error: manual `Range::contains` implementation
-   --> src\whp_mmio.rs:700:32
-    |
-700 | ...                   if gpa>=MMIO_GPIO_BASE&&gpa<MMIO_GPIO_BASE+4096 {
-    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_GPIO_BASE..MMIO_GPIO_BASE+4096).contains(&gpa)`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains
-    = note: `-D clippy::manual-range-contains` implied by `-D warnings`
-    = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`
-
-error: manual `Range::contains` implementation
-   --> src\whp_mmio.rs:703:39
-    |
-703 | ...                   } else if gpa>=MMIO_I2C_BASE&&gpa<MMIO_I2C_BASE+4096 {
-    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_I2C_BASE..MMIO_I2C_BASE+4096).contains(&gpa)`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains
-
-error: manual `Range::contains` implementation
-   --> src\whp_mmio.rs:706:39
-    |
-706 | ...                   } else if gpa>=MMIO_SPI_BASE&&gpa<MMIO_SPI_BASE+4096 {
-    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_SPI_BASE..MMIO_SPI_BASE+4096).contains(&gpa)`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains
-
-error: useless use of `format!`
-   --> src\whp_mmio.rs:711:39
-    |
-711 |                         2=>return Err(format!("Unexpected platform MMIO smoke port exit")),
-    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"Unexpected platform MMIO smoke port exit".to_string()`
-    |
-    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#useless_format
-    = note: `-D clippy::useless-format` implied by `-D warnings`
-    = help: to override `-D warnings` add `#[allow(clippy::useless_format)]`
-
-error: could not compile `nexus-engine` (lib) due to 10 previous errors
-warning: build failed, waiting for other jobs to finish...
-error: could not compile `nexus-engine` (lib test) due to 10 previous errors
-
-::error::^^^%0A    |%0A    = note: `-D dead-code` implied by `-D warnings`%0A    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`%0A%0Aerror: method `access` is never used%0A   --> src\whp_mmio.rs:195:8%0A    |%0A194 | impl LiveGpio {%0A    | ------------- method in this implementation%0A195 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {%0A    |        ^^^^^^%0A%0Aerror: struct `LiveI2c` is never constructed%0A   --> src\whp_mmio.rs:203:8%0A    |%0A203 | struct LiveI2c {context:MmioContext,emulator:Emulator}%0A    |        ^^^^^^^%0A%0Aerror: method `access` is never used%0A   --> src\whp_mmio.rs:205:8%0A    |%0A204 | impl LiveI2c {%0A    | ------------ method in this implementation%0A205 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {%0A    |        ^^^^^^%0A%0Aerror: struct `LiveSpi` is never constructed%0A   --> src\whp_mmio.rs:213:8%0A    |%0A213 | struct LiveSpi {context:MmioContext,emulator:Emulator}%0A    |        ^^^^^^^%0A%0Aerror: method `access` is never used%0A   --> src\whp_mmio.rs:215:8%0A    |%0A214 | impl LiveSpi {%0A    | ------------ method in this implementation%0A215 |     fn access(&mut self,exit:&ExitContext)->Result<(),String> {%0A    |        ^^^^^^%0A%0Aerror: manual `Range::contains` implementation%0A   --> src\whp_mmio.rs:700:32%0A    |%0A700 | ...                   if gpa>=MMIO_GPIO_BASE&&gpa<MMIO_GPIO_BASE+4096 {%0A    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_GPIO_BASE..MMIO_GPIO_BASE+4096).contains(&gpa)`%0A    |%0A    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains%0A    = note: `-D clippy::manual-range-contains` implied by `-D warnings`%0A    = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`%0A%0Aerror: manual `Range::contains` implementation%0A   --> src\whp_mmio.rs:703:39%0A    |%0A703 | ...                   } else if gpa>=MMIO_I2C_BASE&&gpa<MMIO_I2C_BASE+4096 {%0A    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_I2C_BASE..MMIO_I2C_BASE+4096).contains(&gpa)`%0A    |%0A    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains%0A%0Aerror: manual `Range::contains` implementation%0A   --> src\whp_mmio.rs:706:39%0A    |%0A706 | ...                   } else if gpa>=MMIO_SPI_BASE&&gpa<MMIO_SPI_BASE+4096 {%0A    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `(MMIO_SPI_BASE..MMIO_SPI_BASE+4096).contains(&gpa)`%0A    |%0A    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#manual_range_contains%0A%0Aerror: useless use of `format!`%0A   --> src\whp_mmio.rs:711:39%0A    |%0A711 |                         2=>return Err(format!("Unexpected platform MMIO smoke port exit")),%0A    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"Unexpected platform MMIO smoke port exit".to_string()`%0A    |%0A    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#useless_format%0A    = note: `-D clippy::useless-format` implied by `-D warnings`%0A    = help: to override `-D warnings` add `#[allow(clippy::useless_format)]`%0A%0Aerror: could not compile `nexus-engine` (lib) due to 10 previous errors%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 10 previous errors%0A
 
 STDERR:
+
+
+NET-SMOKE RETURN=0
+STDOUT:
+VirtIO-MMIO net device model passed: feature negotiation, TX frame transmit, loopback RX delivery and queue completion; loopback backend only, no host network stack or guest boot.
+
+STDERR:
+
+
+NET-MMIO-SMOKE RETURN=0
+STDOUT:
+Real WHP MMIO net device passed: enum dispatch, GPA routing, IRQ6, TX frame transmit, loopback RX delivery and queue completion through the live emulator; loopback backend only, not Android boot.
+
+STDERR:
+
+
+AUDIO-SMOKE RETURN=0
+STDOUT:
+VirtIO-MMIO audio device model passed: feature negotiation, playback TX, capture RX and queue completion; null backend only, no host audio stack or guest boot.
+
+STDERR:
+
+
+AUDIO-MMIO-SMOKE RETURN=0
+STDOUT:
+Real WHP MMIO audio device passed: enum dispatch, GPA routing, IRQ7, playback TX and capture RX delivery through the live emulator; null backend only, not Android boot.
+
+STDERR:
+
+
+PLATFORM-MMIO-SMOKE RETURN=1
+STDOUT:
+
+STDERR:
+Nexus native engine: Unexpected platform MMIO smoke GPA 0x3000a300000010
 
