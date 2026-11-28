@@ -665,7 +665,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         let ata=AtaPio::open(&zlag)?;
         // Firmware bytecode (protected 32-bit mode, placed at cpu::ENTRY).
         let out=|code:&mut Vec<u8>,port:u32,value:u8| {
-            code.push(0xba);code.extend_from_slice(&(port as u16).to_le_bytes());
+            code.push(0xba);code.extend_from_slice(&port.to_le_bytes());
             code.push(0xb0);code.push(value);code.push(0xee);
         };
         let mut fw=Vec::new();
