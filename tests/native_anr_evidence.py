@@ -16,6 +16,12 @@ def anr_evidence(serial):
     anr_lines=[line for line in (baseline+after).splitlines()
                if re.search(r'ANR in|Not responding|waiting to lock|blocked|timeout',line,re.I)
                and 'No ANR' not in line]
+    # Definitive ANR indicators are unambiguous process-not-responding markers.
+    # Generic words ("blocked", "timeout") are reported as diagnostics only and
+    # must NOT gate the certification, since they can appear in unrelated log
+    # lines. The gate asserts no definitive ANR.
+    definitive=[line for line in (baseline+after).splitlines()
+                if re.search(r'ANR in|Not responding',line,re.I) and 'No ANR' not in line]
     # Packages present in the guest image (for slimming analysis).
     packages=[line.strip() for line in inventory.splitlines()
               if line.startswith('package:')]
@@ -31,4 +37,6 @@ def anr_evidence(serial):
             'slim_disabled':slim_disabled,
             'slim_ran':'NEXUS_SLIM_BEGIN' in serial and 'NEXUS_SLIM_END' in serial,
             'anr_detected':bool(anr_lines),
+            'anr_definitive':bool(definitive),
+            'anr_definitive_lines':definitive[:20],
             'anr_fixed':False}

@@ -93,6 +93,9 @@ def main():
     # injection can be flaky on CI and dumpsys may not always expose the PID.
     # The hard gate is: real launcher resumed + clean crash capture + non-blank scanout.
     assert result['scanout'] and result['scanout']['nonuniform'],result['scanout']
+    # Usable-Home certification: no definitive ANR in the captured baseline /
+    # after-home sections. Generic diagnostic words are reported but not gated.
+    assert not result['anr_evidence']['anr_definitive'],('Definitive ANR present',result['anr_evidence']['anr_definitive_lines'])
     assert metrics['total_boot_verified'] is False
     # The renderer selection must govern execution and be recorded in the
     # timing JSON. Software is the only implemented renderer path.
@@ -103,8 +106,13 @@ def main():
     home_ready_ms=metrics['android_home_ready_ms']
     assert home_ready_ms is not None,'Engine did not record android_home_ready_ms from bridge completion'
     print(f'::notice::ANDROID_HOME_READY_MS={home_ready_ms}',flush=True)
-    result['android_apk_verified']=True;Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
-    print('::notice::REAL_APK_ACCEPTANCE: signed benign APK streamed over native COM2, Android pm install, package presence and uninstall verified; not networking/audio/Home/ANR success',flush=True)
+    result['android_apk_verified']=True
+    # Usable-Home certified: the hard gates above (real launcher resumed,
+    # non-blank rendered scanout, clean crash capture, no definitive ANR) are
+    # all satisfied. This is the native engine's Android Home acceptance.
+    result['android_home_verified']=True
+    Path('native-apk-checkpoint.json').write_text(json.dumps(result,indent=2))
+    print('::notice::REAL_APK_ACCEPTANCE: signed benign APK streamed over native COM2, Android pm install, package presence and uninstall verified; Home resumed + rendered + ANR-free certified on the native engine; not networking/audio',flush=True)
 
 
 if __name__=='__main__':
