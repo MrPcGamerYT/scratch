@@ -165,7 +165,7 @@ mod windows {
                 let row_bytes=(width*4) as usize;
                 let mut mapped=Mapped{data:null,row_pitch:0,depth_pitch:0};
                 check(map(context.0,staging.0,0,1,0,&mut mapped),"staging map")?;
-                if mapped.data.is_null()||mapped.row_pitch<(width*4) as u32 {unmap(context.0,staging.0,0);return Err("D3D11 invalid staging row pitch".into());}
+                if mapped.data.is_null()||mapped.row_pitch<width*4 {unmap(context.0,staging.0,0);return Err("D3D11 invalid staging row pitch".into());}
                 for row in 0..height as usize {
                     let src=row*surface.pitch as usize;let dst=row*mapped.row_pitch as usize;
                     std::ptr::copy_nonoverlapping(surface.data.as_ptr().add(src),mapped.data.cast::<u8>().add(dst),row_bytes);
@@ -176,7 +176,7 @@ mod windows {
                 copy(context.0,readback.0,target.0);
                 let mut mapped=Mapped{data:null,row_pitch:0,depth_pitch:0};
                 check(map(context.0,readback.0,0,1,0,&mut mapped),"readback map")?;
-                if mapped.data.is_null()||mapped.row_pitch<(width*4) as u32 {unmap(context.0,readback.0,0);return Err("D3D11 invalid readback row pitch".into());}
+                if mapped.data.is_null()||mapped.row_pitch<width*4 {unmap(context.0,readback.0,0);return Err("D3D11 invalid readback row pitch".into());}
                 let mut pixels=Vec::with_capacity((width*height*4) as usize);
                 for row in 0..height as usize {pixels.extend_from_slice(std::slice::from_raw_parts(mapped.data.cast::<u8>().add(row*mapped.row_pitch as usize),row_bytes));}
                 unmap(context.0,readback.0,0);

@@ -173,7 +173,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             let width=8u32;let height=8u32;let pitch=32u32;
             let mut data=vec![0u8;(pitch*height) as usize];
             for y in 0..height {for x in 0..width {
-                let at=((y*pitch+x*4) as usize);
+                let at=(y*pitch+x*4) as usize;
                 data[at..at+4].copy_from_slice(&[(x*37) as u8,(y*53) as u8,((x+y)*29) as u8,0]);
             }}
             let surface=Surface{width,height,format:FORMAT_XRGB8888,pitch,data};
