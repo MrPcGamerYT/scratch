@@ -649,9 +649,7 @@ pub fn platform_mmio_smoke()->Result<(),String> {
         let mut code=Vec::new();
         // Helpers: load MMIO offset into a destination register, write value to MMIO offset.
         let load=|code:&mut Vec<u8>,base:u64,offset:u32,dest:u32| {
-            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((base as u32)+offset).to_le_bytes());
-            if long {code.push(0x67);}code.push(0xa1);code.extend_from_slice(&dest.to_le_bytes());
-            if long {code.push(0x67);}code.push(0x8b);code.extend_from_slice(&[0x00,0x08]);
+            if long {code.push(0x67);}code.push(0xa1);code.extend_from_slice(&((base as u32)+offset).to_le_bytes());
             if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&dest.to_le_bytes());
         };
         let write=|code:&mut Vec<u8>,base:u64,offset:u32,value:u32| {
