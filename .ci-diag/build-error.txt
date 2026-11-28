@@ -1,7 +1,7 @@
 RETURN=0
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 38s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.88s
      Running unittests src\lib.rs (rust\nexus-engine\target\debug\build\nexus-engine/6eeb0d3c744f3473\out\nexus_engine-6eeb0d3c744f3473.exe)
 
 running 180 tests
@@ -9,9 +9,8 @@ test ata::tests::identify_capacity_and_pio_sector_data_not_container_header ... 
 test ata::tests::write_dma_and_bounds_refused_and_source_unchanged ... ok
 test boot::tests::requires_boot_signature ... ok
 test ata::tests::reset_slave_and_corrupt_images ... ok
-test bridge::tests::apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification ... ok
 test bridge::tests::backpressure_does_not_overwrite_receiver ... ok
-test ata::tests::cow_guest_words_persist_and_partial_sector_is_discarded_on_reset ... ok
+test bridge::tests::apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification ... ok
 test bridge::tests::fragmented_greeting_query_and_result_not_home_or_install_success ... ok
 test bridge::tests::hardware_irq_probe_preface_is_bounded_and_not_allowed_after_greeting ... ok
 test bridge::tests::push_command_queues_valid_lines_and_rejects_bad ... ok
@@ -20,6 +19,7 @@ test cpu::tests::fixture_writes_fail_closed ... ok
 test cpu::tests::infer_mode_after_guest_transitions ... ok
 test cpu::tests::long_start_tables_and_alias ... ok
 test cpu::tests::mode_ranges_and_canonical_addresses ... ok
+test ata::tests::cow_guest_words_persist_and_partial_sector_is_discarded_on_reset ... ok
 test cpu::tests::protected_start_state ... ok
 test cpu::tests::protection_fixture_enables_wp_and_keeps_fault_targets_unmapped_or_readonly ... ok
 test cpu::tests::transition_tables_and_real_entry_are_independent_of_seeded_long_state ... ok
@@ -40,15 +40,16 @@ test i2c::tests::control_address_data_roundtrip ... ok
 test i2c::tests::no_transfer_on_zero_command ... ok
 test i2c::tests::status_is_read_only ... ok
 test i2c::tests::unsupported_offsets_and_sizes ... ok
-test framebuffer::tests::exact_rgb_channels_ignore_x_and_mapping_padding ... ok
+test image::tests::corruption_rejected ... ok
 test image::tests::crc_vector ... ok
 test image::tests::renamed_containers_refused ... ok
-test framebuffer::tests::capture_refuses_overwrite ... ok
+test framebuffer::tests::exact_rgb_channels_ignore_x_and_mapping_padding ... ok
 test io::tests::bus_is_private_and_bounded ... ok
 test io::tests::decode_and_width_rules ... ok
 test io::tests::reject_unsupported_contexts ... ok
 test ioapic::tests::edge_logical_polarity_and_validation ... ok
 test ioapic::tests::level_remote_irr_eoi_reassert_and_mask ... ok
+test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test ioapic::tests::lowest_priority_selects_one_logical_destination_by_ppr ... ok
 test ioapic::tests::reprogramming_preserves_inflight_eoi_vector ... ok
 test kernel::tests::audio_probe_requires_single_vcpu_platform_path ... ok
@@ -60,7 +61,6 @@ test kernel::tests::larger_ram_e820_initrd_and_mmio_separation ... ok
 test kernel::tests::malformed_headers_refused ... ok
 test kernel::tests::net_probe_requires_single_vcpu_platform_path ... ok
 test kernel::tests::nonrelocatable_runtime_is_separate_from_compressed_load ... ok
-test image::tests::corruption_rejected ... ok
 test kernel::tests::overlap_validation ... ok
 test kernel::tests::selected_cpu_count_requires_matching_boot_profile ... ok
 test kernel::tests::software_renderer_validates ... ok
@@ -72,9 +72,9 @@ test lapic::tests::physical_destination_and_shorthand_do_not_touch_other_cpus ..
 test lapic::tests::timer_all_dividers_and_disabled_apic ... ok
 test lapic::tests::timer_countdown_periodic_masking_and_reprogramming ... ok
 test lapic::tests::trigger_mode_tracks_acknowledged_vector_and_clears_on_eoi ... ok
-test lapic::tests::cr8_priority_classes_preserve_subpriority_and_defer_without_losing_irr ... ok
-test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test image::tests::round_trip_bounds_and_no_overwrite ... ok
+test framebuffer::tests::capture_refuses_overwrite ... ok
+test lapic::tests::cr8_priority_classes_preserve_subpriority_and_defer_without_losing_irr ... ok
 test overlay::tests::host_write_failure_poisoning_preserves_committed_data ... ok
 test overlay::tests::single_writer_no_overwrite_and_bounds ... ok
 test pci::tests::address_roundtrip_and_empty_configuration ... ok
@@ -166,13 +166,14 @@ test virtio_mmio_tests::identity_selectors_config_byte_reads_and_access_shapes .
 test virtio_mmio_tests::invalid_negotiation_clears_features_ok_and_reset_unlocks_features ... ok
 test virtio_mmio_tests::invalid_ring_gpa_is_checked_before_backend_and_demands_reset ... ok
 test virtio_mmio_tests::lifecycle_requires_features_and_ready_and_protects_live_queue ... ok
-test overlay::tests::wrong_base_and_header_refused_without_mutating_overlay ... ok
+test virtio_block_tests::readonly_backend_requires_verified_payload_and_refuses_writes ... ok
 test virtio_mmio_tests::ordinary_io_error_does_not_poison_device_and_suppression_is_honored ... ok
 test virtio_mmio_tests::read_completion_irq_latch_ack_and_no_repeat_io ... ok
 test virtio_mmio_tests::readonly_and_flush_feature_policy_enforced_before_backend ... ok
 test virtio_mmio_tests::service_budget_retains_pending_work_and_reasserts_after_ack ... ok
 test virtio_net::tests::loopback_round_trip_tx_then_rx ... ok
 test virtio_net::tests::rx_prepends_header_and_completes_with_total_length ... ok
+test virtio_block_tests::actual_cow_backend_write_flush_reopen_and_base_preservation ... ok
 test virtio_net::tests::rx_returns_none_without_consuming_buffer_when_no_frame ... ok
 test virtio_net::tests::tx_rejects_short_packet_and_wrong_direction ... ok
 test virtio_net::tests::tx_strips_header_transmits_and_completes_with_status ... ok
@@ -182,11 +183,10 @@ test virtio_net_mmio::tests::rx_notify_service_delivers_loopback_frame ... ok
 test virtio_net_mmio::tests::status_negotiation_requires_ack_driver_features_then_ok ... ok
 test virtio_net_mmio::tests::tx_notify_service_and_irq ... ok
 test virtqueue::tests::indices_wrap_without_replaying_or_losing_a_descriptor ... ok
-test virtio_block_tests::readonly_backend_requires_verified_payload_and_refuses_writes ... ok
-test virtio_block_tests::actual_cow_backend_write_flush_reopen_and_base_preservation ... ok
+test overlay::tests::wrong_base_and_header_refused_without_mutating_overlay ... ok
 test virtio_mmio_tests::mmio_model_cow_write_flush_reset_reopen_read_preserves_base ... ok
 
-test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+test result: ok. 180 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
 
      Running unittests src\main.rs (rust\nexus-engine\target\debug\build\nexus-engine/2d847dd113b5de05\out\nexus_engine-2d847dd113b5de05.exe)
 
@@ -196,10 +196,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
     Checking nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.49s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.45s
 
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `release` profile [optimized] target(s) in 21.23s
+    Finished `release` profile [optimized] target(s) in 20.39s
 
 
 STDERR:
