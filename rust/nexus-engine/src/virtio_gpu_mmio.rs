@@ -165,3 +165,5 @@ impl GpuMmio {
         Ok(())
     }
 }
+
+impl Default for GpuMmio {fn default()->Self {Self::new()}}

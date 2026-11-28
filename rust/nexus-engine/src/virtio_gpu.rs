@@ -172,9 +172,10 @@ fn execute_fill(backend:&mut dyn GpuBackend,color:u32,x:u32,y:u32,width:u32,heig
     }
     let bytes=(width as usize).checked_mul(4).ok_or("FILL_2D width overflow")?;
     let pixels=[color as u8,(color>>8) as u8,(color>>16) as u8,(color>>24) as u8];
-    for row in 0..height as usize {
-        let dst=(y as usize+row)*s.pitch as usize+(x as usize)*4;
-        for c in 0..bytes {s.data[dst+c]=pixels[c%4];}
+    let row:Vec<u8>=pixels.iter().cycle().take(bytes).copied().collect();
+    for row_idx in 0..height as usize {
+        let dst=(y as usize+row_idx)*s.pitch as usize+(x as usize)*4;
+        s.data[dst..dst+bytes].copy_from_slice(&row);
     }
     Ok(1)
 }
