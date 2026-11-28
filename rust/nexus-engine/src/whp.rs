@@ -683,7 +683,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EDI], AX (16-bit)
         fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD EDI, 2
         let jnz_pos=fw.len();
-        fw.push(0xe2);fw.push(0); // JNZ rel8 loop (2 bytes: opcode + 1 disp)
+        fw.push(0xe2);fw.push(0); // LOOP rel8: dec ECX, jump if ECX!=0 (2 bytes)
         let jmp_pos=fw.len();
         fw.push(0xe9);fw.extend_from_slice(&[0,0,0,0]); // JMP rel32 -> 0x7c00
         // Patch JNZ back to loop_start (rel8, 2-byte instruction).
