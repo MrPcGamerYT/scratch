@@ -672,7 +672,9 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         // POST marker: MOV EAX, 0x504f5354; MOV [0x1b000], EAX.
         fw.push(0xb8);fw.extend_from_slice(&0x504f5354u32.to_le_bytes());
         fw.push(0xa3);fw.extend_from_slice(&0x1b000u32.to_le_bytes());
-        // ATA: select drive 0 (LBA), read 1 sector (LBA 0), READ SECTORS command.
+        // ATA: enable nIEN (0x3f6 bit1; IRQ14 not implemented), select drive 0
+        // (LBA), read 1 sector (LBA 0), READ SECTORS command.
+        out(&mut fw,0x3f6,2);
         for (port,value) in [(0x1f6u32,0xe0u8),(0x1f2,1),(0x1f3,0),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {out(&mut fw,port,value);}
         // Read 256 words from 0x1f0 into 0x7c00.
         fw.push(0xba);fw.extend_from_slice(&0x1f0u16.to_le_bytes());
