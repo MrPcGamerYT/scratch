@@ -2,222 +2,222 @@ RETURN=101
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
 error[E0121]: the placeholder `_` is not allowed within types on item signatures for functions
-   --> src\virtio_gpu.rs:179:58
+   --> src\virtio_gpu.rs:180:58
     |
-179 | fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u...
+180 | fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u...
     |                                                          ^ not allowed in type signatures
 
 error[E0121]: the placeholder `_` is not allowed within types on item signatures for functions
-   --> src\virtio_gpu.rs:193:61
+   --> src\virtio_gpu.rs:194:61
     |
-193 | fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Resul...
+194 | fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Resul...
     |                                                             ^ not allowed in type signatures
 
 error[E0121]: the placeholder `_` is not allowed within types on item signatures for functions
-   --> src\virtio_gpu.rs:208:59
+   --> src\virtio_gpu.rs:209:59
     |
-208 | fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<...
+209 | fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<...
     |                                                           ^ not allowed in type signatures
 
 error[E0121]: the placeholder `_` is not allowed within types on item signatures for functions
-   --> src\virtio_gpu.rs:223:52
+   --> src\virtio_gpu.rs:224:52
     |
-223 | fn execute_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Fai...
+224 | fn execute_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Fai...
     |                                                    ^ not allowed in type signatures
 
 error[E0277]: the trait bound `virtio_gpu::Failure: From<&str>` is not satisfied
-   --> src\virtio_gpu.rs:141:82
+   --> src\virtio_gpu.rs:142:82
     |
-141 |     if descriptors.len()<2 {return Err("GPU command needs a header and a status".into());}
+142 |     if descriptors.len()<2 {return Err("GPU command needs a header and a status".into());}
     |                                                                                  ^^^^ unsatisfied trait bound
     |
 help: the trait `From<&str>` is not implemented for `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: required for `&str` to implement `Into<virtio_gpu::Failure>`
 
 error[E0277]: the trait bound `virtio_gpu::Failure: From<&str>` is not satisfied
-   --> src\virtio_gpu.rs:143:109
+   --> src\virtio_gpu.rs:144:109
     |
-143 |     if header.writable||header.length!=24 {return Err("GPU command header must be 24 device-readable bytes".into());}
+144 |     if header.writable||header.length!=24 {return Err("GPU command header must be 24 device-readable bytes".into());}
     |                                                                                                             ^^^^ unsatisfied trait bound
     |
 help: the trait `From<&str>` is not implemented for `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: required for `&str` to implement `Into<virtio_gpu::Failure>`
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:169:78
+   --> src\virtio_gpu.rs:170:78
     |
-163 | fn execute_fill(backend:&mut dyn GpuBackend,color:u32,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+164 | fn execute_fill(backend:&mut dyn GpuBackend,color:u32,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                          ------------------- expected `virtio_gpu::Failure` because of this
 ...
-169 |     let bytes=(width as usize).checked_mul(4).ok_or("FILL_2D width overflow")?;
+170 |     let bytes=(width as usize).checked_mul(4).ok_or("FILL_2D width overflow")?;
     |                                               -------------------------------^ the trait `From<&str>` is not implemented for `virtio_gpu::Failure`
     |                                               |
     |                                               this can't be annotated with `?` because it has type `Result<_, &str>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<&str>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:187:37
+   --> src\virtio_gpu.rs:188:37
     |
-179 | fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+180 | fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                            ------------------- expected `virtio_gpu::Failure` because of this
 ...
-187 |     m.read(data[0].address,&mut buf)?;
+188 |     m.read(data[0].address,&mut buf)?;
     |       ------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:188:51
+   --> src\virtio_gpu.rs:189:51
     |
-179 | ...e_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+180 | ...e_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                      ------------------- expected `virtio_gpu::Failure` because of this
 ...
-188 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
+189 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
     |       --------------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:202:37
+   --> src\virtio_gpu.rs:203:37
     |
-193 | fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+194 | fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                               ------------------- expected `virtio_gpu::Failure` because of this
 ...
-202 |     m.read(data[0].address,&mut buf)?;
+203 |     m.read(data[0].address,&mut buf)?;
     |       ------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:203:51
+   --> src\virtio_gpu.rs:204:51
     |
-193 | ...e_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+194 | ...e_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                         ------------------- expected `virtio_gpu::Failure` because of this
 ...
-203 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
+204 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
     |       --------------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:216:48
+   --> src\virtio_gpu.rs:217:48
     |
-208 | ...e_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+209 | ...e_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                       ------------------- expected `virtio_gpu::Failure` because of this
 ...
-216 | ...nd.readback(x,y,width,height,&mut buf)?;
+217 | ...nd.readback(x,y,width,height,&mut buf)?;
     |       -----------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:217:34
+   --> src\virtio_gpu.rs:218:34
     |
-208 | fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+209 | fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                             ------------------- expected `virtio_gpu::Failure` because of this
 ...
-217 |     m.write(data[0].address,&buf)?;
+218 |     m.write(data[0].address,&buf)?;
     |       ---------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:231:37
+   --> src\virtio_gpu.rs:232:37
     |
-223 | fn execute_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+224 | fn execute_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                      ------------------- expected `virtio_gpu::Failure` because of this
 ...
-231 |     m.read(data[0].address,&mut buf)?;
+232 |     m.read(data[0].address,&mut buf)?;
     |       ------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0277]: `?` couldn't convert the error to `virtio_gpu::Failure`
-   --> src\virtio_gpu.rs:232:51
+   --> src\virtio_gpu.rs:233:51
     |
-223 | ...e_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+224 | ...e_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     |                                                                                                                ------------------- expected `virtio_gpu::Failure` because of this
 ...
-232 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
+233 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;
     |       --------------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`
     |       |
     |       this can't be annotated with `?` because it has type `Result<_, String>`
     |
 note: `virtio_gpu::Failure` needs to implement `From<String>`
-   --> src\virtio_gpu.rs:116:1
+   --> src\virtio_gpu.rs:117:1
     |
-116 | enum Failure {Unsupported,Io(String)}
+117 | enum Failure {Unsupported,Io(String)}
     | ^^^^^^^^^^^^
     = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
 
 error[E0599]: no method named `map_err` found for enum `Option<T>` in the current scope
-   --> src\virtio_gpu.rs:249:25
+   --> src\virtio_gpu.rs:250:25
     |
-248 |     (width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?
-249 |         .checked_mul(4).map_err(|_|fail("GPU region overflow"))
+249 |     (width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?
+250 |         .checked_mul(4).map_err(|_|fail("GPU region overflow"))
     |                         ^^^^^^^
     |
 help: there is a method `map_or` with a similar name, but with different arguments
@@ -229,12 +229,12 @@ error[E0599]: no method named `scanout` found for struct `ScanoutBackend` in the
 786 |             let surface=backend.scanout();
     |                                 ^^^^^^^
     |
-   ::: src\virtio_gpu.rs:67:8
+   ::: src\virtio_gpu.rs:68:8
     |
- 67 |     fn scanout(&self)->&Surface;
+ 68 |     fn scanout(&self)->&Surface;
     |        ------- the method is available for `ScanoutBackend` here
 ...
- 76 | pub struct ScanoutBackend {pub surface:Surface}
+ 77 | pub struct ScanoutBackend {pub surface:Surface}
     | ------------------------- method `scanout` not found for this struct
     |
     = help: items from traits can only be used if the trait is in scope
@@ -249,28 +249,28 @@ help: there is a method `scanout_mut` with a similar name
     |                                        ++++
 
 warning: unused variable: `x`
-   --> src\virtio_gpu.rs:157:20
+   --> src\virtio_gpu.rs:158:20
     |
-157 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {
+158 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {
     |                    ^ help: if this is intentional, prefix it with an underscore: `_x`
     |
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 
 warning: unused variable: `y`
-   --> src\virtio_gpu.rs:157:26
+   --> src\virtio_gpu.rs:158:26
     |
-157 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {
+158 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {
     |                          ^ help: if this is intentional, prefix it with an underscore: `_y`
 
 Some errors have detailed explanations: E0121, E0277, E0599.
 For more information about an error, try `rustc --explain E0121`.
-warning: `nexus-engine` (lib) generated 2 warnings
+warning: `nexus-engine` (lib) generated 2 warnings (1 duplicate)
 error: could not compile `nexus-engine` (lib) due to 17 previous errors; 2 warnings emitted
 warning: build failed, waiting for other jobs to finish...
-warning: `nexus-engine` (lib test) generated 2 warnings (2 duplicates)
+warning: `nexus-engine` (lib test) generated 2 warnings (1 duplicate)
 error: could not compile `nexus-engine` (lib test) due to 17 previous errors; 2 warnings emitted
 
-::error::he error to `virtio_gpu::Failure`%0A   --> src\virtio_gpu.rs:232:51%0A    |%0A223 | ...e_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {%0A    |                                                                                                                ------------------- expected `virtio_gpu::Failure` because of this%0A...%0A232 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;%0A    |       --------------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`%0A    |       |%0A    |       this can't be annotated with `?` because it has type `Result<_, String>`%0A    |%0Anote: `virtio_gpu::Failure` needs to implement `From<String>`%0A   --> src\virtio_gpu.rs:116:1%0A    |%0A116 | enum Failure {Unsupported,Io(String)}%0A    | ^^^^^^^^^^^^%0A    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait%0A%0Aerror[E0599]: no method named `map_err` found for enum `Option<T>` in the current scope%0A   --> src\virtio_gpu.rs:249:25%0A    |%0A248 |     (width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?%0A249 |         .checked_mul(4).map_err(|_|fail("GPU region overflow"))%0A    |                         ^^^^^^^%0A    |%0Ahelp: there is a method `map_or` with a similar name, but with different arguments%0A   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core\src\option.rs:1224:4%0A%0Aerror[E0599]: no method named `scanout` found for struct `ScanoutBackend` in the current scope%0A   --> src\whp_mmio.rs:786:33%0A    |%0A786 |             let surface=backend.scanout();%0A    |                                 ^^^^^^^%0A    |%0A   ::: src\virtio_gpu.rs:67:8%0A    |%0A 67 |     fn scanout(&self)->&Surface;%0A    |        ------- the method is available for `ScanoutBackend` here%0A...%0A 76 | pub struct ScanoutBackend {pub surface:Surface}%0A    | ------------------------- method `scanout` not found for this struct%0A    |%0A    = help: items from traits can only be used if the trait is in scope%0Ahelp: trait `GpuBackend` which provides `scanout` is implemented but not in scope; perhaps you want to import it%0A   --> src\whp.rs:18:5%0A    |%0A 18 +     use crate::virtio_gpu::GpuBackend;%0A    |%0Ahelp: there is a method `scanout_mut` with a similar name%0A    |%0A786 |             let surface=backend.scanout_mut();%0A    |                                        ++++%0A%0Awarning: unused variable: `x`%0A   --> src\virtio_gpu.rs:157:20%0A    |%0A157 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {%0A    |                    ^ help: if this is intentional, prefix it with an underscore: `_x`%0A    |%0A    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default%0A%0Awarning: unused variable: `y`%0A   --> src\virtio_gpu.rs:157:26%0A    |%0A157 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {%0A    |                          ^ help: if this is intentional, prefix it with an underscore: `_y`%0A%0ASome errors have detailed explanations: E0121, E0277, E0599.%0AFor more information about an error, try `rustc --explain E0121`.%0Awarning: `nexus-engine` (lib) generated 2 warnings%0Aerror: could not compile `nexus-engine` (lib) due to 17 previous errors; 2 warnings emitted%0Awarning: build failed, waiting for other jobs to finish...%0Awarning: `nexus-engine` (lib test) generated 2 warnings (2 duplicates)%0Aerror: could not compile `nexus-engine` (lib test) due to 17 previous errors; 2 warnings emitted%0A
+::error::virtio_gpu::Failure`%0A   --> src\virtio_gpu.rs:233:51%0A    |%0A224 | ...e_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {%0A    |                                                                                                                ------------------- expected `virtio_gpu::Failure` because of this%0A...%0A233 | ...nd.blit_to_scanout(x,y,width,height,&buf)?;%0A    |       --------------------------------------^ the trait `From<String>` is not implemented for `virtio_gpu::Failure`%0A    |       |%0A    |       this can't be annotated with `?` because it has type `Result<_, String>`%0A    |%0Anote: `virtio_gpu::Failure` needs to implement `From<String>`%0A   --> src\virtio_gpu.rs:117:1%0A    |%0A117 | enum Failure {Unsupported,Io(String)}%0A    | ^^^^^^^^^^^^%0A    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait%0A%0Aerror[E0599]: no method named `map_err` found for enum `Option<T>` in the current scope%0A   --> src\virtio_gpu.rs:250:25%0A    |%0A249 |     (width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?%0A250 |         .checked_mul(4).map_err(|_|fail("GPU region overflow"))%0A    |                         ^^^^^^^%0A    |%0Ahelp: there is a method `map_or` with a similar name, but with different arguments%0A   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core\src\option.rs:1224:4%0A%0Aerror[E0599]: no method named `scanout` found for struct `ScanoutBackend` in the current scope%0A   --> src\whp_mmio.rs:786:33%0A    |%0A786 |             let surface=backend.scanout();%0A    |                                 ^^^^^^^%0A    |%0A   ::: src\virtio_gpu.rs:68:8%0A    |%0A 68 |     fn scanout(&self)->&Surface;%0A    |        ------- the method is available for `ScanoutBackend` here%0A...%0A 77 | pub struct ScanoutBackend {pub surface:Surface}%0A    | ------------------------- method `scanout` not found for this struct%0A    |%0A    = help: items from traits can only be used if the trait is in scope%0Ahelp: trait `GpuBackend` which provides `scanout` is implemented but not in scope; perhaps you want to import it%0A   --> src\whp.rs:18:5%0A    |%0A 18 +     use crate::virtio_gpu::GpuBackend;%0A    |%0Ahelp: there is a method `scanout_mut` with a similar name%0A    |%0A786 |             let surface=backend.scanout_mut();%0A    |                                        ++++%0A%0Awarning: unused variable: `x`%0A   --> src\virtio_gpu.rs:158:20%0A    |%0A158 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {%0A    |                    ^ help: if this is intentional, prefix it with an underscore: `_x`%0A    |%0A    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default%0A%0Awarning: unused variable: `y`%0A   --> src\virtio_gpu.rs:158:26%0A    |%0A158 | fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {%0A    |                          ^ help: if this is intentional, prefix it with an underscore: `_y`%0A%0ASome errors have detailed explanations: E0121, E0277, E0599.%0AFor more information about an error, try `rustc --explain E0121`.%0Awarning: `nexus-engine` (lib) generated 2 warnings (1 duplicate)%0Aerror: could not compile `nexus-engine` (lib) due to 17 previous errors; 2 warnings emitted%0Awarning: build failed, waiting for other jobs to finish...%0Awarning: `nexus-engine` (lib test) generated 2 warnings (1 duplicate)%0Aerror: could not compile `nexus-engine` (lib test) due to 17 previous errors; 2 warnings emitted%0A
 
 STDERR:
 
