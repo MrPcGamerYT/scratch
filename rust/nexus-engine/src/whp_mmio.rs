@@ -705,7 +705,7 @@ pub fn platform_mmio_smoke()->Result<(),String> {
 /// the session. `verify` checks the readback bytes at guest offset 0x1b000.
 fn platform_device_session(
     long: bool,
-    f: &cpu::Fixture,
+    f: &crate::cpu::Fixture,
     base: u64,
     writes: &[(u32, u32)],
     loads: &[(u32, u32)],
