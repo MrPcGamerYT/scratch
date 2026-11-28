@@ -88,6 +88,17 @@ jobs:
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nGRAPHICS-PRESENT-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gfx.returncode, proc_gfx.stdout, proc_gfx.stderr))
           if proc_gfx.returncode: sys.exit(proc_gfx.returncode)
+          # Run the GPU presentation transport smoke: a real FILL_2D is rasterized
+          # by the virtio-gpu device into its scanout surface, then that actual
+          # rasterized surface is fed through the host D3D11 present() path and the
+          # readback pixels are verified byte-for-byte.
+          proc_gpu_present=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'gpu-present-smoke'],
+                                       capture_output=True,text=True,timeout=60)
+          if proc_gpu_present.stdout.strip(): print(proc_gpu_present.stdout.strip())
+          if proc_gpu_present.stderr.strip(): print(proc_gpu_present.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nGPU-PRESENT-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gpu_present.returncode, proc_gpu_present.stdout, proc_gpu_present.stderr))
+          if proc_gpu_present.returncode: sys.exit(proc_gpu_present.returncode)
           # Run the real audio backend smoke (WAV playback recording + tone capture).
           proc7=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-real-smoke'],
                                capture_output=True,text=True,timeout=60)

@@ -183,6 +183,65 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             println!("GRAPHICS_HOST_PRESENT={{\"backend\":\"Warp\",\"feature_level\":{level},\"adapter\":{:?},\"surface\":\"{}x{} XRGB8888\",\"pixels_verified\":true,\"transport\":\"staging->rendertarget->readback\",\"guest_acceleration_verified\":false,\"android_graphics_verified\":false}}",rendered.adapter,width,height);
             Ok(())
         }
+        Some("gpu-present-smoke") if args.len()==2 => {
+            use nexus_engine::graphics::{self,Backend};
+            use nexus_engine::virtio_gpu::{self,GpuBackend,ScanoutBackend,Surface,FORMAT_XRGB8888};
+            use nexus_engine::virtqueue::SplitQueue;
+            use nexus_engine::guest_memory::{GuestMemory,RamRegion};
+            // Guest RAM layout: descriptor table (0x1000), avail ring (0x2000),
+            // used ring (0x3000), FILL_2D header (0x4000), status byte (0x5000).
+            let mut ram=vec![0u8;0x10000];
+            let desc_base=0x1000u64;let avail=0x2000u64;let used=0x3000u64;
+            let header_addr=0x4000u64;let status_addr=0x5000u64;
+            // Descriptor 0: header (RO, 24 bytes, NEXT->1). Descriptor 1: status (WR, 1 byte).
+            let descs=[(desc_base,header_addr,24u32,1u16,1u16),(desc_base+16,status_addr,1,2,0)];
+            for (base,address,length,flags,next) in descs {
+                let b=base as usize;
+                ram[b..b+8].copy_from_slice(&address.to_le_bytes());
+                ram[b+8..b+12].copy_from_slice(&length.to_le_bytes());
+                ram[b+12..b+14].copy_from_slice(&flags.to_le_bytes());
+                ram[b+14..b+16].copy_from_slice(&next.to_le_bytes());
+            }
+            // FILL_2D header: opcode=4, color=0x00ff0000 (red), x=0, y=0, w=4, h=4.
+            ram[0x4000..0x4004].copy_from_slice(&4u32.to_le_bytes());
+            ram[0x4004..0x4008].copy_from_slice(&0x00ff0000u32.to_le_bytes());
+            ram[0x4008..0x400c].copy_from_slice(&0u32.to_le_bytes());
+            ram[0x400c..0x4010].copy_from_slice(&0u32.to_le_bytes());
+            ram[0x4010..0x4014].copy_from_slice(&4u32.to_le_bytes());
+            ram[0x4014..0x4018].copy_from_slice(&4u32.to_le_bytes());
+            // Avail ring: flags=0, index=1, head=0. Used ring: flags=0, index=0, head=0.
+            ram[0x2000..0x2002].copy_from_slice(&0u16.to_le_bytes());
+            ram[0x2002..0x2004].copy_from_slice(&1u16.to_le_bytes());
+            ram[0x2004..0x200c].copy_from_slice(&0u64.to_le_bytes());
+            ram[0x3000..0x3002].copy_from_slice(&0u16.to_le_bytes());
+            ram[0x3002..0x300a].copy_from_slice(&0u64.to_le_bytes());
+            let mut memory=GuestMemory::new(vec![RamRegion{gpa:0,bytes:&mut ram,writable:true}]).map_err(|e|e.to_string())?;
+            let mut queue=SplitQueue::new(&memory,8,desc_base,avail,used).map_err(|e|e.to_string())?;
+            // Allocate the 8x8 XRGB8888 scanout surface (pitch 32) the device rasterizes into.
+            let mut backend=ScanoutBackend{surface:Surface::allocate(8,8,FORMAT_XRGB8888,32).map_err(|e|e.to_string())?};
+            // Drive the real FILL_2D command through the device dispatcher.
+            let completion=virtio_gpu::process_one(&mut memory,&mut queue,&mut backend).map_err(|e|e.to_string())?
+                .ok_or("GPU command queue produced no completion".to_string())?;
+            if completion.status!=0 {return Err(format!("GPU FILL_2D completion status {}",completion.status));}
+            // Verify the device actually rasterized the 4x4 red rectangle into the scanout.
+            let surface=backend.scanout();
+            if surface.width!=8||surface.height!=8||surface.pitch!=32 {return Err("GPU scanout surface geometry mismatch".into());}
+            let red=[0x00u8,0x00,0xff,0x00];
+            for row in 0..4u32 {
+                let start=(row as usize)*32;
+                for col in 0..4u32 {
+                    let at=start+(col as usize)*4;
+                    if surface.data[at..at+4]!=red {return Err("GPU rasterized fill pixel mismatch".into());}
+                }
+            }
+            // Close the loop: feed the actual GPU-rasterized scanout surface through
+            // the host D3D11 presentation transport and verify byte-preserving readback.
+            let rendered=graphics::present(Backend::Warp,surface)?;
+            if rendered.pixels!=surface.data {return Err("D3D11 present readback pixels do not match GPU-rasterized scanout".into());}
+            let level=rendered.feature_level;
+            println!("GPU_PRESENT_TRANSPORT={{\"backend\":\"Warp\",\"feature_level\":{level},\"adapter\":{:?},\"surface\":\"{}x{} XRGB8888\",\"fill_rasterized\":true,\"pixels_verified\":true,\"transport\":\"gpu-rasterize->d3d11-staging->rendertarget->readback\",\"guest_acceleration_verified\":false,\"android_graphics_verified\":false}}",rendered.adapter,surface.width,surface.height);
+            Ok(())
+        }
         Some("player-window-smoke") if args.len()==2 => {
             use std::sync::atomic::Ordering;
             let window=nexus_engine::player::Window::open()?;
@@ -229,7 +288,7 @@ fn execute(args:&[String],start:std::time::Instant)->Result<(),String> {
             }
         }
         Some("boot") => Err("Android boot is not implemented. Refusing to pretend this is a working emulator or launch QEMU.".into()),
-        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | net-smoke | net-mmio-smoke | audio-smoke | audio-real-smoke | audio-mmio-smoke | platform-mmio-smoke | gpu-mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | firmware-boot-smoke | kernel-contract-smoke | physical-check | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | probe-android-init-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init probe only, not Android Home) | probe-android-init-open <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <existing-overlay.cow> | probe-android-observe-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init + userspace observe) | probe-android-home-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (clean-launch usable-Home certification, no APK; pair with --bridge-home-check) | graphics-smoke-hardware <NEW-64x64.rgba> | graphics-smoke-warp <NEW-64x64.rgba> | graphics-present-smoke | capabilities (boot-kernel accepts experimental --apic-probe with --cpus=1..8 (headless Linux initramfs/disk, no Android/player); kernel boot commands accept trailing --bridge-probe (query-only integration checkpoint), --bridge-home-check (clean-launch Android Home certification), --bridge-apk-smoke=<apk> (APK install over COM2), --window (software console player), --ram-mib=128..3072, --renderer=software|hardware (software is the only implemented renderer; hardware is refused) and --framebuffer=NEW-file.ppm; software scanout, not GPU acceleration)".into())
+        _ => Err("Usage: nexus-engine import-raw <stopped-raw.img> <new-gustimg.zlag> | verify <gustimg.zlag> | whp-probe | cpu-smoke | io-smoke | cancel-smoke | protected-smoke | long-smoke | timer-irq-smoke | mmio-smoke | net-smoke | net-mmio-smoke | audio-smoke | audio-real-smoke | audio-mmio-smoke | platform-mmio-smoke | gpu-mmio-smoke | ata-pio-smoke <test.zlag> | ata-cow-smoke <test.zlag> <NEW-overlay.cow> | boot-test-sector <test.zlag> | firmware-boot-smoke | kernel-contract-smoke | physical-check | inspect-kernel <bzImage> | boot-kernel <bzImage> <NEW-serial.log> <cmdline> [initramfs] | boot-kernel-disk-create <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <NEW-overlay.cow> | boot-kernel-disk-open <bzImage> <NEW-serial.log> <cmdline> <initramfs> <base.zlag> <existing-overlay.cow> | probe-android-init-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init probe only, not Android Home) | probe-android-init-open <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <existing-overlay.cow> | probe-android-observe-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (second-stage init + userspace observe) | probe-android-home-create <bzImage> <NEW-serial.log> <cmdline> <original-initrd> <base.zlag> <NEW-overlay.cow> (clean-launch usable-Home certification, no APK; pair with --bridge-home-check) | graphics-smoke-hardware <NEW-64x64.rgba> | graphics-smoke-warp <NEW-64x64.rgba> | graphics-present-smoke | gpu-present-smoke | capabilities (boot-kernel accepts experimental --apic-probe with --cpus=1..8 (headless Linux initramfs/disk, no Android/player); kernel boot commands accept trailing --bridge-probe (query-only integration checkpoint), --bridge-home-check (clean-launch Android Home certification), --bridge-apk-smoke=<apk> (APK install over COM2), --window (software console player), --ram-mib=128..3072, --renderer=software|hardware (software is the only implemented renderer; hardware is refused) and --framebuffer=NEW-file.ppm; software scanout, not GPU acceleration)".into())
     }
 }
 fn main() { let start=std::time::Instant::now(); if let Err(error)=execute(&std::env::args().collect::<Vec<_>>(),start) { eprintln!("Nexus native engine: {error}"); std::process::exit(1); } }
