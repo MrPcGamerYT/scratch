@@ -221,6 +221,19 @@ jobs:
           from pathlib import Path
           os.makedirs('.ci-diag',exist_ok=True)
           lines=[]
+          # Read the checkpoint JSON (written before asserts; not overwritten).
+          ckpt={}
+          try:
+              ckpt=json.loads(Path('native-home-checkpoint.json').read_text())
+              lines.append('CHECKPOINT_ENGINE_EXIT='+str(ckpt.get('engine_exit')))
+              lines.append('CHECKPOINT_BRIDGE_VERIFIED='+str(ckpt.get('bridge_home_verified')))
+              stdout=ckpt.get('stdout','') or ''
+              for marker in ['NATIVE_BRIDGE_EVENT HELLO','NATIVE_BRIDGE_EVENT NEXUS 1 READY 1','NATIVE_BRIDGE_EVENT NEXUS 1 CHECK_HOME_SENT','NATIVE_BRIDGE_EVENT NEXUS 1 HOME_CHECK_OK','NATIVE_BRIDGE_HOME_VERIFIED','NATIVE_BRIDGE_QUERY_OK']:
+                  if marker in stdout: lines.append('ENGINE_STDOUT_MARKER '+marker)
+              lines.append('ENGINE_STDERR_TAIL='+repr((ckpt.get('stderr','') or '')[-800:]))
+              lines.append('METRICS='+json.dumps(ckpt.get('metrics',{})))
+          except Exception as e:
+              lines.append('CHECKPOINT_READ_FAILED='+str(e))
           try:
               summary=json.loads(Path('native-home-gate-summary.json').read_text())
               lines.append('HOME_GATE_SUMMARY='+json.dumps(summary))
@@ -228,6 +241,9 @@ jobs:
               lines.append('HOME_GATE_SUMMARY_UNAVAILABLE='+str(e))
           try:
               serial=Path('native-home-serial.log').read_text(errors='replace')
+              lines.append('SERIAL_LEN='+str(len(serial)))
+              lines.append('SERIAL_HEAD='+repr(serial[:1500]))
+              lines.append('SERIAL_TAIL='+repr(serial[-1500:]))
               for marker in ['NEXUS_HOME_SELECTED','NEXUS_HOME_PROCESS_READY','NEXUS_HOME_PID_BEFORE','NEXUS_HOME_PID_AFTER','NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_WINDOW_VISIBLE','NEXUS_HOME_FRAME_STATS_BEGIN','NEXUS_HOME_ACTIVITY_STATE_BEGIN','NEXUS_HOME_CRASH_LOG_BEGIN','NEXUS_HOME_ANR_BEGIN','NATIVE_BRIDGE_EVENT HELLO','NATIVE_BRIDGE_EVENT NEXUS 1 READY 1','NATIVE_BRIDGE_HOME_VERIFIED']:
                   if marker in serial: lines.append('MARKER '+marker)
               anr=re.findall(r'(?m)^.*(?:ANR in|Not responding).*$',serial)

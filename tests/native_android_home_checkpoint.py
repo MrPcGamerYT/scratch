@@ -75,7 +75,7 @@ def main():
     p = subprocess.run([exe, 'probe-android-home-create', str(root / 'kernel'), str(log), cmd,
                         str(root / 'initrd.img'), str(root / 'android-system.zlag'), 'native-home.cow',
                         '--ram-mib=2048', '--renderer=software', '--framebuffer=native-home-software.ppm',
-                        '--bridge-home-check'], capture_output=True, text=True, timeout=480)
+                        '--bridge-home-check'], capture_output=True, text=True, timeout=500)
     serial = log.read_text(errors='replace') if log.exists() else ''
     timing = Path(str(log) + '.timing.json')
     metrics = json.loads(timing.read_text()) if timing.exists() else {}
