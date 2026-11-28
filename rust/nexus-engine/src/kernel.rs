@@ -64,7 +64,7 @@ impl AudioBackendKind {
 #[derive(Debug)]
 pub struct KernelPlan {
     pub dma_failure:Option<DmaFailure>,pub cpu_count:u32,pub apic_probe:bool,pub regions:Vec<Region>, pub ram_bytes:usize,pub entry:u64,pub protocol:u16,
-    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub bridge_home_check:bool,pub player:Option<std::sync::Arc<crate::player::Session>>,pub renderer:Renderer,pub net_probe:bool,pub audio_probe:bool,pub audio_backend:AudioBackendKind,
+    pub runtime_end:usize,pub initrd_address:Option<usize>,pub framebuffer_output:Option<std::path::PathBuf>,pub android_init_probe:bool,pub android_observe:bool,pub bridge_probe:bool,pub bridge_apk:Option<std::path::PathBuf>,pub bridge_home_check:bool,pub player:Option<std::sync::Arc<crate::player::Session>>,pub renderer:Renderer,pub net_probe:bool,pub audio_probe:bool,pub audio_backend:AudioBackendKind,pub gpu_probe:bool,
 }
 impl KernelPlan {
     pub fn build(image:&[u8],initrd:Option<&[u8]>,command:&str,ram:usize)->Result<Self,String> {
@@ -118,7 +118,7 @@ impl KernelPlan {
             put32(&mut regions[0].bytes,0x218,at as u32);put32(&mut regions[0].bytes,0x21c,data.len() as u32);
             regions.push(Region{address:at,bytes:data.to_vec()});initrd_address=Some(at);
         }
-        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,bridge_home_check:false,player:None,renderer:Renderer::Software,net_probe:false,audio_probe:false,audio_backend:AudioBackendKind::Null};p.validate_regions()?;Ok(p)
+        let p=Self{dma_failure:None,cpu_count:1,apic_probe:false,regions,ram_bytes:ram,entry:address as u64,protocol,runtime_end,initrd_address,framebuffer_output:None,android_init_probe:false,android_observe:false,bridge_probe:false,bridge_apk:None,bridge_home_check:false,player:None,renderer:Renderer::Software,net_probe:false,audio_probe:false,audio_backend:AudioBackendKind::Null,gpu_probe:false};p.validate_regions()?;Ok(p)
     }
     /// Linux early TSC calibration handoff for vendors which don't consume CPUID15.
     /// Kernel versions lacking this parameter still need a verified clocksource gate.
@@ -148,12 +148,17 @@ impl KernelPlan {
     pub fn with_net_probe(mut self)->Self {self.net_probe=true;self}
     pub fn with_audio_probe(mut self)->Self {self.audio_probe=true;self}
     pub fn with_audio_backend_real(mut self)->Self {self.audio_backend=AudioBackendKind::Real;self}
+    /// Activate the VirtIO-MMIO GPU device for the boot. The GPU device is
+    /// constructed and wired into the platform at `MMIO_GPU_BASE`; a guest OS
+    /// with a VirtIO-GPU driver can then negotiate and submit 2D commands.
+    pub fn with_gpu_probe(mut self)->Self {self.gpu_probe=true;self}
     pub fn validate_regions(&self)->Result<(),String> {
         if self.dma_failure.is_some()&&(!self.apic_probe||self.cpu_count<2) {return Err("DMA failure injection requires SMP/APIC".into());}
         if !(1..=8).contains(&self.cpu_count)||(!self.apic_probe&&self.cpu_count!=1) {return Err("Multiple CPUs require the explicit APIC profile (1..8 CPUs)".into());}
         if self.renderer==Renderer::Hardware {return Err("Hardware renderer is not implemented; guest GPU acceleration is unavailable, use software".into());}
         if self.net_probe&&self.apic_probe {return Err("Net device probe requires the single-vCPU platform path, not the APIC profile".into());}
         if self.audio_probe&&self.apic_probe {return Err("Audio device probe requires the single-vCPU platform path, not the APIC profile".into());}
+        if self.gpu_probe&&self.apic_probe {return Err("GPU device probe requires the single-vCPU platform path, not the APIC profile".into());}
         if self.audio_backend==AudioBackendKind::Real&&!self.audio_probe {return Err("Real audio backend requires the audio device probe (--audio-probe)".into());}
         for (i,r) in self.regions.iter().enumerate() {
             let end=r.address.checked_add(r.bytes.len()).ok_or("Kernel region overflow")?;
@@ -207,6 +212,15 @@ mod tests {
         p.validate_regions().unwrap();
         p.apic_probe=true;p.cpu_count=2;
         assert!(p.validate_regions().is_err(),"audio_probe must be refused with APIC profile");
+    }
+    #[test] fn gpu_probe_requires_single_vcpu_platform_path() {
+        let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();
+        assert!(!p.gpu_probe);
+        p=p.with_gpu_probe();
+        assert!(p.gpu_probe);
+        p.validate_regions().unwrap();
+        p.apic_probe=true;p.cpu_count=2;
+        assert!(p.validate_regions().is_err(),"gpu_probe must be refused with APIC profile");
     }
     #[test] fn real_audio_backend_requires_audio_probe() {
         let mut p=KernelPlan::build(&contract_image(),None,"nexus",DEFAULT_RAM).unwrap();

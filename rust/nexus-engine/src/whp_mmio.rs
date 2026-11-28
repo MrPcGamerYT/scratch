@@ -234,9 +234,7 @@ impl LiveSpi {
 /// Live VirtIO-GPU device: same MMIO emulation pattern, but services the
 /// command queue with a scanout backend. Activated only when a GPU device is
 /// requested; the software boot path is unaffected.
-#[allow(dead_code)]
 struct LiveGpu {context:MmioContext,emulator:Emulator,backend:crate::virtio_gpu::ScanoutBackend}
-#[allow(dead_code)]
 impl LiveGpu {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;
