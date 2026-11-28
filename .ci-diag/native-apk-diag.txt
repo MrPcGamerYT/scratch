@@ -1,15 +1,4 @@
 GATE_SUMMARY={"failure": "pre-summary", "error": "Real APK gate failed: Starting experimental Linux entry at 0x200000; polled serial log: native-apk-serial.log. Full kernel/platform boot is NOT implemented.\nNexus native engine: APK bridge installation/verification failed or response out of order; mode=Long64, RIP=0xffffffff81d33ba9\n", "traceback_tail": "Traceback (most recent call last):\n  File \"tests/native_android_apk_checkpoint.py\", line 119, in <module>\n    try: main()\n         ^^^^^^\n  File \"tests/native_android_apk_checkpoint.py\", line 82, in main\n    assert p.returncode==0,'Real APK gate failed: '+p.stderr[-1000:]\n           ^^^^^^^^^^^^^^^\nAssertionError: Real APK gate failed: Starting experimental Linux entry at 0x200000; polled serial log: native-apk-serial.log. Full kernel/platform boot is NOT implemented.\nNexus native engine: APK bridge installation/verification failed or response out of order; mode=Long64, RIP=0xffffffff81d33ba9\n\n"}
-MARKER NEXUS_HOME_SELECTED
-MARKER NEXUS_HOME_PROCESS_READY
-MARKER NEXUS_HOME_PID_BEFORE
-MARKER NEXUS_HOME_PID_AFTER
-MARKER NEXUS_HOME_PROCESS_RETAINED
-MARKER NEXUS_HOME_WINDOW_VISIBLE
-MARKER NEXUS_HOME_FRAME_STATS_BEGIN
-MARKER NEXUS_HOME_ACTIVITY_STATE_BEGIN
-MARKER NEXUS_HOME_CRASH_LOG_BEGIN
-MARKER NEXUS_ANR_BASELINE_BEGIN
 MARKER NEXUS_ANDROID_REAL_APK_PRESENT
 MARKER NEXUS_ANDROID_REAL_APK_UNINSTALLED
 ANR_DEFINITIVE_LINES=none
-HOME_SELECTED=com.android.launcher3/com.bliss.launcher.BlissLauncher
