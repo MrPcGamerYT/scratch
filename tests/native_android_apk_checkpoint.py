@@ -61,6 +61,23 @@ def main():
         for at in range(0,len(text),2800):
             message=f'REAL_APK_{label}_{at}='+text[at:at+2800]
             print('::notice::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
+    # Compact, downloadable gate summary (no large log blobs) so a failed run's
+    # exact failing assertion and key evidence are retrievable from a small artifact.
+    home=result['home_activity_evidence'];scan=result.get('scanout') or {}
+    compact={'base_unchanged':result['base_unchanged'],'engine_exit':result['exit'],
+            'bridge_service_connected':result['bridge_service_connected'],'android_boot_completed':result['android_boot_completed'],
+            'apk_begin_acknowledged':result['apk_begin_acknowledged'],'installer_reported_ok':result['installer_reported_ok'],
+            'anr_baseline_captured':result['anr_baseline_captured'],
+            'home_selected':home['selected_component'],'home_activity_resumed':home['home_activity_resumed'],
+            'crash_capture_complete':home['crash_capture_complete'],'frame_duration_abort_observed':home['frame_duration_abort_observed'],
+            'captured_native_crash':home['captured_native_crash'],'window_visible':home['window_visible'],
+            'launcher_process_ready':home['launcher_process_ready'],'launcher_reported_frames':home['launcher_reported_frames'],
+            'keyevent_commands_completed':home['keyevent_commands_completed'],
+            'scanout_nonuniform':bool(scan.get('nonuniform')),'scanout_size':scan.get('size'),'scanout_unique_colors':scan.get('unique_colors'),
+            'renderer':metrics.get('renderer'),'android_home_ready_ms':metrics.get('android_home_ready_ms'),
+            'total_boot_verified':metrics.get('total_boot_verified'),
+            'anr_summary':{k:v for k,v in result['anr_evidence'].items() if k!='packages'}}
+    Path('native-apk-gate-summary.json').write_text(json.dumps(compact,indent=2))
     assert result['base_unchanged'],'Source derived disk was mutated'
     assert p.returncode==0,'Real APK gate failed: '+p.stderr[-1000:]
     assert 'NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK' in p.stdout
@@ -93,5 +110,9 @@ def main():
 if __name__=='__main__':
     try: main()
     except Exception as error:
+        import traceback as _tb
+        try:
+            Path('native-apk-gate-summary.json').write_text(json.dumps({'failure':'pre-summary','error':str(error)[-1500:],'traceback_tail':_tb.format_exc()[-1500:]},indent=2))
+        except Exception: pass
         print('::error::'+str(error)[-2000:].replace('%','%25').replace('\n','%0A'),flush=True)
         raise
