@@ -184,7 +184,7 @@ impl LiveAudio {
         if self.context.device.work_pending() {
             let ram=unsafe {std::slice::from_raw_parts_mut(self.context.ram,self.context.bytes)};
             let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
-            if let MmioDevice::Audio(device)=&mut self.context.device {device.service(&mut memory,&mut self.backend,256)?;}
+            if let MmioDevice::Audio(device)=&mut self.context.device {device.service(&mut memory,&mut *self.backend,256)?;}
         }
         Ok(())
     }

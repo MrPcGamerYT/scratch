@@ -95,7 +95,7 @@ impl AudioBackend for RealBackend {
             chunk.copy_from_slice(&(v as i16).to_le_bytes());
             self.tone_phase=(self.tone_phase+1)&0xffff;
         }
-        for b in chunks.remainder() {*b=0;}
+        for b in chunks.into_remainder() {*b=0;}
         self.captured+=n as u64;Ok(n)
     }
 }
@@ -153,8 +153,8 @@ pub fn process_one(m:&mut GuestMemory<'_>,queue:&mut SplitQueue,backend:&mut dyn
 /// CPU, or host audio device required.
 pub fn audio_real_smoke()->Result<(),String> {
     use crate::guest_memory::RamRegion;
-    let ram=vec![0u8;0x4000];
-    let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram.len(),writable:true}]).map_err(|e|e.to_string())?;
+    let ram=Box::leak(Box::new(vec![0u8;0x4000]));
+    let mut m=GuestMemory::new(vec![RamRegion{gpa:0,bytes:ram,writable:true}]).map_err(|e|e.to_string())?;
     // TX (playback): sample descriptor (read-only) + status descriptor (writable).
     let tx_desc=0x1000u64;
     m.write(tx_desc,&desc_for(0x800,64,false,1))?;
