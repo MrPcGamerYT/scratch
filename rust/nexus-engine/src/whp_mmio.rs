@@ -190,7 +190,9 @@ impl LiveAudio {
 /// Live GPIO device: MMIO emulation with no backend. The controller's registers
 /// are accessed directly through the emulator callback; work_pending is always
 /// false for GPIO so no service step is needed.
+#[allow(dead_code)]
 struct LiveGpio {context:MmioContext,emulator:Emulator}
+#[allow(dead_code)]
 impl LiveGpio {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;
@@ -200,7 +202,9 @@ impl LiveGpio {
 
 /// Live I2C device: MMIO emulation with no backend. Transfers complete
 /// synchronously in the register write path, so no service step is needed.
+#[allow(dead_code)]
 struct LiveI2c {context:MmioContext,emulator:Emulator}
+#[allow(dead_code)]
 impl LiveI2c {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;
@@ -210,7 +214,9 @@ impl LiveI2c {
 
 /// Live SPI device: MMIO emulation with no backend. Transfers complete
 /// synchronously in the register write path, so no service step is needed.
+#[allow(dead_code)]
 struct LiveSpi {context:MmioContext,emulator:Emulator}
+#[allow(dead_code)]
 impl LiveSpi {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;
@@ -697,18 +703,18 @@ pub fn platform_mmio_smoke()->Result<(),String> {
                         8=>return Ok(Ok(())),
                         1=>{
                             let gpa=u64::from_le_bytes(exit.0[48..56].try_into().unwrap());
-                            if gpa>=MMIO_GPIO_BASE&&gpa<MMIO_GPIO_BASE+4096 {
+                            if (MMIO_GPIO_BASE..MMIO_GPIO_BASE+4096).contains(&gpa) {
                                 emulator.emulate(&mut gpio_ctx,&exit,long)?;
                                 accesses_total+=gpio_ctx.accesses;translations_total+=gpio_ctx.translations;
-                            } else if gpa>=MMIO_I2C_BASE&&gpa<MMIO_I2C_BASE+4096 {
+                            } else if (MMIO_I2C_BASE..MMIO_I2C_BASE+4096).contains(&gpa) {
                                 emulator.emulate(&mut i2c_ctx,&exit,long)?;
                                 accesses_total+=i2c_ctx.accesses;translations_total+=i2c_ctx.translations;
-                            } else if gpa>=MMIO_SPI_BASE&&gpa<MMIO_SPI_BASE+4096 {
+                            } else if (MMIO_SPI_BASE..MMIO_SPI_BASE+4096).contains(&gpa) {
                                 emulator.emulate(&mut spi_ctx,&exit,long)?;
                                 accesses_total+=spi_ctx.accesses;translations_total+=spi_ctx.translations;
                             } else {return Err(format!("Unexpected platform MMIO smoke GPA 0x{gpa:x}"));}
                         },
-                        2=>return Err(format!("Unexpected platform MMIO smoke port exit")),
+                        2=>return Err("Unexpected platform MMIO smoke port exit".to_string()),
                         reason=>return Err(format!("Unexpected platform MMIO fixture exit 0x{reason:x}"))
                     }
                 }Ok(Err("Platform MMIO fixture exit budget exceeded".to_string()))
