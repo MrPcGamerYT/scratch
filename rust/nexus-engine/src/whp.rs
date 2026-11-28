@@ -704,6 +704,24 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                     let context=run_once(partition)?;
                     match context.reason() {
                         8=>return Ok(Ok(())),
+                        1=>{
+                            // RAM memory access (the firmware writes the POST marker and
+                            // stores the boot sector). Perform the write and advance RIP.
+                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+                            let rip=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
+                            let gpa=u64::from_le_bytes(context.0[48..56].try_into().unwrap());
+                            let direction=context.0[56];
+                            let size=context.0[57] as usize;
+                            if size==0||size>8 {return Err(format!("Unsupported firmware memory access size {size}"));}
+                            let end=gpa.checked_add(size as u64).ok_or("Firmware memory address overflow")?;
+                            if end>memory.bytes as u64 {return Err(format!("Firmware memory access outside RAM: 0x{gpa:x}"));}
+                            if direction==1 {
+                                let ram=unsafe {std::slice::from_raw_parts_mut(memory.address.cast::<u8>(),memory.bytes)};
+                                ram[gpa as usize..end as usize].copy_from_slice(&context.0[58..58+size]);
+                            }
+                            let next=mode.next_rip(rip,context.0[10]&15)?;
+                            set_registers(partition,&[0x10],&[Register::scalar(next)])?;
+                        }
                         2=>{
                             let io=crate::io::IoExit::decode(&context.0)?;
                             let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
