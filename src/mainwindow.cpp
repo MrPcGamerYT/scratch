@@ -300,6 +300,41 @@ void MainWindow::launch() {
         if (process->state() == QProcess::NotRunning) view->setStartupStatus("Android could not start", "Open Settings → Diagnostics. The prepared image and your personal disk have not been reset.");
     });
     const QString root = QCoreApplication::applicationDirPath();
+    const QSettings s;
+    // Native engine launch path: when the "nativeEngine" setting is enabled,
+    // launch the independent Rust engine (nexus-engine.exe) with boot-kernel
+    // + --window + --gpu-probe instead of the QEMU-based NexusEngine.exe. The
+    // findGuestWindow()/attach() embed mechanism is process-ID based and works
+    // unchanged for the native engine's Win32 player window.
+    if (s.value("nativeEngine", false).toBool()) {
+        QStringList enginePaths = {root + "/qemu/bin/nexus-engine.exe", root + "/bin/nexus-engine.exe", root + "/nexus-engine.exe"};
+        QString enginePath;
+        for (const QString &candidate : enginePaths) { if (QFileInfo(candidate).isFile()) { enginePath = candidate; break; } }
+        if (enginePath.isEmpty()) { QMessageBox::critical(this, "Native engine unavailable", "The independent Rust engine (nexus-engine.exe) was not found. Reinstall the complete player package or disable the native engine setting."); return; }
+        const QString kernelPath = root + "/images/kernel";
+        const QString initramfsPath = root + "/images/android-initramfs.cpio";
+        if (!QFileInfo(kernelPath).isFile()) { QMessageBox::critical(this, "Kernel unavailable", "The native engine boot kernel was not found at images/kernel. Provide the Android bzImage or disable the native engine setting."); return; }
+        if (!QFileInfo(initramfsPath).isFile()) { QMessageBox::critical(this, "Initramfs unavailable", "The native engine initramfs was not found at images/android-initramfs.cpio. Provide the initramfs or disable the native engine setting."); return; }
+        const auto resources = selectedResources(s);
+        const int ram = static_cast<int>(resources.memory_mb);
+        hideGuestBoot = s.value("hideBoot", true).toBool();
+        view->setGuestVisible(!hideGuestBoot);
+        selectAppKeymap(QString());
+        runningMultiTouch = s.value("multiTouch", false).toBool();
+        runningAdbForward = s.value("adbForward", false).toBool();
+        bootReady = false; telemetryConnected = false; telemetryFailures = 0; telemetryFailureTime.invalidate();
+        const QString serialLog = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/native-engine-serial.log";
+        const QString cmdline = "earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nokaslr noapic nolapic acpi=off pci=off maxcpus=1 panic=-1";
+        QStringList args;
+        args << "boot-kernel" << kernelPath << serialLog << cmdline << initramfsPath;
+        args << QString("--ram-mib=%1").arg(ram);
+        args << "--window" << "--gpu-probe" << "--bridge-home-check";
+        view->setStartupStatus("Starting Android (native engine)", "Launching the independent Rust engine with the VirtIO-GPU device and native player window.", true);
+        process->setProgram(enginePath); process->setArguments(args); qmp->reset(); setRunning(true); embedAttempts = 0; embedTimer->start(250); bootWait.start(); process->start();
+        setWindowTitle("Project Nexus · Native engine");
+        statusBar()->showMessage("Starting Android with the native Rust engine...");
+        return;
+    }
     const QString base = root + "/images/android-base.qcow2";
     const QString qemu = root + "/qemu/bin/NexusEngine.exe";
     const QString img = root + "/qemu/bin/qemu-img.exe";
