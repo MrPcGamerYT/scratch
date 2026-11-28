@@ -164,9 +164,12 @@ jobs:
           subprocess.run(['git','config','user.name','Nexus CI'])
           subprocess.run(['git','add','.ci-diag'])
           subprocess.run(['git','commit','-q','-m','ci-diag: native-apk failure diagnostics'])
+          branch=os.environ.get('GITHUB_REF','refs/heads/main').split('/',2)[-1]
+          subprocess.run(['git','fetch','-q','origin',branch])
+          subprocess.run(['git','rebase','-q','origin/'+branch])
           subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])
   home:
-    needs: assets
+    needs: [assets, apk]
     if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
     runs-on: windows-2022
     timeout-minutes: 15
@@ -233,4 +236,7 @@ jobs:
           subprocess.run(['git','config','user.name','Nexus CI'])
           subprocess.run(['git','add','.ci-diag'])
           subprocess.run(['git','commit','-q','-m','ci-diag: native-home failure diagnostics'])
+          branch=os.environ.get('GITHUB_REF','refs/heads/main').split('/',2)[-1]
+          subprocess.run(['git','fetch','-q','origin',branch])
+          subprocess.run(['git','rebase','-q','origin/'+branch])
           subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])
