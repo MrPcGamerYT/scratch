@@ -656,7 +656,7 @@ pub fn platform_mmio_smoke()->Result<(),String> {
             &[(0x00,0xffffffff),(0x04,0xdeadbeef),(0x0c,0x42)],
             &[(0x00,0x1b000),(0x04,0x1b004),(0x08,0x1b008),(0x0c,0x1b00c)],
             MmioDevice::Gpio(crate::gpio::GpioController::new()),
-            |b: &[u8]| {
+            &|b: &[u8]| {
                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());
                 let gpio_out=u32::from_le_bytes(b[0x04..0x08].try_into().unwrap());
                 let gpio_inp=u32::from_le_bytes(b[0x08..0x0c].try_into().unwrap());
@@ -672,7 +672,7 @@ pub fn platform_mmio_smoke()->Result<(),String> {
             &[(0x00,0x01),(0x08,0x50),(0x0c,0xab)],
             &[(0x04,0x1b010),(0x08,0x1b014),(0x0c,0x1b018)],
             MmioDevice::I2c(crate::i2c::I2cController::new()),
-            |b: &[u8]| {
+            &|b: &[u8]| {
                 let i2c_sts=u32::from_le_bytes(b[0x10..0x14].try_into().unwrap());
                 let i2c_addr=u32::from_le_bytes(b[0x14..0x18].try_into().unwrap());
                 let i2c_data=u32::from_le_bytes(b[0x18..0x1c].try_into().unwrap());
@@ -686,7 +686,7 @@ pub fn platform_mmio_smoke()->Result<(),String> {
             &[(0x00,0x01),(0x08,0x10),(0x0c,0xa5)],
             &[(0x04,0x1b020),(0x10,0x1b024),(0x08,0x1b028)],
             MmioDevice::Spi(crate::spi::SpiController::new()),
-            |b: &[u8]| {
+            &|b: &[u8]| {
                 let spi_sts=u32::from_le_bytes(b[0x20..0x24].try_into().unwrap());
                 let spi_rx=u32::from_le_bytes(b[0x24..0x28].try_into().unwrap());
                 let spi_clk=u32::from_le_bytes(b[0x28..0x2c].try_into().unwrap());
