@@ -15,6 +15,17 @@ pub fn reference()->Vec<u8> {
 pub fn render(_:Backend)->Result<Rendered,String> {Err("Direct3D host renderer requires Windows".into())}
 #[cfg(windows)]
 pub use windows::render;
+
+/// Present a VirtIO-GPU scanout surface through the host D3D11 texture pipeline:
+/// upload the surface pixels to a CPU-writable staging texture, copy through a
+/// GPU-side render-target texture, then read back and return the pixels. This is
+/// the host transport path for guest GPU scanout -- not a guest GPU or Android
+/// acceleration. `Backend` selects the D3D11 device (WARP for deterministic
+/// transport validation; Hardware requires a non-software adapter).
+#[cfg(not(windows))]
+pub fn present(_:Backend,_:&crate::virtio_gpu::Surface)->Result<Rendered,String> {Err("Direct3D host presenter requires Windows".into())}
+#[cfg(windows)]
+pub use windows::present;
 #[cfg(windows)]
 mod windows {
     use super::*;
@@ -109,6 +120,68 @@ mod windows {
             let removed:unsafe extern "system" fn(Ptr)->i32=std::mem::transmute(device.method(39));check(removed(device.0),"device status")?;
             if pixels!=reference() {return Err("D3D11 shader/readback pixel mismatch".into());}
             Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:adapter_desc.vendor,device_id:adapter_desc.device,software_adapter,adapter_flags:adapter_desc.flags})
+        }
+
+        /// Upload a VirtIO-GPU scanout surface through the D3D11 texture pipeline
+        /// and read it back. Exercises the host transport path: CPU staging texture
+        /// -> GPU render-target texture -> CPU readback, byte-preserving for a
+        /// same-format (R8G8B8A8_UNORM) copy.
+        pub fn present(backend:Backend,surface:&crate::virtio_gpu::Surface)->Result<Rendered,String> {
+            let null=std::ptr::null_mut();
+            unsafe {
+                let mut device=Com(null);let mut context=Com(null);let mut level=0;
+                let levels=[0xb000,0xa100,0xa000];
+                let hr=D3D11CreateDevice(null,if backend==Backend::Hardware {1} else {5},null,0x20,levels.as_ptr(),levels.len() as u32,7,&mut device.0,&mut level,&mut context.0);
+                if hr<0 {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend={backend:?} HRESULT=0x{:08x}",hr as u32));}
+                let query:unsafe extern "system" fn(Ptr,*const Guid,*mut Ptr)->i32=std::mem::transmute(device.method(0));
+                let mut dxgi=Com(null);
+                check(query(device.0,&Guid{a:0x54ec77fa,b:0x1377,c:0x44e6,d:[0x8c,0x32,0x88,0xfd,0x5f,0x44,0xc8,0x4c]},&mut dxgi.0),"DXGI device query")?;
+                let get_adapter:unsafe extern "system" fn(Ptr,*mut Ptr)->i32=std::mem::transmute(dxgi.method(7));
+                let mut adapter=Com(null);check(get_adapter(dxgi.0,&mut adapter.0),"adapter query")?;
+                let query_adapter:unsafe extern "system" fn(Ptr,*const Guid,*mut Ptr)->i32=std::mem::transmute(adapter.method(0));
+                let mut adapter1=Com(null);
+                check(query_adapter(adapter.0,&Guid{a:0x29038f61,b:0x3839,c:0x4626,d:[0x91,0xfd,0x08,0x68,0x79,0x01,0x1a,0x05]},&mut adapter1.0),"adapter1 query")?;
+                let describe:unsafe extern "system" fn(Ptr,*mut AdapterDesc)->i32=std::mem::transmute(adapter1.method(10));
+                let mut adapter_desc:AdapterDesc=std::mem::zeroed();check(describe(adapter1.0,&mut adapter_desc),"adapter description")?;
+                let adapter_name=String::from_utf16_lossy(&adapter_desc.description[..adapter_desc.description.iter().position(|x|*x==0).unwrap_or(128)]);
+                let software_adapter=is_software_adapter(adapter_desc.vendor,adapter_desc.device,adapter_desc.flags,&adapter_name);
+                if backend==Backend::Hardware&&software_adapter {return Err(format!("GRAPHICS_DEVICE_UNAVAILABLE backend=Hardware HRESULT=0x887a0004 software DXGI adapter: {adapter_name}"));}
+                let width=surface.width;let height=surface.height;
+                if width==0||height==0 {return Err("Present surface has invalid geometry".into());}
+                let texture:unsafe extern "system" fn(Ptr,*const TextureDesc,Ptr,*mut Ptr)->i32=std::mem::transmute(device.method(5));
+                let mut staging=Com(null);
+                let mut desc=TextureDesc{width,height,mips:1,array:1,format:28,samples:1,quality:0,usage:3,bind:0,cpu:0x20000,misc:0};
+                check(texture(device.0,&desc,null,&mut staging.0),"staging texture")?;
+                let mut target=Com(null);
+                desc.usage=0;desc.bind=0x20;desc.cpu=0;
+                check(texture(device.0,&desc,null,&mut target.0),"render target texture")?;
+                let mut readback=Com(null);
+                desc.usage=3;desc.bind=0;desc.cpu=0x20000;
+                check(texture(device.0,&desc,null,&mut readback.0),"readback texture")?;
+                let copy:unsafe extern "system" fn(Ptr,Ptr,Ptr)=std::mem::transmute(context.method(47));
+                let map:unsafe extern "system" fn(Ptr,Ptr,u32,u32,u32,*mut Mapped)->i32=std::mem::transmute(context.method(14));
+                let unmap:unsafe extern "system" fn(Ptr,Ptr,u32)=std::mem::transmute(context.method(15));
+                let row_bytes=(width*4) as usize;
+                let mut mapped=Mapped{data:null,row_pitch:0,depth_pitch:0};
+                check(map(context.0,staging.0,0,1,0,&mut mapped),"staging map")?;
+                if mapped.data.is_null()||mapped.row_pitch<(width*4) as u32 {unmap(context.0,staging.0,0);return Err("D3D11 invalid staging row pitch".into());}
+                for row in 0..height as usize {
+                    let src=row*surface.pitch as usize;let dst=row*mapped.row_pitch as usize;
+                    std::ptr::copy_nonoverlapping(surface.data.as_ptr().add(src),mapped.data.cast::<u8>().add(dst),row_bytes);
+                }
+                unmap(context.0,staging.0,0);
+                // staging -> render target -> readback (byte-preserving same-format copy).
+                copy(context.0,target.0,staging.0);
+                copy(context.0,readback.0,target.0);
+                let mut mapped=Mapped{data:null,row_pitch:0,depth_pitch:0};
+                check(map(context.0,readback.0,0,1,0,&mut mapped),"readback map")?;
+                if mapped.data.is_null()||mapped.row_pitch<(width*4) as u32 {unmap(context.0,readback.0,0);return Err("D3D11 invalid readback row pitch".into());}
+                let mut pixels=Vec::with_capacity((width*height*4) as usize);
+                for row in 0..height as usize {pixels.extend_from_slice(std::slice::from_raw_parts(mapped.data.cast::<u8>().add(row*mapped.row_pitch as usize),row_bytes));}
+                unmap(context.0,readback.0,0);
+                let removed:unsafe extern "system" fn(Ptr)->i32=std::mem::transmute(device.method(39));check(removed(device.0),"device status")?;
+                Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:adapter_desc.vendor,device_id:adapter_desc.device,software_adapter,adapter_flags:adapter_desc.flags})
+            }
         }
     }
     #[cfg(test)] mod tests {

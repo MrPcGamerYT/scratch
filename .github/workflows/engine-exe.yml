@@ -79,6 +79,15 @@ jobs:
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nGPU-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gpu.returncode, proc_gpu.stdout, proc_gpu.stderr))
           if proc_gpu.returncode: sys.exit(proc_gpu.returncode)
+          # Run the host D3D11 presentation transport smoke (virtio-gpu scanout surface
+          # uploaded through D3D11 staging->rendertarget->readback, pixels verified).
+          proc_gfx=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'graphics-present-smoke'],
+                                capture_output=True,text=True,timeout=60)
+          if proc_gfx.stdout.strip(): print(proc_gfx.stdout.strip())
+          if proc_gfx.stderr.strip(): print(proc_gfx.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nGRAPHICS-PRESENT-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gfx.returncode, proc_gfx.stdout, proc_gfx.stderr))
+          if proc_gfx.returncode: sys.exit(proc_gfx.returncode)
           # Run the real audio backend smoke (WAV playback recording + tone capture).
           proc7=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-real-smoke'],
                                capture_output=True,text=True,timeout=60)
