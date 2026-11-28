@@ -672,9 +672,11 @@ pub fn gpu_mmio_smoke()->Result<(),String> {
     for long in [false,true] {
         let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
         // Map the GPU MMIO base in guest page tables (long mode only).
+        // Use identity mapping (MMIO_BASE|0x83) so VA 0xd0006000 -> GPA 0xd0006000,
+        // landing in the MMIO_GPU_BASE range for the emulator callback.
         if long {
             f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
-            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_GPU_BASE|0x83).to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
         }
         // Fixture command queue (sel=0): descriptor table 0x20000, avail 0x20100, used 0x20200.
         // Command header descriptor: [header (RO, 24 bytes, NEXT->1), status (WR, 1 byte)].
