@@ -33,7 +33,7 @@ def section(serial, begin, end):
 
 def home_evidence(serial):
     selected = re.findall(r'(?m)^NEXUS_HOME_SELECTED ([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)\s*$', serial)
-    selected = [v for v in selected if v.split('/', 1)[0] not in {'android', 'com.android.provision', 'com.android.settings'}]
+    selected = [v for v in selected if v.split('/', 1)[0] not in {'android', 'com.android.provision'}]
     component = selected[-1] if selected else None
     activity = section(serial, 'NEXUS_HOME_ACTIVITY_STATE_BEGIN', 'NEXUS_HOME_ACTIVITY_STATE_END')
     resumed = bool(component and any(component in line and 'ResumedActivity:' in line for line in activity.splitlines()))
