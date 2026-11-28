@@ -645,6 +645,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
     /// executed — a reset-vector firmware boot chain, not a direct loader.
     pub fn firmware_boot_smoke()->Result<(),String> {
         use crate::{cpu,ata::AtaPio};
+        use std::io::Write;
         // Boot sector (disk sector 0): MOV EAX, "BOOT"; MOV [0x1b004], EAX; HLT; 0x55aa.
         let mut boot_sector=[0u8;512];
         let mut bs=Vec::new();
