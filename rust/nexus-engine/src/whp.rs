@@ -476,7 +476,7 @@ mod windows {
         let fixture=goal==RunGoal::TimerFixture;
         // Diagnostic wall budgets. Android/APK runs need room for CI scheduling variance;
         // they still terminate via this global deadline and the bridge's completion exit.
-        let limit=if goal==RunGoal::NativeApk {420000} else if goal==RunGoal::AndroidHome {280000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {180000} else {30000};
+        let limit=if goal==RunGoal::NativeApk||goal==RunGoal::AndroidHome {420000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {180000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
@@ -529,7 +529,7 @@ mod windows {
                     if let Some(vector)=queue_interrupt(partition,platform)? {match vector&7 {0=>trace.irq0_injections+=1,3=>trace.irq3_injections+=1,4=>trace.irq4_injections+=1,_=>trace.irq5_injections+=1}halted=false;}
                     trace.pit0_programs=platform.pit0.programs;trace.pit0_edges=platform.pit0.edges;
                     if halted {std::thread::sleep(std::time::Duration::from_millis(1));continue;}
-                    if runs>=if goal==RunGoal::NativeApk {2_000_000} else if goal==RunGoal::AndroidHome {1_500_000} else if goal==RunGoal::NativeBridge {1_000_000} else {250000} {break;}
+                    if runs>=if goal==RunGoal::NativeApk||goal==RunGoal::AndroidHome {2_000_000} else if goal==RunGoal::NativeBridge {1_000_000} else {250000} {break;}
                     if trace.vcpu_run_requested_ms.is_none() {trace.vcpu_run_requested_ms=Some(elapsed_ms());}
                     let context=run_once(partition)?;trace.exits+=1;runs+=1;
                     last.0=context.reason();last.1=u64::from_le_bytes(context.0[32..40].try_into().unwrap());
