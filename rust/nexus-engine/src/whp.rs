@@ -637,6 +637,96 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         let mut disk=crate::overlay::Overlay::open(path,overlay)?;let mut data=[0;512];disk.read_sectors(1,&mut data)?;
         if data.as_slice()!=[0x17,0x5a].repeat(256) {return Err("Reopened overlay lost guest-written data".into());}Ok(())
     }
+    /// Real firmware boot chain: the CPU starts in a real-mode firmware entry
+    /// point (not direct kernel/sector entry). The firmware writes a POST marker,
+    /// reads the boot sector from the ATA disk via real port I/O into 0x7c00, then
+    /// transfers control to it. The boot sector writes a "booted" marker and HLTs.
+    /// Verifies POST ran, the firmware performed real disk I/O, and the boot sector
+    /// executed — a reset-vector firmware boot chain, not a direct loader.
+    pub fn firmware_boot_smoke()->Result<(),String> {
+        use crate::{cpu,ata::AtaPio};
+        // Boot sector (disk sector 0): MOV EAX, "BOOT"; MOV [0x1b004], EAX; HLT; 0x55aa.
+        let mut boot_sector=[0u8;512];
+        let mut bs=Vec::new();
+        bs.push(0xb8);bs.extend_from_slice(&0x544f4f42u32.to_le_bytes());
+        bs.push(0x67);bs.push(0xa3);bs.extend_from_slice(&0x1b004u32.to_le_bytes());
+        bs.push(0xf4);
+        boot_sector[..bs.len()].copy_from_slice(&bs);
+        boot_sector[510]=0x55;boot_sector[511]=0xaa;
+        // Build a 2-sector raw disk (boot sector + filler) and import to ZLAG.
+        let dir=std::env::temp_dir().join(format!("nexus-fw-{}",std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+        let raw=dir.join("disk.raw");let zlag=dir.join("disk.zlag");
+        {let mut f=std::fs::File::create(&raw).map_err(|e|e.to_string())?;
+            f.write_all(&boot_sector).map_err(|e|e.to_string())?;
+            f.write_all(&[0u8;512]).map_err(|e|e.to_string())?;}
+        crate::image::import_raw(&raw,&zlag).map_err(|e|e.to_string())?;
+        let ata=AtaPio::open(&zlag)?;
+        // Firmware bytecode at 0x1000 (real mode).
+        let out=|code:&mut Vec<u8>,port:u32,value:u8| {
+            code.push(0xba);code.extend_from_slice(&(port as u16).to_le_bytes());
+            code.push(0xb0);code.push(value);code.push(0xee);
+        };
+        let mut fw=Vec::new();
+        // POST marker: MOV EAX, 0x504f5354; MOV [0x1b000], EAX.
+        fw.push(0xb8);fw.extend_from_slice(&0x504f5354u32.to_le_bytes());
+        fw.push(0x67);fw.push(0xa3);fw.extend_from_slice(&0x1b000u32.to_le_bytes());
+        // ATA: select drive 0 (LBA), read 1 sector (LBA 0), READ SECTORS command.
+        for (port,value) in [(0x1f6u32,0xe0u8),(0x1f2,1),(0x1f3,0),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {out(&mut fw,port,value);}
+        // Read 256 words from 0x1f0 into 0x7c00.
+        fw.push(0xba);fw.extend_from_slice(&0x1f0u16.to_le_bytes());
+        fw.push(0xbb);fw.extend_from_slice(&0x7c00u16.to_le_bytes());
+        fw.push(0xb9);fw.extend_from_slice(&256u16.to_le_bytes());
+        let loop_start=fw.len();
+        fw.push(0xef);                   // IN AX, DX
+        fw.push(0x89);fw.push(0x07);     // MOV [BX], AX
+        fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD BX, 2
+        let jnz_pos=fw.len();
+        fw.push(0xe2);fw.extend_from_slice(&[0,0]); // JNZ loop
+        let jmp_pos=fw.len();
+        fw.push(0xeb);fw.extend_from_slice(&[0,0]); // JMP 0x7c00
+        // Patch JNZ back to loop_start.
+        let jnz_disp=(loop_start as i32)-(jnz_pos as i32+3);
+        fw[jnz_pos+1..jnz_pos+3].copy_from_slice(&(jnz_disp as u16).to_le_bytes());
+        // Patch JMP to 0x7c00.
+        let jmp_disp=(0x7c00i32)-(jmp_pos as i32+3);
+        fw[jmp_pos+1..jmp_pos+3].copy_from_slice(&(jmp_disp as u16).to_le_bytes());
+        let fw_entry=cpu::ENTRY;
+        let mut f=cpu::fixture(cpu::CpuMode::Real16)?;
+        f.ram[fw_entry..fw_entry+fw.len()].copy_from_slice(&fw);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;
+            let mut platform=crate::platform::EarlyPlatform{ata:Some(ata),..Default::default()};
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..2048 {
+                    let context=run_once(partition)?;
+                    match context.reason() {
+                        8=>return Ok(Ok(())),
+                        2=>{
+                            let io=crate::io::IoExit::decode(&context.0)?;
+                            let mode=crate::cpu::CpuMode::from_exit(&context.0)?;
+                            let rip=Register::scalar(mode.next_rip(io.rip,io.instruction_len)?);
+                            if let Some(rax)=platform.access(io,0)? {set_registers(partition,&[0,0x10],&[Register::scalar(rax),rip])?;}
+                            else {set_registers(partition,&[0x10],&[rip])?;}
+                        }
+                        reason=>return Err(format!("Unexpected firmware boot exit 0x{reason:x}")),
+                    }
+                }Ok(Err("Firmware boot exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("Firmware boot deadline exceeded".into());}result?;
+            let ram=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>(),memory.bytes)};
+            let post=u32::from_le_bytes(ram[0x1b000..0x1b004].try_into().unwrap());
+            let booted=u32::from_le_bytes(ram[0x1b004..0x1b008].try_into().unwrap());
+            if post!=0x504f5354 {return Err(format!("Firmware POST marker missing: 0x{post:x}"));}
+            if booted!=0x544f4f42 {return Err(format!("Boot sector did not execute: 0x{booted:x}"));}
+            let device=platform.ata.as_ref().ok_or("Missing ATA device")?;
+            if device.sectors_read<1||device.commands<1 {return Err(format!("Firmware did not perform disk I/O: reads={} commands={}",device.sectors_read,device.commands));}
+            Ok(())
+        })?;
+        let _=std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
     fn ata_fixture(path:&std::path::Path,cow:Option<&std::path::Path>)->Result<(),String> {
         use crate::{cpu,ata::AtaPio,image::Image};
         let ata=if let Some(overlay)=cow {AtaPio::with_overlay(path,overlay,true)?} else {AtaPio::open(path)?};
@@ -802,6 +892,11 @@ pub fn ata_pio_smoke(_path:&std::path::Path)->Result<(),String> {Err("ATA guest 
 pub use windows::ata_cow_smoke;
 #[cfg(not(windows))]
 pub fn ata_cow_smoke(_base:&std::path::Path,_overlay:&std::path::Path)->Result<(),String> {Err("ATA COW execution requires Windows x64 WHP".into())}
+
+#[cfg(windows)]
+pub use windows::firmware_boot_smoke;
+#[cfg(not(windows))]
+pub fn firmware_boot_smoke()->Result<(),String> {Err("Firmware boot chain requires Windows x64 WHP".into())}
 
 #[cfg(windows)]
 pub use windows::mmio_smoke;

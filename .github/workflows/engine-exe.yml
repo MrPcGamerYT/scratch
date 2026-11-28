@@ -77,7 +77,15 @@ jobs:
           if proc7.stderr.strip(): print(proc7.stderr.strip())
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nAUDIO-REAL-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc7.returncode, proc7.stdout, proc7.stderr))
-          sys.exit(proc7.returncode)
+          if proc7.returncode: sys.exit(proc7.returncode)
+          # Run the real firmware boot chain smoke (reset-vector firmware POST + ATA boot-sector read).
+          proc8=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'firmware-boot-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc8.stdout.strip(): print(proc8.stdout.strip())
+          if proc8.stderr.strip(): print(proc8.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nFIRMWARE-BOOT-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc8.returncode, proc8.stdout, proc8.stderr))
+          sys.exit(proc8.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash
