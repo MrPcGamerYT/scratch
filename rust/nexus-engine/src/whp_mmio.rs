@@ -29,6 +29,12 @@ const MMIO_NET_BASE:u64=0xd0001000;
 /// Third VirtIO-MMIO base for the audio device; distinct so all three devices
 /// can coexist under one emulator callback.
 const MMIO_AUDIO_BASE:u64=0xd0002000;
+/// Fourth MMIO base for the GPIO controller.
+const MMIO_GPIO_BASE:u64=0xd0003000;
+/// Fifth MMIO base for the I2C controller.
+const MMIO_I2C_BASE:u64=0xd0004000;
+/// Sixth MMIO base for the SPI controller.
+const MMIO_SPI_BASE:u64=0xd0005000;
 /// Which VirtIO-MMIO device the context services. Block is the default so the
 /// existing disk boot path is unchanged; Net and Audio are activated only when
 /// requested (wiring in place; boot plans activate them via flags).
@@ -38,12 +44,18 @@ enum MmioDevice {
     Net(crate::virtio_net_mmio::NetMmio),
     #[allow(dead_code)]
     Audio(crate::virtio_audio_mmio::AudioMmio),
+    #[allow(dead_code)]
+    Gpio(crate::gpio::GpioController),
+    #[allow(dead_code)]
+    I2c(crate::i2c::I2cController),
+    #[allow(dead_code)]
+    Spi(crate::spi::SpiController),
 }
 impl MmioDevice {
-    fn read(&self,offset:u64,size:u8)->Result<u32,String> {match self {MmioDevice::Block(d)=>d.read(offset,size),MmioDevice::Net(d)=>d.read(offset,size),MmioDevice::Audio(d)=>d.read(offset,size)}}
-    fn write(&mut self,offset:u64,size:u8,value:u32)->Result<(),String> {match self {MmioDevice::Block(d)=>d.write(offset,size,value),MmioDevice::Net(d)=>d.write(offset,size,value),MmioDevice::Audio(d)=>d.write(offset,size,value)}}
-    fn work_pending(&self)->bool {match self {MmioDevice::Block(d)=>d.work_pending(),MmioDevice::Net(d)=>d.work_pending(),MmioDevice::Audio(d)=>d.work_pending()}}
-    fn irq_asserted(&self)->bool {match self {MmioDevice::Block(d)=>d.irq_asserted(),MmioDevice::Net(d)=>d.irq_asserted(),MmioDevice::Audio(d)=>d.irq_asserted()}}
+    fn read(&self,offset:u64,size:u8)->Result<u32,String> {match self {MmioDevice::Block(d)=>d.read(offset,size),MmioDevice::Net(d)=>d.read(offset,size),MmioDevice::Audio(d)=>d.read(offset,size),MmioDevice::Gpio(d)=>d.read(offset,size),MmioDevice::I2c(d)=>d.read(offset,size),MmioDevice::Spi(d)=>d.read(offset,size)}}
+    fn write(&mut self,offset:u64,size:u8,value:u32)->Result<(),String> {match self {MmioDevice::Block(d)=>d.write(offset,size,value),MmioDevice::Net(d)=>d.write(offset,size,value),MmioDevice::Audio(d)=>d.write(offset,size,value),MmioDevice::Gpio(d)=>d.write(offset,size,value),MmioDevice::I2c(d)=>d.write(offset,size,value),MmioDevice::Spi(d)=>d.write(offset,size,value)}}
+    fn work_pending(&self)->bool {match self {MmioDevice::Block(d)=>d.work_pending(),MmioDevice::Net(d)=>d.work_pending(),MmioDevice::Audio(d)=>d.work_pending(),MmioDevice::Gpio(d)=>d.work_pending(),MmioDevice::I2c(d)=>d.work_pending(),MmioDevice::Spi(d)=>d.work_pending()}}
+    fn irq_asserted(&self)->bool {match self {MmioDevice::Block(d)=>d.irq_asserted(),MmioDevice::Net(d)=>d.irq_asserted(),MmioDevice::Audio(d)=>d.irq_asserted(),MmioDevice::Gpio(d)=>d.irq_asserted(),MmioDevice::I2c(d)=>d.irq_asserted(),MmioDevice::Spi(d)=>d.irq_asserted()}}
 }
 struct MmioContext {
     partition:*mut c_void,ram:*mut u8,bytes:usize,device:MmioDevice,
@@ -92,9 +104,9 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
             let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram.add(a.gpa as usize),n)};
             if a.direction==0 {a.data[..n].copy_from_slice(ram);} else {ram.copy_from_slice(&a.data[..n]);}return Ok(());
         }
-        if !((a.gpa>=MMIO_BASE&&end<=MMIO_BASE+4096)||(a.gpa>=MMIO_NET_BASE&&end<=MMIO_NET_BASE+4096)||(a.gpa>=MMIO_AUDIO_BASE&&end<=MMIO_AUDIO_BASE+4096)) {return Err("Emulator memory access outside RAM/device page".into());}
+        if !((a.gpa>=MMIO_BASE&&end<=MMIO_BASE+4096)||(a.gpa>=MMIO_NET_BASE&&end<=MMIO_NET_BASE+4096)||(a.gpa>=MMIO_AUDIO_BASE&&end<=MMIO_AUDIO_BASE+4096)||(a.gpa>=MMIO_GPIO_BASE&&end<=MMIO_GPIO_BASE+4096)||(a.gpa>=MMIO_I2C_BASE&&end<=MMIO_I2C_BASE+4096)||(a.gpa>=MMIO_SPI_BASE&&end<=MMIO_SPI_BASE+4096)) {return Err("Emulator memory access outside RAM/device page".into());}
         if ![1,2,4].contains(&a.size) {return Err("Unsupported MMIO register access width".into());}
-        let offset=if a.gpa>=MMIO_AUDIO_BASE {a.gpa-MMIO_AUDIO_BASE} else if a.gpa>=MMIO_NET_BASE {a.gpa-MMIO_NET_BASE} else {a.gpa-MMIO_BASE};
+        let offset=if a.gpa>=MMIO_SPI_BASE {a.gpa-MMIO_SPI_BASE} else if a.gpa>=MMIO_I2C_BASE {a.gpa-MMIO_I2C_BASE} else if a.gpa>=MMIO_GPIO_BASE {a.gpa-MMIO_GPIO_BASE} else if a.gpa>=MMIO_AUDIO_BASE {a.gpa-MMIO_AUDIO_BASE} else if a.gpa>=MMIO_NET_BASE {a.gpa-MMIO_NET_BASE} else {a.gpa-MMIO_BASE};
         if a.direction==0 {let value=ctx.device.read(offset,a.size)?.to_le_bytes();a.data[..n].copy_from_slice(&value[..n]);}
         else {
             // Defined RO registers/config ignore writes, without changing device state.
@@ -171,6 +183,37 @@ impl LiveAudio {
             let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
             if let MmioDevice::Audio(device)=&mut self.context.device {device.service(&mut memory,&mut self.backend,256)?;}
         }
+        Ok(())
+    }
+}
+
+/// Live GPIO device: MMIO emulation with no backend. The controller's registers
+/// are accessed directly through the emulator callback; work_pending is always
+/// false for GPIO so no service step is needed.
+struct LiveGpio {context:MmioContext,emulator:Emulator}
+impl LiveGpio {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
+        Ok(())
+    }
+}
+
+/// Live I2C device: MMIO emulation with no backend. Transfers complete
+/// synchronously in the register write path, so no service step is needed.
+struct LiveI2c {context:MmioContext,emulator:Emulator}
+impl LiveI2c {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
+        Ok(())
+    }
+}
+
+/// Live SPI device: MMIO emulation with no backend. Transfers complete
+/// synchronously in the register write path, so no service step is needed.
+struct LiveSpi {context:MmioContext,emulator:Emulator}
+impl LiveSpi {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
         Ok(())
     }
 }
@@ -577,6 +620,125 @@ pub fn audio_mmio_smoke()->Result<(),String> {
             if !irq_seen {return Err("Audio MMIO IRQ7 was never asserted".into());}
             if serviced<2 {return Err("Audio MMIO did not complete both TX and RX requests".into());}
             if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real audio MMIO/translation callback execution".into());}
+            Ok(())
+        })?;
+    }Ok(())
+}
+
+/// Live GPIO + I2C + SPI MMIO smoke: exercises all three platform device
+/// controllers through real WHP MMIO emulation. Each device is tested with
+/// identity-mapped MMIO accesses in both long mode and protected mode.
+pub fn platform_mmio_smoke()->Result<(),String> {
+    use crate::cpu;
+    for long in [false,true] {
+        let mut f=cpu::fixture(long);
+        // Map the platform MMIO bases in guest page tables (long mode only).
+        // MMIO_BASE (0xd0000000, 2MB-aligned) as GPA makes VA 0xd0003000->GPA 0xd0003000,
+        // VA 0xd0004000->GPA 0xd0004000, VA 0xd0005000->GPA 0xd0005000 (identity).
+        if long {
+            f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_BASE|0x83).to_le_bytes());
+        }
+        let mut code=Vec::new();
+        // Helpers: load MMIO offset into a destination register, write value to MMIO offset.
+        let load=|code:&mut Vec<u8>,base:u64,offset:u32,dest:u32| {
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((base as u32)+offset).to_le_bytes());
+            if long {code.push(0x67);}code.push(0xa1);code.extend_from_slice(&dest.to_le_bytes());
+            if long {code.push(0x67);}code.push(0x8b);code.extend_from_slice(&[0x00,0x08]);
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&dest.to_le_bytes());
+        };
+        let write=|code:&mut Vec<u8>,base:u64,offset:u32,value:u32| {
+            code.push(0xb8);code.extend_from_slice(&value.to_le_bytes());
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((base as u32)+offset).to_le_bytes());
+        };
+        // === GPIO (base 0xd0003000) ===
+        // Write direction=0xffffffff, output=0xdeadbeef, status=0x42.
+        write(&mut code,MMIO_GPIO_BASE,0x00,0xffffffff);
+        write(&mut code,MMIO_GPIO_BASE,0x04,0xdeadbeef);
+        write(&mut code,MMIO_GPIO_BASE,0x0c,0x42);
+        // Read back: direction(0), output(1), input(2), status(3).
+        load(&mut code,MMIO_GPIO_BASE,0x00,0x1b000);
+        load(&mut code,MMIO_GPIO_BASE,0x04,0x1b004);
+        load(&mut code,MMIO_GPIO_BASE,0x08,0x1b008);
+        load(&mut code,MMIO_GPIO_BASE,0x0c,0x1b00c);
+        // === I2C (base 0xd0004000) ===
+        // Write control=0x01 (start), address=0x50, data=0xab.
+        write(&mut code,MMIO_I2C_BASE,0x00,0x01);
+        write(&mut code,MMIO_I2C_BASE,0x08,0x50);
+        write(&mut code,MMIO_I2C_BASE,0x0c,0xab);
+        // Read back: status(0), address(1), data(2).
+        load(&mut code,MMIO_I2C_BASE,0x04,0x1b010);
+        load(&mut code,MMIO_I2C_BASE,0x08,0x1b014);
+        load(&mut code,MMIO_I2C_BASE,0x0c,0x1b018);
+        // === SPI (base 0xd0005000) ===
+        // Write control=0x01 (enable), clock_divider=0x10, TX=0xa5.
+        write(&mut code,MMIO_SPI_BASE,0x00,0x01);
+        write(&mut code,MMIO_SPI_BASE,0x08,0x10);
+        write(&mut code,MMIO_SPI_BASE,0x0c,0xa5);
+        // Read back: status(0), rx(1), clock_divider(2).
+        load(&mut code,MMIO_SPI_BASE,0x04,0x1b020);
+        load(&mut code,MMIO_SPI_BASE,0x10,0x1b024);
+        load(&mut code,MMIO_SPI_BASE,0x08,0x1b028);
+        code.push(0xf4); // HLT
+        let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
+            let emulator=Emulator::new()?;
+            let mut gpio_ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Gpio(crate::gpio::GpioController::new()),error:None,translations:0,accesses:0};
+            let mut i2c_ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::I2c(crate::i2c::I2cController::new()),error:None,translations:0,accesses:0};
+            let mut spi_ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Spi(crate::spi::SpiController::new()),error:None,translations:0,accesses:0};
+            let mut accesses_total=0u64;let mut translations_total=0u64;
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..200 {
+                    let exit=run_once(partition)?;
+                    match exit.reason() {
+                        8=>return Ok(Ok(())),
+                        1=>{
+                            let gpa=u64::from_le_bytes(exit.0[48..56].try_into().unwrap());
+                            if gpa>=MMIO_GPIO_BASE&&gpa<MMIO_GPIO_BASE+4096 {
+                                emulator.emulate(&mut gpio_ctx,&exit,long)?;
+                                accesses_total+=gpio_ctx.accesses;translations_total+=gpio_ctx.translations;
+                            } else if gpa>=MMIO_I2C_BASE&&gpa<MMIO_I2C_BASE+4096 {
+                                emulator.emulate(&mut i2c_ctx,&exit,long)?;
+                                accesses_total+=i2c_ctx.accesses;translations_total+=i2c_ctx.translations;
+                            } else if gpa>=MMIO_SPI_BASE&&gpa<MMIO_SPI_BASE+4096 {
+                                emulator.emulate(&mut spi_ctx,&exit,long)?;
+                                accesses_total+=spi_ctx.accesses;translations_total+=spi_ctx.translations;
+                            } else {return Err(format!("Unexpected platform MMIO smoke GPA 0x{gpa:x}"));}
+                        },
+                        2=>return Err(format!("Unexpected platform MMIO smoke port exit")),
+                        reason=>return Err(format!("Unexpected platform MMIO fixture exit 0x{reason:x}"))
+                    }
+                }Ok(Err("Platform MMIO fixture exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("Platform MMIO fixture deadline exceeded".into());}result?;
+            // Verify GPIO reads.
+            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),0x30)};
+            let gpio_dir=u32::from_le_bytes(bytes[0x00..0x04].try_into().unwrap());
+            let gpio_out=u32::from_le_bytes(bytes[0x04..0x08].try_into().unwrap());
+            let gpio_inp=u32::from_le_bytes(bytes[0x08..0x0c].try_into().unwrap());
+            let gpio_sts=u32::from_le_bytes(bytes[0x0c..0x10].try_into().unwrap());
+            if gpio_dir!=0xffffffff {return Err(format!("GPIO direction mismatch 0x{gpio_dir:x}"));}
+            if gpio_out!=0xdeadbeef {return Err(format!("GPIO output mismatch 0x{gpio_out:x}"));}
+            if gpio_inp!=0 {return Err(format!("GPIO input mismatch 0x{gpio_inp:x}"));}
+            if gpio_sts!=0x42 {return Err(format!("GPIO status mismatch 0x{gpio_sts:x}"));}
+            // Verify I2C reads.
+            let i2c_sts=u32::from_le_bytes(bytes[0x10..0x14].try_into().unwrap());
+            let i2c_addr=u32::from_le_bytes(bytes[0x14..0x18].try_into().unwrap());
+            let i2c_data=u32::from_le_bytes(bytes[0x18..0x1c].try_into().unwrap());
+            if i2c_sts!=0 {return Err(format!("I2C status mismatch 0x{i2c_sts:x}"));}
+            if i2c_addr!=0x50 {return Err(format!("I2C address mismatch 0x{i2c_addr:x}"));}
+            if i2c_data!=0xab {return Err(format!("I2C data mismatch 0x{i2c_data:x}"));}
+            // Verify SPI reads.
+            let spi_sts=u32::from_le_bytes(bytes[0x20..0x24].try_into().unwrap());
+            let spi_rx=u32::from_le_bytes(bytes[0x24..0x28].try_into().unwrap());
+            let spi_clk=u32::from_le_bytes(bytes[0x28..0x2c].try_into().unwrap());
+            if spi_sts!=1 {return Err(format!("SPI status mismatch 0x{spi_sts:x}"));}
+            if spi_rx!=0xa5 {return Err(format!("SPI rx mismatch 0x{spi_rx:x}"));}
+            if spi_clk!=0x10 {return Err(format!("SPI clock divider mismatch 0x{spi_clk:x}"));}
+            if accesses_total<20 {return Err(format!("Missing real platform MMIO callback execution: {accesses_total} accesses"));}
+            if long&&translations_total==0 {return Err("Missing platform MMIO GVA translation callback execution".into());}
             Ok(())
         })?;
     }Ok(())

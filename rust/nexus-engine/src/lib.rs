@@ -13,6 +13,9 @@ pub mod virtio_audio_mmio;
 pub mod virtio_mmio;
 #[cfg(test)]
 mod virtio_mmio_tests;
+pub mod gpio;
+pub mod i2c;
+pub mod spi;
 pub mod kernel;
 pub mod framebuffer;
 pub mod uart;

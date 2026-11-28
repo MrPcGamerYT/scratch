@@ -61,7 +61,15 @@ jobs:
           if proc5.stderr.strip(): print(proc5.stderr.strip())
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nAUDIO-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc5.returncode, proc5.stdout, proc5.stderr))
-          sys.exit(proc5.returncode)
+          if proc5.returncode: sys.exit(proc5.returncode)
+          # Run the live WHP MMIO platform device smoke (GPIO/I2C/SPI register access).
+          proc6=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'platform-mmio-smoke'],
+                               capture_output=True,text=True,timeout=60)
+          if proc6.stdout.strip(): print(proc6.stdout.strip())
+          if proc6.stderr.strip(): print(proc6.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nPLATFORM-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc6.returncode, proc6.stdout, proc6.stderr))
+          sys.exit(proc6.returncode)
       - name: Persist build diagnostics on failure
         if: failure()
         shell: bash
