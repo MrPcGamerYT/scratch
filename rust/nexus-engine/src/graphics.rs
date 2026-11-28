@@ -121,12 +121,13 @@ mod windows {
             if pixels!=reference() {return Err("D3D11 shader/readback pixel mismatch".into());}
             Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:adapter_desc.vendor,device_id:adapter_desc.device,software_adapter,adapter_flags:adapter_desc.flags})
         }
+    }
 
-        /// Upload a VirtIO-GPU scanout surface through the D3D11 texture pipeline
-        /// and read it back. Exercises the host transport path: CPU staging texture
-        /// -> GPU render-target texture -> CPU readback, byte-preserving for a
-        /// same-format (R8G8B8A8_UNORM) copy.
-        pub fn present(backend:Backend,surface:&crate::virtio_gpu::Surface)->Result<Rendered,String> {
+    /// Upload a VirtIO-GPU scanout surface through the D3D11 texture pipeline
+    /// and read it back. Exercises the host transport path: CPU staging texture
+    /// -> GPU render-target texture -> CPU readback, byte-preserving for a
+    /// same-format (R8G8B8A8_UNORM) copy.
+    pub fn present(backend:Backend,surface:&crate::virtio_gpu::Surface)->Result<Rendered,String> {
             let null=std::ptr::null_mut();
             unsafe {
                 let mut device=Com(null);let mut context=Com(null);let mut level=0;
@@ -183,7 +184,6 @@ mod windows {
                 Ok(Rendered{pixels,feature_level:level,adapter:adapter_name,vendor_id:adapter_desc.vendor,device_id:adapter_desc.device,software_adapter,adapter_flags:adapter_desc.flags})
             }
         }
-    }
     #[cfg(test)] mod tests {
         use super::*;
         #[test] fn ffi_layout() {assert_eq!(std::mem::size_of::<AdapterDesc>(),312);assert_eq!(std::mem::offset_of!(AdapterDesc,flags),304);assert_eq!(std::mem::size_of::<TextureDesc>(),44);assert_eq!(std::mem::size_of::<Mapped>(),16);assert_eq!(std::mem::size_of::<Viewport>(),24);}
