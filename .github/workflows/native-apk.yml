@@ -74,6 +74,8 @@ jobs:
   apk:
     needs: assets
     if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
+    permissions:
+      contents: write
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
@@ -172,6 +174,8 @@ jobs:
   home:
     needs: [assets, apk]
     if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
+    permissions:
+      contents: write
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
