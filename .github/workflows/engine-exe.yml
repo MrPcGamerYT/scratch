@@ -70,6 +70,15 @@ jobs:
           with open('.ci-diag-build.txt','a') as f:
               f.write('\nPLATFORM-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc6.returncode, proc6.stdout, proc6.stderr))
           if proc6.returncode: sys.exit(proc6.returncode)
+          # Run the live WHP MMIO GPU device smoke (enum dispatch, GPA routing, feature
+          # negotiation, scanout geometry, FILL_2D rasterization, command completion).
+          proc_gpu=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'gpu-mmio-smoke'],
+                                capture_output=True,text=True,timeout=60)
+          if proc_gpu.stdout.strip(): print(proc_gpu.stdout.strip())
+          if proc_gpu.stderr.strip(): print(proc_gpu.stderr.strip())
+          with open('.ci-diag-build.txt','a') as f:
+              f.write('\nGPU-MMIO-SMOKE RETURN=%d\nSTDOUT:\n%s\nSTDERR:\n%s\n' % (proc_gpu.returncode, proc_gpu.stdout, proc_gpu.stderr))
+          if proc_gpu.returncode: sys.exit(proc_gpu.returncode)
           # Run the real audio backend smoke (WAV playback recording + tone capture).
           proc7=subprocess.run([os.path.join('rust','nexus-engine','target','release','nexus-engine'),'audio-real-smoke'],
                                capture_output=True,text=True,timeout=60)

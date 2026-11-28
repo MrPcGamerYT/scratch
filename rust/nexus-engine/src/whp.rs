@@ -948,6 +948,11 @@ pub use windows::platform_mmio_smoke;
 pub fn platform_mmio_smoke()->Result<(),String> {Err("WHP MMIO platform execution requires Windows x64".into())}
 
 #[cfg(windows)]
+pub use windows::gpu_mmio_smoke;
+#[cfg(not(windows))]
+pub fn gpu_mmio_smoke()->Result<(),String> {Err("WHP MMIO gpu execution requires Windows x64".into())}
+
+#[cfg(windows)]
 pub use windows::boot_kernel_disk;
 #[cfg(not(windows))]
 pub fn boot_kernel_disk(_plan:&crate::kernel::KernelPlan,_serial:&mut dyn std::io::Write,_trace:&mut crate::timing::BootTrace,_start:std::time::Instant,_base:&std::path::Path,_cow:&std::path::Path,_create:bool)->Result<(),String> {Err("WHP VirtIO Linux boot requires Windows x64".into())}

@@ -35,6 +35,8 @@ const MMIO_GPIO_BASE:u64=0xd0003000;
 const MMIO_I2C_BASE:u64=0xd0004000;
 /// Sixth MMIO base for the SPI controller.
 const MMIO_SPI_BASE:u64=0xd0005000;
+/// Seventh MMIO base for the VirtIO-GPU device.
+const MMIO_GPU_BASE:u64=0xd0006000;
 /// Which VirtIO-MMIO device the context services. Block is the default so the
 /// existing disk boot path is unchanged; Net and Audio are activated only when
 /// requested (wiring in place; boot plans activate them via flags).
@@ -50,12 +52,14 @@ enum MmioDevice {
     I2c(crate::i2c::I2cController),
     #[allow(dead_code)]
     Spi(crate::spi::SpiController),
+    #[allow(dead_code)]
+    Gpu(crate::virtio_gpu_mmio::GpuMmio),
 }
 impl MmioDevice {
-    fn read(&self,offset:u64,size:u8)->Result<u32,String> {match self {MmioDevice::Block(d)=>d.read(offset,size),MmioDevice::Net(d)=>d.read(offset,size),MmioDevice::Audio(d)=>d.read(offset,size),MmioDevice::Gpio(d)=>d.read(offset,size),MmioDevice::I2c(d)=>d.read(offset,size),MmioDevice::Spi(d)=>d.read(offset,size)}}
-    fn write(&mut self,offset:u64,size:u8,value:u32)->Result<(),String> {match self {MmioDevice::Block(d)=>d.write(offset,size,value),MmioDevice::Net(d)=>d.write(offset,size,value),MmioDevice::Audio(d)=>d.write(offset,size,value),MmioDevice::Gpio(d)=>d.write(offset,size,value),MmioDevice::I2c(d)=>d.write(offset,size,value),MmioDevice::Spi(d)=>d.write(offset,size,value)}}
-    fn work_pending(&self)->bool {match self {MmioDevice::Block(d)=>d.work_pending(),MmioDevice::Net(d)=>d.work_pending(),MmioDevice::Audio(d)=>d.work_pending(),MmioDevice::Gpio(d)=>d.work_pending(),MmioDevice::I2c(d)=>d.work_pending(),MmioDevice::Spi(d)=>d.work_pending()}}
-    fn irq_asserted(&self)->bool {match self {MmioDevice::Block(d)=>d.irq_asserted(),MmioDevice::Net(d)=>d.irq_asserted(),MmioDevice::Audio(d)=>d.irq_asserted(),MmioDevice::Gpio(d)=>d.irq_asserted(),MmioDevice::I2c(d)=>d.irq_asserted(),MmioDevice::Spi(d)=>d.irq_asserted()}}
+    fn read(&self,offset:u64,size:u8)->Result<u32,String> {match self {MmioDevice::Block(d)=>d.read(offset,size),MmioDevice::Net(d)=>d.read(offset,size),MmioDevice::Audio(d)=>d.read(offset,size),MmioDevice::Gpio(d)=>d.read(offset,size),MmioDevice::I2c(d)=>d.read(offset,size),MmioDevice::Spi(d)=>d.read(offset,size),MmioDevice::Gpu(d)=>d.read(offset,size)}}
+    fn write(&mut self,offset:u64,size:u8,value:u32)->Result<(),String> {match self {MmioDevice::Block(d)=>d.write(offset,size,value),MmioDevice::Net(d)=>d.write(offset,size,value),MmioDevice::Audio(d)=>d.write(offset,size,value),MmioDevice::Gpio(d)=>d.write(offset,size,value),MmioDevice::I2c(d)=>d.write(offset,size,value),MmioDevice::Spi(d)=>d.write(offset,size,value),MmioDevice::Gpu(d)=>d.write(offset,size,value)}}
+    fn work_pending(&self)->bool {match self {MmioDevice::Block(d)=>d.work_pending(),MmioDevice::Net(d)=>d.work_pending(),MmioDevice::Audio(d)=>d.work_pending(),MmioDevice::Gpio(d)=>d.work_pending(),MmioDevice::I2c(d)=>d.work_pending(),MmioDevice::Spi(d)=>d.work_pending(),MmioDevice::Gpu(d)=>d.work_pending()}}
+    fn irq_asserted(&self)->bool {match self {MmioDevice::Block(d)=>d.irq_asserted(),MmioDevice::Net(d)=>d.irq_asserted(),MmioDevice::Audio(d)=>d.irq_asserted(),MmioDevice::Gpio(d)=>d.irq_asserted(),MmioDevice::I2c(d)=>d.irq_asserted(),MmioDevice::Spi(d)=>d.irq_asserted(),MmioDevice::Gpu(d)=>d.irq_asserted()}}
 }
 struct MmioContext {
     partition:*mut c_void,ram:*mut u8,bytes:usize,device:MmioDevice,
@@ -104,9 +108,9 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
             let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram.add(a.gpa as usize),n)};
             if a.direction==0 {a.data[..n].copy_from_slice(ram);} else {ram.copy_from_slice(&a.data[..n]);}return Ok(());
         }
-        if !((a.gpa>=MMIO_BASE&&end<=MMIO_BASE+4096)||(a.gpa>=MMIO_NET_BASE&&end<=MMIO_NET_BASE+4096)||(a.gpa>=MMIO_AUDIO_BASE&&end<=MMIO_AUDIO_BASE+4096)||(a.gpa>=MMIO_GPIO_BASE&&end<=MMIO_GPIO_BASE+4096)||(a.gpa>=MMIO_I2C_BASE&&end<=MMIO_I2C_BASE+4096)||(a.gpa>=MMIO_SPI_BASE&&end<=MMIO_SPI_BASE+4096)) {return Err("Emulator memory access outside RAM/device page".into());}
+        if !((a.gpa>=MMIO_BASE&&end<=MMIO_BASE+4096)||(a.gpa>=MMIO_NET_BASE&&end<=MMIO_NET_BASE+4096)||(a.gpa>=MMIO_AUDIO_BASE&&end<=MMIO_AUDIO_BASE+4096)||(a.gpa>=MMIO_GPIO_BASE&&end<=MMIO_GPIO_BASE+4096)||(a.gpa>=MMIO_I2C_BASE&&end<=MMIO_I2C_BASE+4096)||(a.gpa>=MMIO_SPI_BASE&&end<=MMIO_SPI_BASE+4096)||(a.gpa>=MMIO_GPU_BASE&&end<=MMIO_GPU_BASE+4096)) {return Err("Emulator memory access outside RAM/device page".into());}
         if ![1,2,4].contains(&a.size) {return Err("Unsupported MMIO register access width".into());}
-        let offset=if a.gpa>=MMIO_SPI_BASE {a.gpa-MMIO_SPI_BASE} else if a.gpa>=MMIO_I2C_BASE {a.gpa-MMIO_I2C_BASE} else if a.gpa>=MMIO_GPIO_BASE {a.gpa-MMIO_GPIO_BASE} else if a.gpa>=MMIO_AUDIO_BASE {a.gpa-MMIO_AUDIO_BASE} else if a.gpa>=MMIO_NET_BASE {a.gpa-MMIO_NET_BASE} else {a.gpa-MMIO_BASE};
+        let offset=if a.gpa>=MMIO_GPU_BASE {a.gpa-MMIO_GPU_BASE} else if a.gpa>=MMIO_SPI_BASE {a.gpa-MMIO_SPI_BASE} else if a.gpa>=MMIO_I2C_BASE {a.gpa-MMIO_I2C_BASE} else if a.gpa>=MMIO_GPIO_BASE {a.gpa-MMIO_GPIO_BASE} else if a.gpa>=MMIO_AUDIO_BASE {a.gpa-MMIO_AUDIO_BASE} else if a.gpa>=MMIO_NET_BASE {a.gpa-MMIO_NET_BASE} else {a.gpa-MMIO_BASE};
         if a.direction==0 {let value=ctx.device.read(offset,a.size)?.to_le_bytes();a.data[..n].copy_from_slice(&value[..n]);}
         else {
             // Defined RO registers/config ignore writes, without changing device state.
@@ -223,6 +227,27 @@ struct LiveSpi {context:MmioContext,emulator:Emulator}
 impl LiveSpi {
     fn access(&mut self,exit:&ExitContext)->Result<(),String> {
         self.emulator.emulate(&mut self.context,exit,false)?;
+        Ok(())
+    }
+}
+
+/// Live VirtIO-GPU device: same MMIO emulation pattern, but services the
+/// command queue with a scanout backend. Activated only when a GPU device is
+/// requested; the software boot path is unaffected.
+#[allow(dead_code)]
+struct LiveGpu {context:MmioContext,emulator:Emulator,backend:crate::virtio_gpu::ScanoutBackend}
+#[allow(dead_code)]
+impl LiveGpu {
+    fn access(&mut self,exit:&ExitContext)->Result<(),String> {
+        self.emulator.emulate(&mut self.context,exit,false)?;
+        if self.context.device.work_pending() {
+            let ram=unsafe {std::slice::from_raw_parts_mut(self.context.ram,self.context.bytes)};
+            let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+            if let MmioDevice::Gpu(device)=&mut self.context.device {
+                device.sync_scanout(&mut self.backend)?;
+                device.service(&mut memory,&mut self.backend,256)?;
+            }
+        }
         Ok(())
     }
 }
@@ -629,6 +654,156 @@ pub fn audio_mmio_smoke()->Result<(),String> {
             if !irq_seen {return Err("Audio MMIO IRQ7 was never asserted".into());}
             if serviced<2 {return Err("Audio MMIO did not complete both TX and RX requests".into());}
             if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real audio MMIO/translation callback execution".into());}
+            Ok(())
+        })?;
+    }Ok(())
+}
+
+/// Live MMIO smoke for the VirtIO-MMIO GPU device: runs the real emulator CPU
+/// executing guest code that maps the GPU MMIO base, negotiates features, writes
+/// the scanout geometry through the config space, sets up and notifies the command
+/// queue, then services the device from the MMIO callback. The pre-staged command
+/// is a FILL_2D that rasterizes a red rectangle into the scanout surface. Verifies
+/// register reads, scanout geometry, command completion status, IRQ assertion,
+/// used-ring advance, real rasterized pixels, and real callback execution.
+pub fn gpu_mmio_smoke()->Result<(),String> {
+    use crate::cpu;
+    for long in [false,true] {
+        let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
+        // Map the GPU MMIO base in guest page tables (long mode only).
+        if long {
+            f.ram[0x2018..0x2020].copy_from_slice(&0x7003u64.to_le_bytes());
+            f.ram[0x7400..0x7408].copy_from_slice(&(MMIO_GPU_BASE|0x83).to_le_bytes());
+        }
+        // Fixture command queue (sel=0): descriptor table 0x20000, avail 0x20100, used 0x20200.
+        // Command header descriptor: [header (RO, 24 bytes, NEXT->1), status (WR, 1 byte)].
+        // Header at 0x20300 (FILL_2D: opcode=4, color=red, x=0, y=0, w=4, h=4).
+        // Status byte at 0x20400.
+        let header_addr=0x20300u64;let status_addr=0x20400u64;
+        let descs=[(0x20000u64,header_addr,24u32,1u16,1u16),(0x20010,status_addr,1,2,0)];
+        for (base,address,length,flags,next) in descs {
+            let b=base as usize;
+            f.ram[b..b+8].copy_from_slice(&address.to_le_bytes());
+            f.ram[b+8..b+12].copy_from_slice(&length.to_le_bytes());
+            f.ram[b+12..b+14].copy_from_slice(&flags.to_le_bytes());
+            f.ram[b+14..b+16].copy_from_slice(&next.to_le_bytes());
+        }
+        // FILL_2D command header: opcode=4, color=0x00ff0000, x=0, y=0, width=4, height=4.
+        f.ram[0x20300..0x20304].copy_from_slice(&4u32.to_le_bytes());   // opcode FILL_2D
+        f.ram[0x20304..0x20308].copy_from_slice(&0x00ff0000u32.to_le_bytes()); // color red
+        f.ram[0x20308..0x2030c].copy_from_slice(&0u32.to_le_bytes());   // x
+        f.ram[0x2030c..0x20310].copy_from_slice(&0u32.to_le_bytes());   // y
+        f.ram[0x20310..0x20314].copy_from_slice(&4u32.to_le_bytes());   // width
+        f.ram[0x20314..0x20318].copy_from_slice(&4u32.to_le_bytes());   // height
+        // Avail ring: flags=0, index=1, head=0. Used ring: flags=0, index=0, head=0.
+        f.ram[0x20100..0x20102].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20102..0x20104].copy_from_slice(&1u16.to_le_bytes());
+        f.ram[0x20104..0x2010c].copy_from_slice(&0u64.to_le_bytes());
+        f.ram[0x20200..0x20202].copy_from_slice(&0u16.to_le_bytes());
+        f.ram[0x20202..0x2020a].copy_from_slice(&0u64.to_le_bytes());
+        let mut code=Vec::new();
+        let load=|code:&mut Vec<u8>,offset:u32,size:u8,dest:u32| {
+            if long {code.push(0x67);}code.push(if size==1 {0xa0} else {0xa1});code.extend_from_slice(&((MMIO_GPU_BASE as u32)+offset).to_le_bytes());
+            if size==1 {code.extend_from_slice(&[0x0f,0xb6,0xc0]);}
+            if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&dest.to_le_bytes());
+        };
+        let write=|code:&mut Vec<u8>,offset:u32,value:u32| {
+            code.push(0xb8);code.extend_from_slice(&value.to_le_bytes());if long {code.push(0x67);}code.push(0xa3);code.extend_from_slice(&((MMIO_GPU_BASE as u32)+offset).to_le_bytes());
+        };
+        // Read device identity: device ID (0), version (4), vendor ID (0xc), queue num (0x34).
+        for (index,offset) in [0,4,0xc,0x34].into_iter().enumerate() {load(&mut code,offset,4,0x1b000+index as u32*4);}
+        // Negotiate: ACK, DRIVER, features (F_FORMAT_LIST low = 1), FEATURES_OK, DRIVER_OK.
+        for (offset,value) in [(0x70,1),(0x70,3),(0x24,0),(0x20,1),(0x24,1),(0x20,1),(0x70,11),(0x70,15)] {write(&mut code,offset,value);}
+        load(&mut code,0x70,4,0x1b010); // status after DRIVER_OK.
+        // Write scanout geometry through the config space: 8x8 XRGB8888, pitch 32.
+        for (offset,value) in [(0x100,8),(0x104,8),(0x108,3),(0x10c,32)] {write(&mut code,offset,value);}
+        for (offset,dest) in [(0x100u32,0x1b020u32),(0x104,0x1b024),(0x108,0x1b028),(0x10c,0x1b02c)].into_iter() {load(&mut code,offset,4,dest);}
+        // Command queue setup (sel=0) + notify.
+        for (offset,value) in [(0x30,0),(0x38,8),(0x80,0x20000),(0x90,0x20100),(0xa0,0x20200),(0x44,1),(0x50,0)] {write(&mut code,offset,value);}
+        // Interrupt status + ACK + re-read.
+        load(&mut code,0x60,4,0x1b014);write(&mut code,0x64,1);load(&mut code,0x60,4,0x1b018);
+        // Reset + read status.
+        write(&mut code,0x70,0);load(&mut code,0x70,4,0x1b01c);
+        code.push(0xf4); // HLT
+        let physical=if long {cpu::DATA} else {cpu::ENTRY};f.ram[physical..physical+code.len()].copy_from_slice(&code);
+        with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
+            unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
+            configure_fixture(partition,&f)?;if long {set_registers(partition,&[0x10],&[Register::scalar(cpu::ALIAS)])?;}
+            let emulator=Emulator::new()?;
+            let mut ctx=MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,device:MmioDevice::Gpu(crate::virtio_gpu_mmio::GpuMmio::new()),error:None,translations:0,accesses:0};
+            let mut backend=crate::virtio_gpu::ScanoutBackend{surface:crate::virtio_gpu::Surface{width:0,height:0,format:crate::virtio_gpu::FORMAT_XRGB8888,pitch:0,data:Vec::new()}};
+            let mut serviced=0;let mut irq_seen=false;
+            let (result,timed_out)=bounded(partition,5000,|| {
+                for _ in 0..128 {
+                    if ctx.device.irq_asserted() {irq_seen=true;}
+                    let exit=run_once(partition)?;
+                    match exit.reason() {
+                        8=>return Ok(Ok(())),
+                        1=>{
+                            emulator.emulate(&mut ctx,&exit,long)?;
+                            if ctx.device.work_pending() {
+                                let ram=unsafe {std::slice::from_raw_parts_mut(ctx.ram,ctx.bytes)};
+                                let mut memory=crate::guest_memory::GuestMemory::new(vec![crate::guest_memory::RamRegion{gpa:0,bytes:ram,writable:true}])?;
+                                if let MmioDevice::Gpu(device)=&mut ctx.device {
+                                    device.sync_scanout(&mut backend)?;
+                                    let done=device.service(&mut memory,&mut backend,8)?;
+                                    serviced+=done.len();
+                                } else {return Err("GPU MMIO smoke context is not a gpu device".into());}
+                            }
+                        },
+                        2=>{
+                            let io=crate::io::IoExit::decode(&exit.0)?;
+                            return Err(format!("Unexpected GPU MMIO fixture port access port=0x{:x}",io.port));
+                        },
+                        reason=>return Err(format!("Unexpected GPU MMIO fixture exit 0x{reason:x}"))
+                    }
+                }Ok(Err("GPU MMIO fixture exit budget exceeded".to_string()))
+            })?;
+            if timed_out {return Err("GPU MMIO fixture deadline exceeded".into());}result?;
+            // Verify register reads: device ID, version, vendor, queue num, status after DRIVER_OK.
+            let bytes=unsafe {std::slice::from_raw_parts(memory.address.cast::<u8>().add(0x1b000),0x30)};
+            for (n,expected) in [0x10u32,2,0x5358454e,256,15].into_iter().enumerate() {
+                let actual=u32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap());if actual!=expected {return Err(format!("GPU MMIO register {n} mismatch 0x{actual:x}"));}
+            }
+            // Verify scanout geometry readback (config registers at 0x1b020..0x1b02c).
+            for (n,expected) in [8u32,8,3,32].into_iter().enumerate() {
+                let actual=u32::from_le_bytes(bytes[(8+n)*4..(8+n)*4+4].try_into().unwrap());if actual!=expected {return Err(format!("GPU scanout geometry register {n} mismatch 0x{actual:x}"));}
+            }
+            // Verify interrupt was asserted and cleared by ACK.
+            let irq_before=u32::from_le_bytes(bytes[5*4..5*4+4].try_into().unwrap());
+            let irq_after=u32::from_le_bytes(bytes[6*4..6*4+4].try_into().unwrap());
+            if irq_before==0||irq_after!=0 {return Err("GPU MMIO interrupt status/ACK mismatch".into());}
+            // Verify status after reset.
+            let status_reset=u32::from_le_bytes(bytes[7*4..7*4+4].try_into().unwrap());
+            if status_reset!=0 {return Err("GPU MMIO status not cleared by reset".into());}
+            // Verify FILL_2D completion: status byte written with 0.
+            let fill_status=u8::from_le(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20400),1)}[0]);
+            if fill_status!=0 {return Err("GPU MMIO FILL_2D completion status not success".into());}
+            // Verify used-ring index advanced.
+            let used_idx=u16::from_le_bytes(unsafe {std::slice::from_raw_parts(ctx.ram.add(0x20202),2)}.try_into().unwrap());
+            if used_idx!=1 {return Err("GPU MMIO used-ring index mismatch".into());}
+            // Verify real rasterization: the 4x4 red rectangle is in the scanout, rest is clear.
+            let surface=backend.scanout();
+            if surface.width!=8||surface.height!=8||surface.pitch!=32 {return Err("GPU scanout surface geometry mismatch".into());}
+            let red=[0x00u8,0x00,0xff,0x00];
+            for row in 0..4u32 {
+                let start=(row as usize)*32;
+                for col in 0..4u32 {
+                    let at=start+(col as usize)*4;
+                    if surface.data[at..at+4]!=red {return Err("GPU scanout fill pixel mismatch".into());}
+                }
+                for col in 4..8u32 {
+                    let at=start+(col as usize)*4;
+                    if surface.data[at..at+4]!=[0;4] {return Err("GPU scanout clear pixel mismatch".into());}
+                }
+            }
+            for row in 4..8u32 {
+                let start=(row as usize)*32;
+                if surface.data[start..start+32]!=[0;32] {return Err("GPU scanout clear row mismatch".into());}
+            }
+            if !irq_seen {return Err("GPU MMIO interrupt was never asserted".into());}
+            if serviced!=1 {return Err("GPU MMIO did not complete the command request".into());}
+            if ctx.accesses<10||(long&&ctx.translations==0) {return Err("Missing real GPU MMIO/translation callback execution".into());}
             Ok(())
         })?;
     }Ok(())

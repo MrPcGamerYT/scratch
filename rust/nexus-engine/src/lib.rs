@@ -11,6 +11,8 @@ pub mod virtio_net_mmio;
 pub mod virtio_audio;
 pub mod virtio_audio_mmio;
 pub mod virtio_mmio;
+pub mod virtio_gpu;
+pub mod virtio_gpu_mmio;
 #[cfg(test)]
 mod virtio_mmio_tests;
 pub mod gpio;
