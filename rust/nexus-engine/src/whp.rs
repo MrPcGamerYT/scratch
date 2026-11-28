@@ -650,7 +650,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         let mut boot_sector=[0u8;512];
         let mut bs=Vec::new();
         bs.push(0xb8);bs.extend_from_slice(&0x544f4f42u32.to_le_bytes());
-        bs.push(0x67);bs.push(0xa3);bs.extend_from_slice(&0x1b004u32.to_le_bytes());
+        bs.push(0xa3);bs.extend_from_slice(&0x1b004u32.to_le_bytes());
         bs.push(0xf4);
         boot_sector[..bs.len()].copy_from_slice(&bs);
         boot_sector[510]=0x55;boot_sector[511]=0xaa;
@@ -663,7 +663,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             f.write_all(&[0u8;512]).map_err(|e|e.to_string())?;}
         crate::image::import_raw(&raw,&zlag).map_err(|e|e.to_string())?;
         let ata=AtaPio::open(&zlag)?;
-        // Firmware bytecode at 0x1000 (real mode).
+        // Firmware bytecode (protected 32-bit mode, placed at cpu::ENTRY).
         let out=|code:&mut Vec<u8>,port:u32,value:u8| {
             code.push(0xba);code.extend_from_slice(&(port as u16).to_le_bytes());
             code.push(0xb0);code.push(value);code.push(0xee);
@@ -671,7 +671,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         let mut fw=Vec::new();
         // POST marker: MOV EAX, 0x504f5354; MOV [0x1b000], EAX.
         fw.push(0xb8);fw.extend_from_slice(&0x504f5354u32.to_le_bytes());
-        fw.push(0x67);fw.push(0xa3);fw.extend_from_slice(&0x1b000u32.to_le_bytes());
+        fw.push(0xa3);fw.extend_from_slice(&0x1b000u32.to_le_bytes());
         // ATA: select drive 0 (LBA), read 1 sector (LBA 0), READ SECTORS command.
         for (port,value) in [(0x1f6u32,0xe0u8),(0x1f2,1),(0x1f3,0),(0x1f4,0),(0x1f5,0),(0x1f7,0x20)] {out(&mut fw,port,value);}
         // Read 256 words from 0x1f0 into 0x7c00.
@@ -680,20 +680,20 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         fw.push(0xb9);fw.extend_from_slice(&256u16.to_le_bytes());
         let loop_start=fw.len();
         fw.push(0xef);                   // IN AX, DX
-        fw.push(0x89);fw.push(0x07);     // MOV [BX], AX
+        fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EBX], AX (16-bit)
         fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD BX, 2
         let jnz_pos=fw.len();
         fw.push(0xe2);fw.extend_from_slice(&[0,0]); // JNZ loop
         let jmp_pos=fw.len();
-        fw.push(0xeb);fw.extend_from_slice(&[0,0]); // JMP 0x7c00
+        fw.push(0xe9);fw.extend_from_slice(&[0,0,0,0]); // JMP rel32 -> 0x7c00
         // Patch JNZ back to loop_start.
         let jnz_disp=(loop_start as i32)-(jnz_pos as i32+3);
         fw[jnz_pos+1..jnz_pos+3].copy_from_slice(&(jnz_disp as u16).to_le_bytes());
-        // Patch JMP to 0x7c00.
-        let jmp_disp=(0x7c00i32)-(jmp_pos as i32+3);
-        fw[jmp_pos+1..jmp_pos+3].copy_from_slice(&(jmp_disp as u16).to_le_bytes());
+        // Patch JMP to 0x7c00 (rel32).
+        let jmp_disp=(0x7c00i32)-(jmp_pos as i32+5);
+        fw[jmp_pos+1..jmp_pos+5].copy_from_slice(&(jmp_disp as i32).to_le_bytes());
         let fw_entry=cpu::ENTRY;
-        let mut f=cpu::fixture(cpu::CpuMode::Real16)?;
+        let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
         f.ram[fw_entry..fw_entry+fw.len()].copy_from_slice(&fw);
         with_guest_at(&[],0,cpu::RAM_BYTES,|partition,memory| {
             unsafe {std::ptr::copy_nonoverlapping(f.ram.as_ptr(),memory.address.cast::<u8>(),f.ram.len());}
