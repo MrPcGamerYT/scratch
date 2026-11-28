@@ -691,7 +691,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         fw[jnz_pos+1..jnz_pos+3].copy_from_slice(&(jnz_disp as u16).to_le_bytes());
         // Patch JMP to 0x7c00 (rel32).
         let jmp_disp=(0x7c00i32)-(jmp_pos as i32+5);
-        fw[jmp_pos+1..jmp_pos+5].copy_from_slice(&(jmp_disp as i32).to_le_bytes());
+        fw[jmp_pos+1..jmp_pos+5].copy_from_slice(&jmp_disp.to_le_bytes());
         let fw_entry=cpu::ENTRY;
         let mut f=cpu::fixture(cpu::CpuMode::Protected32)?;
         f.ram[fw_entry..fw_entry+fw.len()].copy_from_slice(&fw);
