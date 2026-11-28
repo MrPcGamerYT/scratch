@@ -9,7 +9,16 @@ for attempt in 1 2 3 4; do
 done
 echo "NEXUS_HOME_BOOT_READY $boot_ready"
 echo NEXUS_HOME_CANDIDATES_BEGIN
-candidates=$(timeout 15 cmd package query-activities --brief --components --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME)
+# The package manager may not be fully settled right after boot_completed=1
+# (the clean-launch flow checks Home immediately, without the APK install/verify
+# settling time the APK flow provides). Retry the HOME-activity query with
+# sleeps until PackageManager returns at least one candidate.
+candidates=""
+for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    candidates=$(timeout 15 cmd package query-activities --brief --components --user 0 -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null)
+    if printf '%s\n' "$candidates" | grep -qE '^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$'; then break; fi
+    sleep 5
+done
 printf '%s\n' "$candidates"
 echo NEXUS_HOME_CANDIDATES_END
 # Use only a component returned by PackageManager, not an invented package name.
