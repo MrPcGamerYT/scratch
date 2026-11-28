@@ -1,29 +1,25 @@
 RETURN=101
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-error[E0433]: cannot find module or crate `cpu` in this scope
-   --> src\whp_mmio.rs:708:9
+error[E0282]: type annotations needed
+   --> src\whp_mmio.rs:659:14
     |
-708 |     f: &cpu::Fixture,
-    |         ^^^ use of unresolved module or unlinked crate `cpu`
+659 |             |b| {
+    |              ^
+660 |                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());
+    |                                                 - type must be known at this point
     |
-help: to make use of source file src\cpu.rs, use `mod cpu` in this file to declare the module
-   --> src\lib.rs:3:1
+help: consider giving this closure parameter an explicit type
     |
-  3 + mod cpu;
-    |
-help: consider importing this module
-   --> src\whp.rs:18:5
-    |
- 18 +     use crate::cpu;
-    |
+659 |             |b: /* Type */| {
+    |               ++++++++++++
 
-For more information about this error, try `rustc --explain E0433`.
+For more information about this error, try `rustc --explain E0282`.
 error: could not compile `nexus-engine` (lib) due to 1 previous error
 warning: build failed, waiting for other jobs to finish...
 error: could not compile `nexus-engine` (lib test) due to 1 previous error
 
-::error::   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)%0Aerror[E0433]: cannot find module or crate `cpu` in this scope%0A   --> src\whp_mmio.rs:708:9%0A    |%0A708 |     f: &cpu::Fixture,%0A    |         ^^^ use of unresolved module or unlinked crate `cpu`%0A    |%0Ahelp: to make use of source file src\cpu.rs, use `mod cpu` in this file to declare the module%0A   --> src\lib.rs:3:1%0A    |%0A  3 + mod cpu;%0A    |%0Ahelp: consider importing this module%0A   --> src\whp.rs:18:5%0A    |%0A 18 +     use crate::cpu;%0A    |%0A%0AFor more information about this error, try `rustc --explain E0433`.%0Aerror: could not compile `nexus-engine` (lib) due to 1 previous error%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 1 previous error%0A
+::error::   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)%0Aerror[E0282]: type annotations needed%0A   --> src\whp_mmio.rs:659:14%0A    |%0A659 |             |b| {%0A    |              ^%0A660 |                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());%0A    |                                                 - type must be known at this point%0A    |%0Ahelp: consider giving this closure parameter an explicit type%0A    |%0A659 |             |b: /* Type */| {%0A    |               ++++++++++++%0A%0AFor more information about this error, try `rustc --explain E0282`.%0Aerror: could not compile `nexus-engine` (lib) due to 1 previous error%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 1 previous error%0A
 
 STDERR:
 
