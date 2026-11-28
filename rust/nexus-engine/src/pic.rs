@@ -221,6 +221,8 @@ mod tests {
         assert_eq!(p.pending_vector(),Some(0x22));
         p.acknowledge().unwrap();
         assert_eq!(p.pending_vector(),None);
+        // EOI the master to clear the in-service cascade bit before the next edge.
+        p.access(0x20,true,0x20).unwrap();
         // Deassert then re-assert: a fresh edge delivers again.
         p.set_irq8(false);p.set_irq8(true);
         assert_eq!(p.pending_vector(),Some(0x22));
