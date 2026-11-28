@@ -11,7 +11,7 @@
 //! queue and one resource-update queue. The command set covers what a minimal
 //! DRM/Mesa 2D path needs to present a frame: resource update, transfer to/from
 //! host, composite, fill, and scanout.
-use crate::{guest_memory::GuestMemory,virtqueue::{Chain,SplitQueue,MAX_TRANSFER}};
+use crate::{guest_memory::GuestMemory,virtqueue::{Chain,Descriptor,SplitQueue,MAX_TRANSFER}};
 
 /// VirtIO-MMIO device identity (same register map the engine uses for its other
 /// VirtIO-MMIO devices).
@@ -116,6 +116,9 @@ pub struct Completion {
 #[derive(Clone,Debug,PartialEq,Eq)]
 enum Failure {Unsupported,Io(String)}
 
+impl From<String> for Failure {fn from(e:String)->Self {Self::Io(e)}}
+impl From<&str> for Failure {fn from(e:&str)->Self {Self::Io(e.into())}}
+
 fn fail(e:impl Into<String>)->Failure {Failure::Io(e.into())}
 
 /// The 24-byte command header shared by the 2D commands:
@@ -155,7 +158,7 @@ fn execute(m:&mut GuestMemory<'_>,chain:&Chain,backend:&mut dyn GpuBackend)->Res
     }
 }
 
-fn validate_region(x:u32,y:u32,width:u32,height:u32)->Result<(),Failure> {
+fn validate_region(_x:u32,_y:u32,width:u32,height:u32)->Result<(),Failure> {
     if width==0||height==0||width.checked_mul(height).is_none() {return Err(fail("Zero or overflowing GPU region"));}
     Ok(())
 }
@@ -177,7 +180,7 @@ fn execute_fill(backend:&mut dyn GpuBackend,color:u32,x:u32,y:u32,width:u32,heig
 }
 
 /// VIRTIO_GPU_CMD_RESOURCE_UPDATE_2D: blit a host buffer into the scanout surface.
-fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[Descriptor],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     validate_region(x,y,width,height)?;
     if data.len()!=1 {return Err(fail("RESOURCE_UPDATE_2D needs exactly one data descriptor"));}
     if data[0].writable {return Err(fail("RESOURCE_UPDATE_2D data must be device-readable"));}
@@ -191,7 +194,7 @@ fn execute_resource_update(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn Gpu
 }
 
 /// VIRTIO_GPU_CMD_TRANSFER_FROM_HOST_2D: blit a host buffer into the scanout.
-fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[Descriptor],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     validate_region(x,y,width,height)?;
     if data.len()!=1 {return Err(fail("TRANSFER_FROM_HOST_2D needs exactly one data descriptor"));}
     if data[0].writable {return Err(fail("TRANSFER_FROM_HOST_2D data must be device-readable"));}
@@ -206,7 +209,7 @@ fn execute_transfer_from_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn 
 }
 
 /// VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D: read back a scanout region into a host buffer.
-fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[Descriptor],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     validate_region(x,y,width,height)?;
     if data.len()!=1 {return Err(fail("TRANSFER_TO_HOST_2D needs exactly one data descriptor"));}
     if !data[0].writable {return Err(fail("TRANSFER_TO_HOST_2D data must be device-writable"));}
@@ -221,7 +224,7 @@ fn execute_transfer_to_host(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn Gp
 
 /// VIRTIO_GPU_CMD_COMPOSITE_2D: draw one resource onto the scanout. With a
 /// single scanout surface, source and destination are the same surface.
-fn execute_composite(m:&mut GuestMemory<'_>,data:&[_],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
+fn execute_composite(m:&mut GuestMemory<'_>,data:&[Descriptor],backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)->Result<u32,Failure> {
     validate_region(x,y,width,height)?;
     if data.len()!=1 {return Err(fail("COMPOSITE_2D needs exactly one data descriptor"));}
     if data[0].writable {return Err(fail("COMPOSITE_2D data must be device-readable"));}
@@ -246,8 +249,8 @@ fn execute_scanout(backend:&mut dyn GpuBackend,x:u32,y:u32,width:u32,height:u32)
 
 /// Expected pixel-buffer size for a region at the scanout pitch (4 bpp).
 fn region_bytes(width:u32,height:u32)->Result<usize,Failure> {
-    (width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?
-        .checked_mul(4).map_err(|_|fail("GPU region overflow"))
+    let pixels=(width as usize).checked_mul(height as usize).ok_or_else(||fail("GPU region overflow"))?;
+    pixels.checked_mul(4).ok_or_else(||fail("GPU region overflow"))
 }
 
 /// Process at most one command-queue request. Returns `Ok(None)` when the queue

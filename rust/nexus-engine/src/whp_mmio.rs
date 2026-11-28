@@ -668,6 +668,7 @@ pub fn audio_mmio_smoke()->Result<(),String> {
 /// used-ring advance, real rasterized pixels, and real callback execution.
 pub fn gpu_mmio_smoke()->Result<(),String> {
     use crate::cpu;
+    use crate::virtio_gpu::GpuBackend;
     for long in [false,true] {
         let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};let mut f=cpu::fixture(mode)?;
         // Map the GPU MMIO base in guest page tables (long mode only).
