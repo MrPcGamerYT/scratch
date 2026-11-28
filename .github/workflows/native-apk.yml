@@ -168,10 +168,7 @@ jobs:
           git config user.name "Nexus CI"
           git add .ci-diag
           git commit -q -m "ci-diag: native-apk failure diagnostics" || true
-          branch=${{ github.ref_name }}
-          git fetch -q origin "$branch"
-          git rebase -q "origin/$branch" || true
-          git push -q origin "HEAD:${{ github.ref }}" || true
+          git push -q origin HEAD:${{ github.ref }} || true
   home:
     needs: [assets, apk]
     if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
@@ -244,7 +241,4 @@ jobs:
           git config user.name "Nexus CI"
           git add .ci-diag
           git commit -q -m "ci-diag: native-home failure diagnostics" || true
-          branch=${{ github.ref_name }}
-          git fetch -q origin "$branch"
-          git rebase -q "origin/$branch" || true
-          git push -q origin "HEAD:${{ github.ref }}" || true
+          git push -q origin HEAD:${{ github.ref }} || true
