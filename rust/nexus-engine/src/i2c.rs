@@ -41,8 +41,16 @@ impl I2cController {
         };
         match offset {
             0x00 => {
-                // Control: bit0=start, bit1=stop, bit2=read, bit3=write
+                // Control: bit0=start, bit1=stop, bit2=read, bit3=write.
+                // A transfer is counted only when the control register is
+                // written with a non-zero command, not on every register access.
                 self.control = masked;
+                if masked & 0xf != 0 {
+                    self.transfers += 1;
+                    self.busy = false;
+                    self.error = false;
+                    self.status = 0;
+                }
             }
             0x08 => self.address = masked & 0x7f,
             0x0c => self.data = masked,
@@ -50,15 +58,6 @@ impl I2cController {
             _ => return Err(format!("I2C write outside register window: offset 0x{offset:x}")),
         }
         self.accesses += 1;
-        // Simulate a completed transfer immediately for the smoke test path.
-        // Real hardware would have a busy/complete cycle; the guest driver
-        // checks status after the command.
-        if self.control & 0xf != 0 {
-            self.transfers += 1;
-            self.busy = false;
-            self.error = false;
-            self.status = 0; // success, no error
-        }
         Ok(())
     }
 
