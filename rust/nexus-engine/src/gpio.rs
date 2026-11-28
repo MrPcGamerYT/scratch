@@ -14,19 +14,19 @@ impl GpioController {
     pub fn new() -> Self { Self::default() }
 
     fn read_reg(&self, offset: u64, size: u8) -> Result<u32, String> {
-        match offset {
-            0x00 => Ok(self.direction),
-            0x04 => Ok(self.output),
-            0x08 => Ok(self.input),
-            0x0c => Ok(self.status),
-            _ => Err(format!("GPIO read outside register window: offset 0x{offset:x}")),
+        let value = match offset {
+            0x00 => self.direction,
+            0x04 => self.output,
+            0x08 => self.input,
+            0x0c => self.status,
+            _ => return Err(format!("GPIO read outside register window: offset 0x{offset:x}")),
+        };
+        match size {
+            1 => Ok((value & 0xff) as u32),
+            2 => Ok((value & 0xffff) as u32),
+            4 => Ok(value),
+            _ => Err(format!("GPIO read size {size} not supported")),
         }
-        .map(|v| match size {
-            1 => (v & 0xff) as u32,
-            2 => (v & 0xffff) as u32,
-            4 => v,
-            _ => return Err(format!("GPIO read size {size} not supported")),
-        })
     }
 
     fn write_reg(&mut self, offset: u64, size: u8, value: u32) -> Result<(), String> {

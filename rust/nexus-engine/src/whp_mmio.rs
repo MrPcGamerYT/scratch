@@ -631,7 +631,8 @@ pub fn audio_mmio_smoke()->Result<(),String> {
 pub fn platform_mmio_smoke()->Result<(),String> {
     use crate::cpu;
     for long in [false,true] {
-        let mut f=cpu::fixture(long)?;
+        let mode=if long {cpu::CpuMode::Long64} else {cpu::CpuMode::Protected32};
+        let mut f=cpu::fixture(mode)?;
         // Map the platform MMIO bases in guest page tables (long mode only).
         // MMIO_BASE (0xd0000000, 2MB-aligned) as GPA makes VA 0xd0003000->GPA 0xd0003000,
         // VA 0xd0004000->GPA 0xd0004000, VA 0xd0005000->GPA 0xd0005000 (identity).
