@@ -15,11 +15,16 @@ impl Apk {
 use crate::{io::IoExit,uart::EarlyUart};
 pub const GREETING:&[u8]=b"NEXUS 1 HELLO READY NAV VOLUME SHUTDOWN HOME_CHECK APP APK";
 #[derive(Default)]
-pub struct Bridge {apk:Option<Apk>,line:Vec<u8>,pending:VecDeque<u8>,greeted:bool,app:Option<String>,result:bool,pub received:usize}
+pub struct Bridge {apk:Option<Apk>,line:Vec<u8>,pending:VecDeque<u8>,greeted:bool,app:Option<String>,result:bool,home_check:bool,home_sent:bool,pub received:usize}
 impl Bridge {
     pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{apk:Some(Apk::open(path)?),..Default::default()})}
+    /// Clean-launch Home certification: no APK install. After the guest reports
+    /// boot completed (READY 1), send CHECK_HOME and complete on its OK result,
+    /// recording the launch-to-Home time. Distinct from the APK install flow.
+    pub fn with_home_check()->Self {Self{home_check:true,..Default::default()}}
     pub fn installing(&self)->bool {self.apk.is_some()}
-    pub fn complete(&self)->bool {if self.apk.is_some() {self.result} else {self.greeted&&self.app.is_some()&&self.result}}
+    pub fn home_checking(&self)->bool {self.home_check}
+    pub fn complete(&self)->bool {if self.apk.is_some() {self.result} else if self.home_check {self.greeted&&self.result} else {self.greeted&&self.app.is_some()&&self.result}}
     pub fn app(&self)->Option<&str> {self.app.as_deref()}
     pub fn next_byte(&mut self)->Option<u8> {self.pending.pop_front()}
     /// Queue a command line (e.g. "NEXUS 1 BACK") for transmission to the guest.
@@ -42,7 +47,7 @@ impl Bridge {
     fn frame(&mut self,line:&[u8])->Result<(),String> {
         if !self.greeted {
             if line!=GREETING {return Err("Native bridge version/capability greeting mismatch".into());}
-            self.greeted=true;println!("NATIVE_BRIDGE_EVENT HELLO");if self.apk.is_none() {self.pending.extend(b"NEXUS 1 QUERY_APP\n");}return Ok(());
+            self.greeted=true;println!("NATIVE_BRIDGE_EVENT HELLO");if self.apk.is_none()&&!self.home_check {self.pending.extend(b"NEXUS 1 QUERY_APP\n");}return Ok(());
         }
         if let Some(apk)=&mut self.apk {
             println!("NATIVE_BRIDGE_EVENT {}",String::from_utf8_lossy(line));
@@ -61,6 +66,13 @@ impl Bridge {
             if line==b"NEXUS 1 RESULT VERIFY_TEST_APK OK"&&apk.phase==3&&self.pending.is_empty() {apk.phase=4;self.result=true;return Ok(());}
             return Err("APK bridge installation/verification failed or response out of order".into());
         }
+        if self.home_check {
+            if line==b"NEXUS 1 READY 1"&&!self.home_sent&&self.pending.is_empty() {self.pending.extend(b"NEXUS 1 CHECK_HOME\n");self.home_sent=true;println!("NATIVE_BRIDGE_EVENT NEXUS 1 CHECK_HOME_SENT");return Ok(());}
+            if line==b"NEXUS 1 RESULT CHECK_HOME OK"&&!self.result {self.result=true;println!("NATIVE_BRIDGE_EVENT NEXUS 1 HOME_CHECK_OK");return Ok(());}
+            if line==b"NEXUS 1 RESULT CHECK_HOME FAILED" {return Err("Native bridge Home check reported FAILED".into());}
+            if line==b"NEXUS 1 READY 0"||line==b"NEXUS 1 READY 1" {return Ok(());}
+            return Err("Unexpected native bridge response during Home check".into());
+        }
         if line==b"NEXUS 1 READY 0"||line==b"NEXUS 1 READY 1" {return Ok(());}
         if let Some(name)=line.strip_prefix(b"NEXUS 1 APP ") {
             if self.app.is_some()||name.len()>100||name.is_empty() {return Err("Invalid/duplicate app identity".into());}
@@ -76,6 +88,7 @@ impl Bridge {
 pub struct Device {pub uart:EarlyUart,pub client:Bridge,probe_bytes:usize}
 impl Device {
     pub fn with_apk(path:&std::path::Path)->Result<Self,String> {Ok(Self{uart:EarlyUart::default(),client:Bridge::with_apk(path)?,probe_bytes:0})}
+    pub fn with_home_check()->Self {Self{uart:EarlyUart::default(),client:Bridge::with_home_check(),probe_bytes:0}}
     pub fn tick(&mut self)->Result<(),String> {
         if self.uart.can_receive() {if let Some(byte)=self.client.next_byte() {self.uart.receive(byte)?;}}Ok(())
     }
@@ -125,6 +138,27 @@ impl Device {
         b.receive(b"NEXUS 1 APK NEXT\n").unwrap();assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 APK COMMIT\n");assert!(!b.complete());
         b.receive(b"NEXUS 1 RESULT APK_INSTALL OK\n").unwrap();assert!(!b.complete());assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 VERIFY_TEST_APK\n");
         b.receive(b"NEXUS 1 RESULT VERIFY_TEST_APK OK\n").unwrap();assert!(b.complete());drop(b);std::fs::remove_file(path).unwrap();
+    }
+    #[test] fn home_check_flow_sends_check_home_on_ready_and_completes_on_ok() {
+        let mut b=Bridge::with_home_check();
+        // Greeting does not trigger QUERY_APP for the home-check mode.
+        for byte in GREETING {b.receive(&[*byte]).unwrap();}b.receive(b"\n").unwrap();
+        assert!(b.pending.is_empty());
+        assert!(!b.complete());
+        // READY 0 is ignored; READY 1 triggers a single CHECK_HOME.
+        b.receive(b"NEXUS 1 READY 0\n").unwrap();assert!(b.pending.is_empty());
+        b.receive(b"NEXUS 1 READY 1\n").unwrap();
+        assert_eq!(b.pending.drain(..).collect::<Vec<_>>(),b"NEXUS 1 CHECK_HOME\n");
+        // A repeated READY 1 must not re-send CHECK_HOME.
+        b.receive(b"NEXUS 1 READY 1\n").unwrap();assert!(b.pending.is_empty());
+        assert!(!b.complete());
+        b.receive(b"NEXUS 1 RESULT CHECK_HOME OK\n").unwrap();
+        assert!(b.complete());
+    }
+    #[test] fn home_check_rejects_failed_result() {
+        let mut b=Bridge::with_home_check();
+        for byte in GREETING {b.receive(&[*byte]).unwrap();}b.receive(b"\nNEXUS 1 READY 1\n").unwrap();
+        b.pending.drain(..);b.receive(b"NEXUS 1 RESULT CHECK_HOME FAILED\n").unwrap_err();
     }
     #[test] fn push_command_queues_valid_lines_and_rejects_bad() {
         let mut b=Bridge::default();

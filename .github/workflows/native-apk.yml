@@ -165,3 +165,72 @@ jobs:
           subprocess.run(['git','add','.ci-diag'])
           subprocess.run(['git','commit','-q','-m','ci-diag: native-apk failure diagnostics'])
           subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])
+  home:
+    needs: assets
+    if: ${{ always() && (needs.assets.result == 'success' || inputs.assets_run != '') }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-android-apk-disk
+          path: native-apk-artifact
+          run-id: ${{ inputs.assets_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build independent Rust engine
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/build_native_engine.py',run_name='__main__')
+      - name: Clean-launch usable-Home certification (no APK install)
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/native_android_home_checkpoint.py',run_name='__main__')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-android-home-evidence
+          path: |
+            native-home-serial.log
+            native-home-serial.log.timing.json
+            native-home-checkpoint.json
+            native-home-software.ppm
+            native-home-gate-summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-home-gate-summary
+          path: native-home-gate-summary.json
+          if-no-files-found: ignore
+      - name: Persist native-home diagnostics on failure
+        if: failure()
+        shell: python
+        run: |
+          import json,re,subprocess,os
+          from pathlib import Path
+          os.makedirs('.ci-diag',exist_ok=True)
+          lines=[]
+          try:
+              summary=json.loads(Path('native-home-gate-summary.json').read_text())
+              lines.append('HOME_GATE_SUMMARY='+json.dumps(summary))
+          except Exception as e:
+              lines.append('HOME_GATE_SUMMARY_UNAVAILABLE='+str(e))
+          try:
+              serial=Path('native-home-serial.log').read_text(errors='replace')
+              for marker in ['NEXUS_HOME_SELECTED','NEXUS_HOME_PROCESS_READY','NEXUS_HOME_PID_BEFORE','NEXUS_HOME_PID_AFTER','NEXUS_HOME_PROCESS_RETAINED','NEXUS_HOME_WINDOW_VISIBLE','NEXUS_HOME_FRAME_STATS_BEGIN','NEXUS_HOME_ACTIVITY_STATE_BEGIN','NEXUS_HOME_CRASH_LOG_BEGIN','NEXUS_HOME_ANR_BEGIN','NATIVE_BRIDGE_EVENT HELLO','NATIVE_BRIDGE_EVENT NEXUS 1 READY 1','NATIVE_BRIDGE_HOME_VERIFIED']:
+                  if marker in serial: lines.append('MARKER '+marker)
+              anr=re.findall(r'(?m)^.*(?:ANR in|Not responding).*$',serial)
+              lines.append('ANR_DEFINITIVE_LINES='+repr(anr[:20]) if anr else 'ANR_DEFINITIVE_LINES=none')
+              for m in re.findall(r'(?m)^NEXUS_HOME_SELECTED (.+)$',serial): lines.append('HOME_SELECTED='+m)
+              for m in re.findall(r'(?m)^(?:mResumedActivity|topResumedActivity|ResumedActivity):.*$',serial): lines.append('RESUMED='+m)
+          except Exception as e:
+              lines.append('SERIAL_READ_FAILED='+str(e))
+          Path('.ci-diag/native-home-diag.txt').write_text('\n'.join(lines)+'\n')
+          subprocess.run(['git','config','user.email','ci@nexus.local'])
+          subprocess.run(['git','config','user.name','Nexus CI'])
+          subprocess.run(['git','add','.ci-diag'])
+          subprocess.run(['git','commit','-q','-m','ci-diag: native-home failure diagnostics'])
+          subprocess.run(['git','push','-q','origin','HEAD:'+os.environ.get('GITHUB_REF','refs/heads/main')])

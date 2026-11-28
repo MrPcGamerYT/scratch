@@ -85,5 +85,8 @@ echo NEXUS_HOME_WINDOW_STATE_END
 echo NEXUS_HOME_CRASH_LOG_BEGIN
 timeout 8 logcat -b crash -d -t 150 -v threadtime
 echo NEXUS_HOME_CRASH_LOG_END
+echo NEXUS_HOME_ANR_BEGIN
+if ! timeout 10 dumpsys activity lastanr; then echo NEXUS_HOME_ANR_UNAVAILABLE; fi
+echo NEXUS_HOME_ANR_END
 # Captured evidence is diagnostic, not a success marker or an ANR remediation.
 exit 0

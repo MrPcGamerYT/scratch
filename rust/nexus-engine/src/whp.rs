@@ -467,7 +467,7 @@ mod windows {
         platform.pic.acknowledge()?;Ok(Some(vector))
     }
     #[derive(Clone,Copy,PartialEq)]
-    enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve,NativeBridge,NativeApk}
+    enum RunGoal {Diagnostic,TimerFixture,AndroidInit,AndroidObserve,NativeBridge,NativeApk,AndroidHome}
     #[allow(clippy::too_many_arguments)]
     fn run_platform(partition:&Partition,platform:&mut crate::platform::EarlyPlatform,
         serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,
@@ -476,7 +476,7 @@ mod windows {
         let fixture=goal==RunGoal::TimerFixture;
         // Diagnostic wall budgets. Android/APK runs need room for CI scheduling variance;
 // they still terminate via this global deadline and the bridge's completion exit.
-let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge) {180000} else {30000};
+let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::AndroidInit|RunGoal::AndroidObserve|RunGoal::NativeBridge|RunGoal::AndroidHome) {180000} else {30000};
         let elapsed_ms=||start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         let mut halted=false;let mut runs=0;let mut last=(0u32,0u64,0u16);
         timer_pump(partition,|| {
@@ -502,10 +502,17 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                             }
                             if let Some(app)=bridge.client.app() {let _=session.set_app(app);}
                         }
-                        if matches!(goal,RunGoal::NativeBridge|RunGoal::NativeApk)&&bridge.client.complete() {
+                        if matches!(goal,RunGoal::NativeBridge|RunGoal::NativeApk|RunGoal::AndroidHome)&&bridge.client.complete() {
                             if bridge.client.installing() {
                                 println!("NATIVE_BRIDGE_APK_INSTALL_VERIFY_UNINSTALL_OK");
                                 // Home diagnostic completed at bridge VERIFY_TEST_APK OK.
+                                if trace.android_home_ready_ms.is_none() {
+                                    trace.android_home_ready_ms=Some(elapsed_ms());
+                                }
+                            } else if bridge.client.home_checking() {
+                                // Clean-launch Home certification: CHECK_HOME OK over
+                                // COM2 with no APK install. Records launch-to-Home.
+                                println!("NATIVE_BRIDGE_HOME_VERIFIED ms={}",elapsed_ms());
                                 if trace.android_home_ready_ms.is_none() {
                                     trace.android_home_ready_ms=Some(elapsed_ms());
                                 }
@@ -590,7 +597,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
 
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut platform=crate::platform::EarlyPlatform::default();
-            if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
+            if plan.bridge_probe||plan.bridge_home_check {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else if plan.bridge_home_check {crate::bridge::Device::with_home_check()} else {crate::bridge::Device::default()});}
             let mut net:Option<LiveNet>=None;
             if plan.net_probe {
                 net=Some(LiveNet{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
@@ -601,7 +608,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                 audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                     device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:match plan.audio_backend {crate::kernel::AudioBackendKind::Null=>Box::new(crate::virtio_audio::NullBackend::new()),crate::kernel::AudioBackendKind::Real=>Box::new(crate::virtio_audio::RealBackend::new(44100))}});
             }
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut(),audio.as_mut())
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_home_check {RunGoal::AndroidHome} else if plan.bridge_probe {RunGoal::NativeBridge} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),None,net.as_mut(),audio.as_mut())
         })
     }
     pub fn boot_kernel_disk(plan:&crate::kernel::KernelPlan,serial:&mut dyn std::io::Write,trace:&mut crate::timing::BootTrace,start:std::time::Instant,base:&std::path::Path,cow:&std::path::Path,create:bool)->Result<(),String> {
@@ -614,7 +621,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
             let mut disk=LiveBlock{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                 device:MmioDevice::Block(crate::virtio_mmio::BlockMmio::new(capacity,false)?),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend};
             let mut platform=crate::platform::EarlyPlatform::default();
-            if plan.bridge_probe {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else {crate::bridge::Device::default()});}
+            if plan.bridge_probe||plan.bridge_home_check {platform.bridge=Some(if let Some(apk)=&plan.bridge_apk {crate::bridge::Device::with_apk(apk)?} else if plan.bridge_home_check {crate::bridge::Device::with_home_check()} else {crate::bridge::Device::default()});}
             platform.pic.access(0x4d0,true,0x20)?;
             trace.vm_ready_ms=Some(start.elapsed().as_millis() as u64);
             let mut net:Option<LiveNet>=None;
@@ -627,7 +634,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
                 audio=Some(LiveAudio{context:MmioContext{partition:partition.0,ram:memory.address.cast(),bytes:memory.bytes,
                     device:MmioDevice::Audio(crate::virtio_audio_mmio::AudioMmio::new()),error:None,translations:0,accesses:0},emulator:Emulator::new()?,backend:match plan.audio_backend {crate::kernel::AudioBackendKind::Null=>Box::new(crate::virtio_audio::NullBackend::new()),crate::kernel::AudioBackendKind::Real=>Box::new(crate::virtio_audio::RealBackend::new(44100))}});
             }
-            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut(),audio.as_mut())
+            run_platform(partition,&mut platform,serial,trace,start,(if plan.bridge_apk.is_some() {RunGoal::NativeApk} else if plan.bridge_home_check {RunGoal::AndroidHome} else if plan.bridge_probe {RunGoal::NativeBridge} else if plan.android_observe {RunGoal::AndroidObserve} else if plan.android_init_probe {RunGoal::AndroidInit} else {RunGoal::Diagnostic},surface.zip(plan.player.as_deref())),Some(&mut disk),net.as_mut(),audio.as_mut())
         })
     }
     pub fn ata_pio_smoke(path:&std::path::Path)->Result<(),String> {ata_fixture(path,None)}
