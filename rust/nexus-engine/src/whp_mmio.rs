@@ -110,11 +110,14 @@ extern "system" fn emu_memory(context:*mut c_void,access:*mut EmulatorMemory)->i
         if a.direction==0 {let value=ctx.device.read(offset,a.size)?.to_le_bytes();a.data[..n].copy_from_slice(&value[..n]);}
         else {
             // Defined RO registers/config ignore writes, without changing device state.
-            // Config space bound differs per device: block 0x100..0x200, net MAC 0x100..0x106, audio none.
-            let (is_net,is_audio)=(matches!(ctx.device,MmioDevice::Net(_)),matches!(ctx.device,MmioDevice::Audio(_)));
-            let config_end=if is_net {0x106u64} else if is_audio {0u64} else {0x200u64};
+            // Config space bound differs per device: block 0x100..0x200, net MAC 0x100..0x106,
+            // audio/platform controllers none. The VirtIO RO-offset filter applies only to
+            // VirtIO devices; platform controllers (GPIO/I2C/SPI) own their register map and
+            // reject writes to their own read-only registers via ctx.device.write.
+            let (is_net,is_audio,is_platform)=(matches!(ctx.device,MmioDevice::Net(_)),matches!(ctx.device,MmioDevice::Audio(_)),matches!(ctx.device,MmioDevice::Gpio(_)|MmioDevice::I2c(_)|MmioDevice::Spi(_)));
+            let config_end=if is_net {0x106u64} else if is_audio||is_platform {0u64} else {0x200u64};
             let config=(0x100..config_end).contains(&offset)&&end<=(if is_net {MMIO_NET_BASE} else if is_audio {MMIO_AUDIO_BASE} else {MMIO_BASE})+config_end&&[1,2,4].contains(&a.size);
-            let readonly=[0,4,8,0xc,0x10,0x34,0x60,0xfc].contains(&offset)&&a.size==4&&offset%4==0;
+            let readonly=!is_platform&&[0,4,8,0xc,0x10,0x34,0x60,0xfc].contains(&offset)&&a.size==4&&offset%4==0;
             if !config&&!readonly {
                 let value=u32::from_le_bytes(a.data[..4].try_into().unwrap());ctx.device.write(offset,a.size,value)?;
             }
