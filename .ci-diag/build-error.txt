@@ -1,17 +1,16 @@
 RETURN=0
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.10s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.53s
      Running unittests src\lib.rs (rust\nexus-engine\target\debug\build\nexus-engine/6eeb0d3c744f3473\out\nexus_engine-6eeb0d3c744f3473.exe)
 
 running 183 tests
-test ata::tests::reset_slave_and_corrupt_images ... ok
-test ata::tests::write_dma_and_bounds_refused_and_source_unchanged ... ok
 test ata::tests::identify_capacity_and_pio_sector_data_not_container_header ... ok
+test ata::tests::reset_slave_and_corrupt_images ... ok
 test boot::tests::requires_boot_signature ... ok
+test bridge::tests::apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification ... ok
 test bridge::tests::backpressure_does_not_overwrite_receiver ... ok
 test bridge::tests::fragmented_greeting_query_and_result_not_home_or_install_success ... ok
-test bridge::tests::apk_stream_is_binary_safe_acknowledged_and_not_complete_until_verification ... ok
 test bridge::tests::hardware_irq_probe_preface_is_bounded_and_not_allowed_after_greeting ... ok
 test bridge::tests::push_command_queues_valid_lines_and_rejects_bad ... ok
 test bridge::tests::rejects_versions_injection_overflow_and_out_of_order_result ... ok
@@ -23,6 +22,7 @@ test cpu::tests::protected_start_state ... ok
 test cpu::tests::protection_fixture_enables_wp_and_keeps_fault_targets_unmapped_or_readonly ... ok
 test cpu::tests::transition_tables_and_real_entry_are_independent_of_seeded_long_state ... ok
 test firmware::tests::mp_layout_checksum_and_routes_match_machine_for_all_cpu_counts ... ok
+test ata::tests::write_dma_and_bounds_refused_and_source_unchanged ... ok
 test framebuffer::tests::exact_rgb_channels_ignore_x_and_mapping_padding ... ok
 test framebuffer::tests::screen_info_and_reserved_surface ... ok
 test gpio::tests::byte_and_word_access_masks ... ok
@@ -40,15 +40,16 @@ test i2c::tests::control_address_data_roundtrip ... ok
 test i2c::tests::no_transfer_on_zero_command ... ok
 test i2c::tests::status_is_read_only ... ok
 test i2c::tests::unsupported_offsets_and_sizes ... ok
-test ata::tests::cow_guest_words_persist_and_partial_sector_is_discarded_on_reset ... ok
+test framebuffer::tests::capture_refuses_overwrite ... ok
 test image::tests::crc_vector ... ok
 test image::tests::renamed_containers_refused ... ok
-test image::tests::corruption_rejected ... ok
+test ata::tests::cow_guest_words_persist_and_partial_sector_is_discarded_on_reset ... ok
 test io::tests::bus_is_private_and_bounded ... ok
 test io::tests::decode_and_width_rules ... ok
 test io::tests::reject_unsupported_contexts ... ok
-test ioapic::tests::edge_logical_polarity_and_validation ... ok
+test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test ioapic::tests::level_remote_irr_eoi_reassert_and_mask ... ok
+test ioapic::tests::edge_logical_polarity_and_validation ... ok
 test ioapic::tests::lowest_priority_selects_one_logical_destination_by_ppr ... ok
 test ioapic::tests::reprogramming_preserves_inflight_eoi_vector ... ok
 test kernel::tests::audio_probe_requires_single_vcpu_platform_path ... ok
@@ -64,20 +65,19 @@ test kernel::tests::overlap_validation ... ok
 test kernel::tests::real_audio_backend_requires_audio_probe ... ok
 test kernel::tests::selected_cpu_count_requires_matching_boot_profile ... ok
 test kernel::tests::software_renderer_validates ... ok
-test ata::tests::zero_count_means_256_sectors_and_upper_rax_is_preserved ... ok
 test lapic::tests::disabled_masked_priority_and_deferred_acknowledgement ... ok
 test lapic::tests::edge_coalescing_and_invalid_registers_leave_requests_intact ... ok
 test lapic::tests::flat_logical_destinations_and_mode_validation ... ok
+test image::tests::corruption_rejected ... ok
 test lapic::tests::nested_higher_priority_and_same_class_waits_for_eoi ... ok
 test lapic::tests::physical_destination_and_shorthand_do_not_touch_other_cpus ... ok
 test lapic::tests::timer_all_dividers_and_disabled_apic ... ok
 test lapic::tests::timer_countdown_periodic_masking_and_reprogramming ... ok
 test lapic::tests::trigger_mode_tracks_acknowledged_vector_and_clears_on_eoi ... ok
-test framebuffer::tests::capture_refuses_overwrite ... ok
 test lapic::tests::cr8_priority_classes_preserve_subpriority_and_defer_without_losing_irr ... ok
 test image::tests::round_trip_bounds_and_no_overwrite ... ok
+test overlay::tests::incomplete_tail_requires_explicit_recovery_and_crc_damage_never_repaired ... ok
 test overlay::tests::host_write_failure_poisoning_preserves_committed_data ... ok
-test overlay::tests::single_writer_no_overwrite_and_bounds ... ok
 test pci::tests::address_roundtrip_and_empty_configuration ... ok
 test pci::tests::rejects_reset_ports_crossing_and_misalignment_without_mutation ... ok
 test pic::tests::auto_eoi_does_not_block_subsequent_edges_and_reinitialization_resets_it ... ok
@@ -91,21 +91,19 @@ test pic::tests::private_bridge_irq3_edge_and_priority ... ok
 test pic::tests::uart_edge_latches_while_masked_and_prioritizes_above_disk ... ok
 test pic::tests::unsupported_modes_fail_without_silently_completing_init ... ok
 test pit0::tests::oneshot_zero_reload_and_reprogram ... ok
-test overlay::tests::incomplete_tail_requires_explicit_recovery_and_crc_damage_never_repaired ... ok
 test pit0::tests::periodic_edges_and_no_io_driven_time ... ok
 test pit0::tests::software_strobe_fires_on_rising_edge_after_one_tick_low_pulse ... ok
 test pit0::tests::stable_latch_and_strict_control ... ok
+test pit::tests::clock_drives_terminal_output_not_read_count ... ok
 test pit::tests::gate_pauses_and_resumes_and_speaker_is_only_shadow ... ok
 test pit::tests::partial_reload_and_unsupported_modes ... ok
-test pit::tests::clock_drives_terminal_output_not_read_count ... ok
 test pit::tests::zero_reload_and_coherent_latch ... ok
-test overlay::tests::persistence_latest_write_fallback_and_source_unchanged ... ok
 test platform::tests::absent_isa_dma_probes_never_expose_host_hardware ... ok
 test platform::tests::block_source_deassert_before_eoi_does_not_retrigger ... ok
 test platform::tests::chipset_reads_preserve_upper_rax_and_do_not_touch_uart ... ok
 test platform::tests::chipset_rejects_wide_io_and_unknown_ports ... ok
-test player::native::abi_tests::win32_x64_layouts_match_sdk_contract ... ok
 test platform::tests::pit_ioapic_edge_is_not_duplicated_by_repeated_routing ... ok
+test player::native::abi_tests::win32_x64_layouts_match_sdk_contract ... ok
 test player::tests::aspect_and_minimize ... ok
 test player::tests::button_layout_hits_and_gaps ... ok
 test player::tests::command_queue_is_bounded_ordered_and_drains ... ok
@@ -114,12 +112,13 @@ test player::tests::default_volume_and_app_state ... ok
 test player::tests::fullscreen_keymap_volume_toggle ... ok
 test player::tests::keymaps_translate_per_app_with_default_fallback ... ok
 test player::tests::session_translate_key_uses_active_app ... ok
+test player::tests::snapshots_are_owned_and_bounded ... ok
 test rtc::tests::disabled_alarm_register_storage_never_claims_an_interrupt ... ok
 test rtc::tests::update_window_nmi_shadow_and_strict_modes ... ok
 test rtc::tests::utc_epoch_leap_date_and_rollover ... ok
+test overlay::tests::single_writer_no_overwrite_and_bounds ... ok
 test spi::tests::clock_divider_and_mode_roundtrip ... ok
 test spi::tests::enable_and_transfer ... ok
-test player::tests::snapshots_are_owned_and_bounded ... ok
 test spi::tests::no_transfer_when_disabled ... ok
 test spi::tests::read_only_registers ... ok
 test spi::tests::unsupported_offsets_and_sizes ... ok
@@ -142,16 +141,17 @@ test uart::tests::probe_loopback_modem_rx_priority_and_no_output_leak ... ok
 test uart::tests::strict_ports_and_widths ... ok
 test uart::tests::thre_interrupt_enable_ack_rearm_and_out2_gate ... ok
 test virtio_audio::tests::audio_real_smoke_passes ... ok
+test overlay::tests::persistence_latest_write_fallback_and_source_unchanged ... ok
 test virtio_audio::tests::real_backend_records_playback_and_tones_capture ... ok
-test virtio_audio::tests::round_trip_tx_then_rx ... ok
 test virtio_audio::tests::rx_captures_silence_and_completes ... ok
+test virtio_audio::tests::round_trip_tx_then_rx ... ok
 test virtio_audio::tests::rx_rejects_readonly_buffer ... ok
 test virtio_audio::tests::tx_plays_samples_and_completes_with_status ... ok
 test virtio_audio::tests::tx_rejects_wrong_direction_and_empty ... ok
 test virtio_audio_mmio::tests::mac_config_is_readable_from_config_space ... ok
 test virtio_audio_mmio::tests::notify_before_driver_ok_is_rejected ... ok
-test virtio_audio_mmio::tests::status_negotiation_requires_ack_driver_features_then_ok ... ok
 test virtio_audio_mmio::tests::rx_notify_service_delivers_capture ... ok
+test virtio_audio_mmio::tests::status_negotiation_requires_ack_driver_features_then_ok ... ok
 test virtio_audio_mmio::tests::tx_notify_service_and_irq ... ok
 test virtio_block_tests::backend_errors_report_ioerr_without_publishing_read_payload ... ok
 test virtio_block_tests::device_write_to_readonly_ram_is_fatal_without_side_effects ... ok
@@ -161,7 +161,7 @@ test virtio_block_tests::over_limit_transfer_is_ioerr_before_backend_io ... ok
 test virtio_block_tests::protocol_errors_complete_only_valid_status_without_backend_access ... ok
 test virtio_block_tests::queue_configuration_and_owned_index_tampering_refused ... ok
 test virtio_block_tests::read_scatter_buffers_status_and_used_lengths ... ok
-test virtio_block_tests::readonly_backend_requires_verified_payload_and_refuses_writes ... ok
+test sha256::tests::known_vectors_and_limit ... ok
 test virtio_block_tests::requests_crossing_a_ram_hole_fail_before_status_publication ... ok
 test virtio_block_tests::write_and_suppressed_interrupt_hint ... ok
 test virtio_mmio_tests::fatal_queue_fault_requires_reset_without_disk_or_status_write ... ok
@@ -169,7 +169,7 @@ test virtio_mmio_tests::identity_selectors_config_byte_reads_and_access_shapes .
 test virtio_mmio_tests::invalid_negotiation_clears_features_ok_and_reset_unlocks_features ... ok
 test virtio_mmio_tests::invalid_ring_gpa_is_checked_before_backend_and_demands_reset ... ok
 test virtio_mmio_tests::lifecycle_requires_features_and_ready_and_protects_live_queue ... ok
-test sha256::tests::known_vectors_and_limit ... ok
+test virtio_block_tests::readonly_backend_requires_verified_payload_and_refuses_writes ... ok
 test virtio_mmio_tests::ordinary_io_error_does_not_poison_device_and_suppression_is_honored ... ok
 test virtio_mmio_tests::read_completion_irq_latch_ack_and_no_repeat_io ... ok
 test virtio_mmio_tests::readonly_and_flush_feature_policy_enforced_before_backend ... ok
@@ -185,11 +185,11 @@ test virtio_net_mmio::tests::rx_notify_service_delivers_loopback_frame ... ok
 test virtio_net_mmio::tests::status_negotiation_requires_ack_driver_features_then_ok ... ok
 test virtio_net_mmio::tests::tx_notify_service_and_irq ... ok
 test virtqueue::tests::indices_wrap_without_replaying_or_losing_a_descriptor ... ok
+test overlay::tests::wrong_base_and_header_refused_without_mutating_overlay ... ok
 test virtio_block_tests::actual_cow_backend_write_flush_reopen_and_base_preservation ... ok
 test virtio_mmio_tests::mmio_model_cow_write_flush_reset_reopen_read_preserves_base ... ok
-test overlay::tests::wrong_base_and_header_refused_without_mutating_overlay ... ok
 
-test result: ok. 183 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+test result: ok. 183 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
 
      Running unittests src\main.rs (rust\nexus-engine\target\debug\build\nexus-engine/2d847dd113b5de05\out\nexus_engine-2d847dd113b5de05.exe)
 
@@ -199,10 +199,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 
     Checking nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.04s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.84s
 
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-    Finished `release` profile [optimized] target(s) in 16.66s
+    Finished `release` profile [optimized] target(s) in 13.68s
 
 
 STDERR:
