@@ -679,7 +679,7 @@ let limit=if goal==RunGoal::NativeApk {420000} else if matches!(goal,RunGoal::An
         fw.push(0xbb);fw.extend_from_slice(&0x7c00u16.to_le_bytes());
         fw.push(0xb9);fw.extend_from_slice(&256u16.to_le_bytes());
         let loop_start=fw.len();
-        fw.push(0xef);                   // IN AX, DX
+        fw.push(0xed);                   // IN AX, DX
         fw.push(0x66);fw.push(0x89);fw.push(0x07);     // MOV [EBX], AX (16-bit)
         fw.push(0x83);fw.push(0xc7);fw.push(0x02); // ADD BX, 2
         let jnz_pos=fw.len();
