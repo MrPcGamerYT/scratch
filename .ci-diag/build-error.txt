@@ -1,25 +1,102 @@
 RETURN=101
 STDOUT:
    Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)
-error[E0282]: type annotations needed
-   --> src\whp_mmio.rs:659:14
+error[E0308]: mismatched types
+   --> src\whp_mmio.rs:659:13
     |
-659 |             |b| {
-    |              ^
-660 |                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());
-    |                                                 - type must be known at this point
+655 |           platform_device_session(long,&f,MMIO_GPIO_BASE,
+    |           ----------------------- arguments to this function are incorrect
+...
+659 | /             |b: &[u8]| {
+660 | |                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());
+661 | |                 let gpio_out=u32::from_le_bytes(b[0x04..0x08].try_into().unwrap());
+662 | |                 let gpio_inp=u32::from_le_bytes(b[0x08..0x0c].try_into().unwrap());
+...   |
+668 | |                 Ok(())
+669 | |             })?;
+    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure
     |
-help: consider giving this closure parameter an explicit type
+    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`
+                 found closure `{closure@src\whp_mmio.rs:659:13: 659:23}`
+note: function defined here
+   --> src\whp_mmio.rs:706:4
     |
-659 |             |b: /* Type */| {
-    |               ++++++++++++
+706 | fn platform_device_session(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+...
+713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,
+    |     --------------------------------------------
+help: consider borrowing here
+    |
+659 |             &|b: &[u8]| {
+    |             +
 
-For more information about this error, try `rustc --explain E0282`.
-error: could not compile `nexus-engine` (lib) due to 1 previous error
+error[E0308]: mismatched types
+   --> src\whp_mmio.rs:675:13
+    |
+671 |           platform_device_session(long,&f,MMIO_I2C_BASE,
+    |           ----------------------- arguments to this function are incorrect
+...
+675 | /             |b: &[u8]| {
+676 | |                 let i2c_sts=u32::from_le_bytes(b[0x10..0x14].try_into().unwrap());
+677 | |                 let i2c_addr=u32::from_le_bytes(b[0x14..0x18].try_into().unwrap());
+678 | |                 let i2c_data=u32::from_le_bytes(b[0x18..0x1c].try_into().unwrap());
+...   |
+682 | |                 Ok(())
+683 | |             })?;
+    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure
+    |
+    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`
+                 found closure `{closure@src\whp_mmio.rs:675:13: 675:23}`
+note: function defined here
+   --> src\whp_mmio.rs:706:4
+    |
+706 | fn platform_device_session(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+...
+713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,
+    |     --------------------------------------------
+help: consider borrowing here
+    |
+675 |             &|b: &[u8]| {
+    |             +
+
+error[E0308]: mismatched types
+   --> src\whp_mmio.rs:689:13
+    |
+685 |           platform_device_session(long,&f,MMIO_SPI_BASE,
+    |           ----------------------- arguments to this function are incorrect
+...
+689 | /             |b: &[u8]| {
+690 | |                 let spi_sts=u32::from_le_bytes(b[0x20..0x24].try_into().unwrap());
+691 | |                 let spi_rx=u32::from_le_bytes(b[0x24..0x28].try_into().unwrap());
+692 | |                 let spi_clk=u32::from_le_bytes(b[0x28..0x2c].try_into().unwrap());
+...   |
+696 | |                 Ok(())
+697 | |             })?;
+    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure
+    |
+    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`
+                 found closure `{closure@src\whp_mmio.rs:689:13: 689:23}`
+note: function defined here
+   --> src\whp_mmio.rs:706:4
+    |
+706 | fn platform_device_session(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+...
+713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,
+    |     --------------------------------------------
+help: consider borrowing here
+    |
+689 |             &|b: &[u8]| {
+    |             +
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `nexus-engine` (lib) due to 3 previous errors
 warning: build failed, waiting for other jobs to finish...
-error: could not compile `nexus-engine` (lib test) due to 1 previous error
+error: could not compile `nexus-engine` (lib test) due to 3 previous errors
 
-::error::   Compiling nexus-engine v0.1.0 (D:\a\scratch\scratch\rust\nexus-engine)%0Aerror[E0282]: type annotations needed%0A   --> src\whp_mmio.rs:659:14%0A    |%0A659 |             |b| {%0A    |              ^%0A660 |                 let gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());%0A    |                                                 - type must be known at this point%0A    |%0Ahelp: consider giving this closure parameter an explicit type%0A    |%0A659 |             |b: /* Type */| {%0A    |               ++++++++++++%0A%0AFor more information about this error, try `rustc --explain E0282`.%0Aerror: could not compile `nexus-engine` (lib) due to 1 previous error%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 1 previous error%0A
+::error::et gpio_dir=u32::from_le_bytes(b[0x00..0x04].try_into().unwrap());%0A661 | |                 let gpio_out=u32::from_le_bytes(b[0x04..0x08].try_into().unwrap());%0A662 | |                 let gpio_inp=u32::from_le_bytes(b[0x08..0x0c].try_into().unwrap());%0A...   |%0A668 | |                 Ok(())%0A669 | |             })?;%0A    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure%0A    |%0A    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`%0A                 found closure `{closure@src\whp_mmio.rs:659:13: 659:23}`%0Anote: function defined here%0A   --> src\whp_mmio.rs:706:4%0A    |%0A706 | fn platform_device_session(%0A    |    ^^^^^^^^^^^^^^^^^^^^^^^%0A...%0A713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,%0A    |     --------------------------------------------%0Ahelp: consider borrowing here%0A    |%0A659 |             &|b: &[u8]| {%0A    |             +%0A%0Aerror[E0308]: mismatched types%0A   --> src\whp_mmio.rs:675:13%0A    |%0A671 |           platform_device_session(long,&f,MMIO_I2C_BASE,%0A    |           ----------------------- arguments to this function are incorrect%0A...%0A675 | /             |b: &[u8]| {%0A676 | |                 let i2c_sts=u32::from_le_bytes(b[0x10..0x14].try_into().unwrap());%0A677 | |                 let i2c_addr=u32::from_le_bytes(b[0x14..0x18].try_into().unwrap());%0A678 | |                 let i2c_data=u32::from_le_bytes(b[0x18..0x1c].try_into().unwrap());%0A...   |%0A682 | |                 Ok(())%0A683 | |             })?;%0A    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure%0A    |%0A    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`%0A                 found closure `{closure@src\whp_mmio.rs:675:13: 675:23}`%0Anote: function defined here%0A   --> src\whp_mmio.rs:706:4%0A    |%0A706 | fn platform_device_session(%0A    |    ^^^^^^^^^^^^^^^^^^^^^^^%0A...%0A713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,%0A    |     --------------------------------------------%0Ahelp: consider borrowing here%0A    |%0A675 |             &|b: &[u8]| {%0A    |             +%0A%0Aerror[E0308]: mismatched types%0A   --> src\whp_mmio.rs:689:13%0A    |%0A685 |           platform_device_session(long,&f,MMIO_SPI_BASE,%0A    |           ----------------------- arguments to this function are incorrect%0A...%0A689 | /             |b: &[u8]| {%0A690 | |                 let spi_sts=u32::from_le_bytes(b[0x20..0x24].try_into().unwrap());%0A691 | |                 let spi_rx=u32::from_le_bytes(b[0x24..0x28].try_into().unwrap());%0A692 | |                 let spi_clk=u32::from_le_bytes(b[0x28..0x2c].try_into().unwrap());%0A...   |%0A696 | |                 Ok(())%0A697 | |             })?;%0A    | |_____________^ expected `&dyn Fn(&[u8]) -> Result<(), String>`, found closure%0A    |%0A    = note: expected reference `&dyn for<'a> Fn(&'a [u8]) -> Result<(), String>`%0A                 found closure `{closure@src\whp_mmio.rs:689:13: 689:23}`%0Anote: function defined here%0A   --> src\whp_mmio.rs:706:4%0A    |%0A706 | fn platform_device_session(%0A    |    ^^^^^^^^^^^^^^^^^^^^^^^%0A...%0A713 |     verify: &dyn Fn(&[u8]) -> Result<(), String>,%0A    |     --------------------------------------------%0Ahelp: consider borrowing here%0A    |%0A689 |             &|b: &[u8]| {%0A    |             +%0A%0AFor more information about this error, try `rustc --explain E0308`.%0Aerror: could not compile `nexus-engine` (lib) due to 3 previous errors%0Awarning: build failed, waiting for other jobs to finish...%0Aerror: could not compile `nexus-engine` (lib test) due to 3 previous errors%0A
 
 STDERR:
 
