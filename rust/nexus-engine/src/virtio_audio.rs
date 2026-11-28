@@ -161,7 +161,7 @@ pub fn audio_real_smoke()->Result<(),String> {
     m.write(tx_desc+16,&desc_for(0x900,1,true,0))?;
     let samples:Vec<u8>=(0..64u32).map(|n|(n*7) as u8).collect();
     m.write(0x800,&samples)?;
-    let mut tx=SplitQueue::new(&mut m,8,tx_desc,0x1200,0x1400).map_err(|e|e.to_string())?;
+    let mut tx=SplitQueue::new(&m,8,tx_desc,0x1200,0x1400).map_err(|e|e.to_string())?;
     push_avail(&mut m,0x1200,0)?;
     let mut backend=RealBackend::new(44100);
     let tx_done=process_tx(&mut m,&mut tx,&mut backend).map_err(|e|e.to_string())?
@@ -170,7 +170,7 @@ pub fn audio_real_smoke()->Result<(),String> {
     // RX (capture): single writable buffer.
     let rx_desc=0x2000u64;
     m.write(rx_desc,&desc_for(0x1800,256,true,0))?;
-    let mut rx=SplitQueue::new(&mut m,8,rx_desc,0x2200,0x2400).map_err(|e|e.to_string())?;
+    let mut rx=SplitQueue::new(&m,8,rx_desc,0x2200,0x2400).map_err(|e|e.to_string())?;
     push_avail(&mut m,0x2200,0)?;
     let rx_done=process_rx(&mut m,&mut rx,&mut backend).map_err(|e|e.to_string())?
         .ok_or("No capture completion")?;
